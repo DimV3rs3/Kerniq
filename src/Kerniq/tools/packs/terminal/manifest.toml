@@ -1,0 +1,6 @@
+pack_id = "terminal"
+name = "Terminal"
+version = "1.0.0"
+description = "Shell/PowerShell commands in the workspace"
+category = "terminal"
+entry = "Pack"

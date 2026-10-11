@@ -1,0 +1,33 @@
+"""Web search & fetch tool pack."""
+
+from __future__ import annotations
+
+from typing import Any, Sequence
+
+from ...pack import ToolPack, pack_resources_dir
+from ....interfaces.tools import Tool
+from .tools import WebSearchTool, FetchUrlTool
+
+
+class Pack(ToolPack):
+    @property
+    def pack_id(self) -> str:
+        return "web"
+
+    @property
+    def name(self) -> str:
+        return "Web"
+
+    @property
+    def description(self) -> str:
+        return "DuckDuckGo search and HTTP fetch (httpx)"
+
+    @property
+    def category(self) -> str:
+        return "web"
+
+    def resources_dir(self):
+        return pack_resources_dir(__file__)
+
+    def create_tools(self, workspace: str, **kwargs: Any) -> Sequence[Tool]:
+        return [WebSearchTool(), FetchUrlTool()]

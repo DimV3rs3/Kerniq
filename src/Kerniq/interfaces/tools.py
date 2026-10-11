@@ -69,13 +69,47 @@ class Tool(ABC):
         """Logical group for UI: filesystem | terminal | web | fetch | other."""
         return "other"
 
+    @property
+    def pack_id(self) -> str:
+        """Owning tool pack id (folder-based pack)."""
+        return self.category or "other"
+
+    @property
+    def ui_icon(self) -> str:
+        """Emoji/icon for chat UI."""
+        return "⚙"
+
+
+    def chat_label(self, count: int = 1, *, success: bool = True) -> str:
+        """Human label for chat aggregation, e.g. '3 поисков по коду'."""
+        unit = "вызов" if count == 1 else "вызовов"
+        return f"{count} {unit}"
+
     def settings_schema(self) -> Optional[SettingsSchema]:
-        """Optional declarative settings for UI/CLI. None = no extra settings."""
-        return None
+        """Default schema includes chat-collapse toggle; subclasses may extend."""
+        from .settings_schema import SettingField, SettingType
+        return SettingsSchema(
+            component_id=self.tool_id,
+            component_type="tool",
+            title=self.name,
+            fields=[
+                SettingField(
+                    key="collapsible",
+                    label="Merge consecutive calls in chat",
+                    type=SettingType.BOOL,
+                    default=True,
+                    description="When chat aggregation is on, consecutive calls of this tool merge into one block",
+                ),
+            ],
+        )
 
     def apply_settings(self, values: Dict[str, Any]) -> None:
-        """Apply persisted settings into the tool instance."""
-        return None
+        if values and "collapsible" in values:
+            self.cfg_collapsible = bool(values["collapsible"])
+
+    @property
+    def collapsible(self) -> bool:
+        return bool(getattr(self, "cfg_collapsible", True))
 
     @abstractmethod
     async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:

@@ -1,12 +1,23 @@
-# User / production plugins
+# Kerniq plugins
 
-Put installed plugins here (each folder with `manifest.toml` + `main.py`).
+Real plugins live here (not examples):
 
-The Web UI plugin currently lives under `examples/plugins/web_ui_plugin` because it was developed as a reference implementation.
-For a production layout you can copy or symlink it into this directory:
+| folder | id | role |
+|--------|-----|------|
+| `web_ui/` | plugin_web_ui | Cursor-like browser UI |
+| `context_compact/` | context_compact | Context compaction |
 
 ```
-plugins/web_ui_plugin/  → copy from examples/plugins/web_ui_plugin
+plugins/<id>/
+  manifest.toml
+  main.py
+  resources/
+  static/          # optional (web_ui)
 ```
 
-`examples/plugins/` is for demos and templates only (e.g. weather sample).
+```bash
+python -m Kerniq plugins ui
+```
+
+Enable **Server mode** in plugin settings to bind `0.0.0.0`, show LAN IP,
+and disable OS folder dialog for remote browsers.

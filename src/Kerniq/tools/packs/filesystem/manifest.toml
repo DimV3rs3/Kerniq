@@ -1,0 +1,6 @@
+pack_id = "filesystem"
+name = "Filesystem"
+version = "1.0.0"
+description = "Read, write, list, search files inside the workspace"
+category = "filesystem"
+entry = "Pack"

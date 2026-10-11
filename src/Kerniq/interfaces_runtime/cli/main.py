@@ -16,7 +16,10 @@ from Kerniq.models.providers.mock import MockProvider
 from Kerniq.models.providers.lm_studio import LMStudioProvider
 from Kerniq.models.system_info import collect_system_info, recommend_for_lm_studio
 from Kerniq.tools.registry import ToolRegistry
+from Kerniq.tools.loader import register_builtin_tools, load_all_tools
 from Kerniq.tools.filesystem import FileSystemTools
+from Kerniq.tools.terminal import TerminalTools
+from Kerniq.tools.web_search import WebSearchTool, FetchUrlTool
 from Kerniq.tools.terminal import TerminalTools
 from Kerniq.tools.web_search import WebSearchTool, FetchUrlTool
 from Kerniq.tools.settings import ToolSettingsStore
@@ -40,21 +43,34 @@ def _build_registry(config, workspace: Path, tool_settings_store: ToolSettingsSt
         disallowed_commands=config.security.disallowed_terminal_commands,
         require_approval_for_high_risk=config.security.require_approval_for_high_risk,
     )
-    if ts.fs_enabled:
-        for tool in FileSystemTools(workspace=str(workspace)).get_tools():
+    enabled_packs = []
+    if getattr(ts, "fs_enabled", True):
+        enabled_packs.append("filesystem")
+    if getattr(ts, "terminal_enabled", True):
+        enabled_packs.append("terminal")
+    if getattr(ts, "web_search_enabled", True) or getattr(ts, "fetch_url_enabled", True):
+        enabled_packs.append("web")
+    for tool in load_all_tools(str(workspace), policy=policy, enabled_packs=enabled_packs or None):
+        # fine-grained enable for web tools
+        if tool.name == "web_search" and not getattr(ts, "web_search_enabled", True):
+            continue
+        if tool.name == "fetch_url" and not getattr(ts, "fetch_url_enabled", True):
+            continue
+        try:
             registry.register_tool(tool)
-    if ts.terminal_enabled:
-        registry.register_tool(TerminalTools(workspace, policy))
-    if ts.web_search_enabled:
-        registry.register_tool(
-            WebSearchTool(
-                enabled=True,
-                max_results=ts.web_search_max_results,
-                timeout=ts.web_search_timeout,
-            )
-        )
-    if ts.fetch_url_enabled:
-        registry.register_tool(FetchUrlTool(enabled=True, timeout=ts.fetch_url_timeout))
+        except ValueError:
+            pass
+        # apply pack-level tool settings when present
+        try:
+            if tool.name == "web_search" and hasattr(tool, "apply_settings"):
+                tool.apply_settings({
+                    "max_results": getattr(ts, "web_search_max_results", 5),
+                    "timeout": getattr(ts, "web_search_timeout", 15),
+                })
+            if tool.name == "fetch_url" and hasattr(tool, "apply_settings"):
+                tool.apply_settings({"timeout": getattr(ts, "fetch_url_timeout", 20)})
+        except Exception:
+            pass
     return registry, policy
 
 
@@ -342,7 +358,7 @@ async def async_main(argv: Optional[list] = None) -> int:
             return 0
     if args.command == "plugins":
         if args.action == "list":
-            for d in (Path("plugins"), Path("examples/plugins")):
+            for d in (Path("plugins"),):
                 if d.exists():
                     await pm.discover_and_load(d)
             plugins = pm.list_plugins()
@@ -356,16 +372,49 @@ async def async_main(argv: Optional[list] = None) -> int:
             print("Use: plugins list")
             return 0
         if args.action == "ui":
-            host = args.host or config.ui.host
-            port = args.port or config.ui.port
+            host = args.host or getattr(config.ui, "host", "127.0.0.1")
+            port = int(args.port or getattr(config.ui, "port", 8765))
             config.ui.host = host
             config.ui.port = port
-            ui_dir = Path("examples/plugins/web_ui_plugin")
-            if not ui_dir.exists():
-                print("Web UI plugin not found", file=sys.stderr)
+            ui_dir = Path("plugins/web_ui")
+            if not ui_dir.is_dir() or not (ui_dir / "manifest.toml").exists():
+                print("Web UI plugin not found at plugins/web_ui", file=sys.stderr)
                 return 1
-            await pm.discover_and_load(ui_dir.parent)
-            print(f"Web UI: http://{host}:{port}")
+            await pm.discover_and_load(Path("plugins"))
+            # Report load status
+            plugins = {p["id"]: p for p in pm.list_plugins()}
+            web = plugins.get("plugin_web_ui") or plugins.get("web_ui")
+            if not web or str(web.get("status")) not in (
+                "PluginStatus.AVAILABLE",
+                "available",
+            ):
+                # status may be enum
+                st = getattr(web, "get", lambda k, d=None: None)("status") if web else None
+                st_val = getattr(st, "value", st)
+                errs = getattr(pm, "errors", {})
+                if st_val != "available":
+                    print(
+                        f"Web UI plugin failed to start (status={st_val}). "
+                        f"errors={errs}",
+                        file=sys.stderr,
+                    )
+                    # still continue if server thread might have started
+            # Give server thread a moment
+            await asyncio.sleep(0.3)
+            display = host if host not in ("0.0.0.0", "::") else "127.0.0.1"
+            if host in ("0.0.0.0", "::"):
+                try:
+                    import socket
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    s.connect(("8.8.8.8", 80))
+                    lan = s.getsockname()[0]
+                    s.close()
+                except Exception:
+                    lan = "127.0.0.1"
+                print(f"Web UI (LAN): http://{lan}:{port}")
+                print(f"Web UI (local): http://127.0.0.1:{port}")
+            else:
+                print(f"Web UI: http://{display}:{port}")
             print("Press Ctrl+C to stop.")
             try:
                 while True:

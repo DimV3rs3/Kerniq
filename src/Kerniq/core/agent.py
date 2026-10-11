@@ -108,6 +108,11 @@ class Agent:
                 "When you need several independent facts, emit multiple tool_calls in one assistant turn "
                 "instead of calling tools one-by-one across turns."
             ),
+            (
+                "For non-trivial tasks: FIRST outline a short checklist of steps in your reasoning, "
+                "then work through the checklist. Do not stop after a single tool call if more steps remain. "
+                "Only finish when the checklist is done or blocked."
+            ),
         ]
         for tip in extras:
             if tip and tip not in sys_text:

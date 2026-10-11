@@ -27,6 +27,9 @@ class Orchestrator:
     async def run(self, context: TaskContext) -> str:
         iteration = 0
         while iteration < self.max_iterations:
+            if getattr(context, "cancelled", False):
+                logger.info("Orchestration cancelled")
+                return "Остановлено пользователем."
             iteration += 1
             logger.info(f"Orchestration iteration {iteration}/{self.max_iterations}")
 

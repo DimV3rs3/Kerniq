@@ -1,0 +1,6 @@
+pack_id = "web"
+name = "Web"
+version = "1.0.0"
+description = "Web search and URL fetch"
+category = "web"
+entry = "Pack"

@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from agent_platform.tools.filesystem import FileSystemTools
-from agent_platform.tools.registry import ToolRegistry
+from Kerniq.tools.filesystem import FileSystemTools
+from Kerniq.tools.registry import ToolRegistry
 
 
 def test_create_edit_delete_list_recursive(tmp_path):
@@ -48,7 +48,7 @@ def test_create_edit_delete_list_recursive(tmp_path):
 
 
 def test_tool_settings_persist(tmp_path):
-    from agent_platform.tools.settings import ToolSettingsStore
+    from Kerniq.tools.settings import ToolSettingsStore
 
     store = ToolSettingsStore(tmp_path)
     store.update(web_search_enabled=False, fs_list_max_depth=3)

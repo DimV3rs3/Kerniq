@@ -15,6 +15,7 @@ venv/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+_reference_architecture/
 
 # Runtime state (local-first defaults)
 sessions/

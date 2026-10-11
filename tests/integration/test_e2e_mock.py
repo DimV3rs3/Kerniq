@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from agent_platform.core.agent import Agent
-from agent_platform.models.providers.mock import MockProvider
-from agent_platform.tools.registry import ToolRegistry
-from agent_platform.tools.filesystem import FileSystemTools
-from agent_platform.interfaces.models import ModelResponse, Message, MessageRole, ToolCall
+from Kerniq.core.agent import Agent
+from Kerniq.models.providers.mock import MockProvider
+from Kerniq.tools.registry import ToolRegistry
+from Kerniq.tools.filesystem import FileSystemTools
+from Kerniq.interfaces.models import ModelResponse, Message, MessageRole, ToolCall
 
 
 def test_end_to_end_mock_flow(tmp_path):
@@ -59,7 +59,7 @@ def test_end_to_end_mock_flow(tmp_path):
 
 def test_mock_provider_default_response():
     async def _run():
-        from agent_platform.interfaces.models import ModelRequest
+        from Kerniq.interfaces.models import ModelRequest
         from uuid import uuid4
 
         provider = MockProvider()

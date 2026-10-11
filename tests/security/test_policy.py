@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
-from agent_platform.security.policy import SecurityPolicy, PolicyDecision, RiskLevel
-from agent_platform.interfaces.errors import SecurityError, ErrorCode
+from Kerniq.security.policy import SecurityPolicy, PolicyDecision, RiskLevel
+from Kerniq.interfaces.errors import SecurityError, ErrorCode
 
 def test_workspace_boundary_enforcement(tmp_path):
     # Setup workspace

@@ -11,7 +11,7 @@ def apply_settings(self, values: dict) -> None: ...
 def category(self) -> str:  # tools only
 ```
 
-`SettingsSchema` / `SettingField` live in `agent_platform.interfaces.settings_schema`.
+`SettingsSchema` / `SettingField` live in `Kerniq.interfaces.settings_schema`.
 
 ## Storage
 
@@ -34,15 +34,15 @@ Settings → Tools / Plugins:
 ## CLI
 
 ```bash
-python -m agent_platform settings show
-python -m agent_platform settings reset
+python -m Kerniq settings show
+python -m Kerniq settings reset
 ```
 
 ## Scaffold
 
 ```python
 from pathlib import Path
-from agent_platform.devtools.plugin_scaffold import PluginScaffoldGenerator, ToolScaffoldGenerator
+from Kerniq.devtools.plugin_scaffold import PluginScaffoldGenerator, ToolScaffoldGenerator
 PluginScaffoldGenerator(Path("examples/plugins")).generate("my_plugin", "My Plugin", "desc")
-ToolScaffoldGenerator(Path("src/agent_platform/tools")).generate("my_tool_id", "my_tool", "other")
+ToolScaffoldGenerator(Path("src/Kerniq/tools")).generate("my_tool_id", "my_tool", "other")
 ```

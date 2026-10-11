@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from agent_platform.plugins.base import Plugin, PluginContext
-from agent_platform.plugins.manifest import PluginManifest
-from agent_platform.interfaces.tools import Tool, ToolResult
+from Kerniq.plugins.base import Plugin, PluginContext
+from Kerniq.plugins.manifest import PluginManifest
+from Kerniq.interfaces.tools import Tool, ToolResult
 
 
 class WeatherTool(Tool):

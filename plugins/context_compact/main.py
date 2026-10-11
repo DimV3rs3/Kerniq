@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from agent_platform.plugins.base import Plugin, PluginContext
-from agent_platform.plugins.manifest import PluginManifest
-from agent_platform.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
-from agent_platform.interfaces.models import Message, MessageRole
+from Kerniq.plugins.base import Plugin, PluginContext
+from Kerniq.plugins.manifest import PluginManifest
+from Kerniq.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
+from Kerniq.interfaces.models import Message, MessageRole
 
 
 COMPACT_INSTRUCTION = (

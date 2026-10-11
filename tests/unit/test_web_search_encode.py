@@ -1,6 +1,6 @@
 """Web search URL encoding without urllib."""
 
-from agent_platform.tools.web_search import _url_encode, WebSearchTool
+from Kerniq.tools.web_search import _url_encode, WebSearchTool
 
 
 def test_url_encode_basic():

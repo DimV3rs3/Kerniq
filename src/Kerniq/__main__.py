@@ -1,4 +1,4 @@
-"""CLI entry: python -m agent_platform
+"""CLI entry: python -m Kerniq
 
 Sync wrapper so Windows / console_scripts always await async code correctly.
 """
@@ -13,7 +13,7 @@ from typing import Optional, Sequence
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     # Import the function from the CLI module (not the package attribute shadowing)
-    from agent_platform.interfaces_runtime.cli.main import main as cli_main
+    from Kerniq.interfaces_runtime.cli.main import main as cli_main
 
     if inspect.iscoroutinefunction(cli_main):
         coro = cli_main(list(argv)) if argv is not None else cli_main()

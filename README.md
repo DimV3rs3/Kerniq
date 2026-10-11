@@ -1,4 +1,4 @@
-# AI Agent Platform
+# AI Agent Platform - Kerniq
 
 Modular Open Source platform for autonomous AI agents.
 
@@ -11,10 +11,10 @@ cd project
 export PYTHONPATH=src
 # or: pip install -e ".[dev]"
 
-python -m agent_platform doctor
-python -m agent_platform tools list
-python -m agent_platform run --task "Say hello" --provider mock
-python -m agent_platform plugins ui   # http://127.0.0.1:8765
+python -m Kerniq doctor
+python -m Kerniq tools list
+python -m Kerniq run --task "Say hello" --provider mock
+python -m Kerniq plugins ui   # http://127.0.0.1:8765
 ```
 
 ## Tools
@@ -26,8 +26,8 @@ python -m agent_platform plugins ui   # http://127.0.0.1:8765
 Settings persist in `state/tool_settings.json`:
 
 ```bash
-python -m agent_platform tools settings
-python -m agent_platform tools set web_search_enabled true
+python -m Kerniq tools settings
+python -m Kerniq tools set web_search_enabled true
 ```
 
 ## Config

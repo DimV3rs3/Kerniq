@@ -77,7 +77,7 @@ class PluginManager:
                 self.errors[pid] = msg
                 return
 
-            module_name = f"agent_platform_plugin_{plugin_path.name}"
+            module_name = f"Kerniq_plugin_{plugin_path.name}"
             spec = importlib.util.spec_from_file_location(module_name, main_py)
             if spec is None or spec.loader is None:
                 self.statuses[pid] = PluginStatus.ERROR

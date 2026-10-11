@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
-from agent_platform.plugins.base import Plugin, PluginContext
-from agent_platform.interfaces.tools import Tool, ToolResult
+from Kerniq.plugins.base import Plugin, PluginContext
+from Kerniq.interfaces.tools import Tool, ToolResult
 from typing import Dict, Any
 
 class WeatherTool(Tool):

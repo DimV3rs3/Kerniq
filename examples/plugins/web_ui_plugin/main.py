@@ -13,9 +13,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from agent_platform.plugins.base import Plugin, PluginContext
-from agent_platform.plugins.manifest import PluginManifest
-from agent_platform.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
+from Kerniq.plugins.base import Plugin, PluginContext
+from Kerniq.plugins.manifest import PluginManifest
+from Kerniq.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
 
 logger = logging.getLogger("plugin.web_ui")
 
@@ -94,8 +94,8 @@ def _read_json(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
 
 
 def _settings_store():
-    from agent_platform.settings.ui_store import UiSettingsStore
-    from agent_platform.settings.loader import SettingsProvider
+    from Kerniq.settings.ui_store import UiSettingsStore
+    from Kerniq.settings.loader import SettingsProvider
 
     cfg = SettingsProvider().config
     return UiSettingsStore(cfg.storage.state_dir)
@@ -151,7 +151,7 @@ class UIHandler(BaseHTTPRequestHandler):
         if path == "/api/settings":
             return _json(self, 200, _settings_store().load().model_dump())
         if path == "/api/languages":
-            from agent_platform.settings.ui_store import RESPONSE_LANGUAGES
+            from Kerniq.settings.ui_store import RESPONSE_LANGUAGES
             return _json(self, 200, {"languages": RESPONSE_LANGUAGES})
         if path == "/api/tools":
             return _json(self, 200, self._tools())
@@ -255,7 +255,7 @@ class UIHandler(BaseHTTPRequestHandler):
         return {"plugins": plugins}
 
     def _models(self) -> Dict[str, Any]:
-        from agent_platform.models.providers.lm_studio import LMStudioProvider
+        from Kerniq.models.providers.lm_studio import LMStudioProvider
 
         ui = _settings_store().load()
         p = LMStudioProvider(
@@ -363,17 +363,17 @@ class UIHandler(BaseHTTPRequestHandler):
 
 
     def _component_store(self):
-        from agent_platform.settings.component_store import ComponentSettingsStore
-        from agent_platform.settings.loader import SettingsProvider
+        from Kerniq.settings.component_store import ComponentSettingsStore
+        from Kerniq.settings.loader import SettingsProvider
         return ComponentSettingsStore(SettingsProvider().config.storage.state_dir)
 
     def _list_components(self):
         """Dynamic list of tools/plugins with schemas for UI."""
-        from agent_platform.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
-        from agent_platform.tools.filesystem import FileSystemTools
-        from agent_platform.tools.terminal import TerminalTools
-        from agent_platform.tools.web_search import WebSearchTool, FetchUrlTool
-        from agent_platform.security.policy import SecurityPolicy
+        from Kerniq.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
+        from Kerniq.tools.filesystem import FileSystemTools
+        from Kerniq.tools.terminal import TerminalTools
+        from Kerniq.tools.web_search import WebSearchTool, FetchUrlTool
+        from Kerniq.security.policy import SecurityPolicy
 
         tools: list = []
         plugins: list = []
@@ -478,7 +478,7 @@ class UIHandler(BaseHTTPRequestHandler):
         for item in coll:
             if item["id"] == cid:
                 if item.get("schema"):
-                    from agent_platform.interfaces.settings_schema import SettingsSchema
+                    from Kerniq.interfaces.settings_schema import SettingsSchema
                     schema = SettingsSchema(**item["schema"])
                 break
         saved = store.save(kind, cid, values, schema)
@@ -508,7 +508,7 @@ class UIHandler(BaseHTTPRequestHandler):
         schema = None
         for item in coll:
             if item["id"] == cid and item.get("schema"):
-                from agent_platform.interfaces.settings_schema import SettingsSchema
+                from Kerniq.interfaces.settings_schema import SettingsSchema
                 schema = SettingsSchema(**item["schema"])
                 break
         values = store.reset(kind, cid, schema)
@@ -534,7 +534,7 @@ class UIHandler(BaseHTTPRequestHandler):
 
 
     def _lms_provider(self):
-        from agent_platform.models.providers.lm_studio import LMStudioProvider
+        from Kerniq.models.providers.lm_studio import LMStudioProvider
         ui = _settings_store().load()
         return LMStudioProvider(
             base_url=ui.api.base_url,
@@ -641,14 +641,14 @@ def _diff_counts(before: str, after: str) -> tuple[int, int]:
 
 async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> None:
     data = data or {}
-    from agent_platform.core.agent import Agent
-    from agent_platform.tools.registry import ToolRegistry
-    from agent_platform.tools.filesystem import FileSystemTools
-    from agent_platform.tools.terminal import TerminalTools
-    from agent_platform.tools.web_search import WebSearchTool, FetchUrlTool
-    from agent_platform.security.policy import SecurityPolicy
-    from agent_platform.models.providers.mock import MockProvider
-    from agent_platform.models.providers.lm_studio import LMStudioProvider
+    from Kerniq.core.agent import Agent
+    from Kerniq.tools.registry import ToolRegistry
+    from Kerniq.tools.filesystem import FileSystemTools
+    from Kerniq.tools.terminal import TerminalTools
+    from Kerniq.tools.web_search import WebSearchTool, FetchUrlTool
+    from Kerniq.security.policy import SecurityPolicy
+    from Kerniq.models.providers.mock import MockProvider
+    from Kerniq.models.providers.lm_studio import LMStudioProvider
 
     ui = _settings_store().load()
     ws = Path(ui.agent.workspace or "./workspace")
@@ -684,7 +684,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     agent.orchestrator.security_policy = policy
     if ui.agent.max_iterations is not None:
         agent.orchestrator.max_iterations = ui.agent.max_iterations
-    from agent_platform.interfaces.models import GenerationOptions
+    from Kerniq.interfaces.models import GenerationOptions
     agent.orchestrator.generation_options = GenerationOptions(
         temperature=ui.api.temperature if ui.api.temperature is not None else 0.7,
         max_tokens=ui.api.max_tokens,
@@ -810,7 +810,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
 
         tool.execute = wrapped  # type: ignore
 
-    from agent_platform.interfaces.models import Message, MessageRole
+    from Kerniq.interfaces.models import Message, MessageRole
 
     chat_id = str(data.get("chat_id") or "default")
     history_msgs: list = []
@@ -958,8 +958,8 @@ class PluginImpl(Plugin):
             pass
         # persisted plugin settings override
         try:
-            from agent_platform.settings.component_store import ComponentSettingsStore
-            from agent_platform.settings.loader import SettingsProvider
+            from Kerniq.settings.component_store import ComponentSettingsStore
+            from Kerniq.settings.loader import SettingsProvider
             store = ComponentSettingsStore(SettingsProvider().config.storage.state_dir)
             vals = store.load("plugin", "plugin_web_ui", self.settings_schema())
             self.apply_settings(vals)

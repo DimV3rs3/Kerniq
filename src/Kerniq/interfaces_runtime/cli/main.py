@@ -10,23 +10,23 @@ from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
-from agent_platform.bootstrap import ensure_dependencies, format_bootstrap_report
-from agent_platform.core.agent import Agent
-from agent_platform.models.providers.mock import MockProvider
-from agent_platform.models.providers.lm_studio import LMStudioProvider
-from agent_platform.models.system_info import collect_system_info, recommend_for_lm_studio
-from agent_platform.tools.registry import ToolRegistry
-from agent_platform.tools.filesystem import FileSystemTools
-from agent_platform.tools.terminal import TerminalTools
-from agent_platform.tools.web_search import WebSearchTool, FetchUrlTool
-from agent_platform.tools.settings import ToolSettingsStore
-from agent_platform.security.policy import SecurityPolicy
-from agent_platform.settings.loader import SettingsProvider
-from agent_platform.core.verifier import BasicVerifier
-from agent_platform.storage.json_store import JsonStorage
-from agent_platform.sessions.manager import SessionManager
-from agent_platform.plugins.manager import PluginManager
-from agent_platform.plugins.base import PluginContext
+from Kerniq.bootstrap import ensure_dependencies, format_bootstrap_report
+from Kerniq.core.agent import Agent
+from Kerniq.models.providers.mock import MockProvider
+from Kerniq.models.providers.lm_studio import LMStudioProvider
+from Kerniq.models.system_info import collect_system_info, recommend_for_lm_studio
+from Kerniq.tools.registry import ToolRegistry
+from Kerniq.tools.filesystem import FileSystemTools
+from Kerniq.tools.terminal import TerminalTools
+from Kerniq.tools.web_search import WebSearchTool, FetchUrlTool
+from Kerniq.tools.settings import ToolSettingsStore
+from Kerniq.security.policy import SecurityPolicy
+from Kerniq.settings.loader import SettingsProvider
+from Kerniq.core.verifier import BasicVerifier
+from Kerniq.storage.json_store import JsonStorage
+from Kerniq.sessions.manager import SessionManager
+from Kerniq.plugins.manager import PluginManager
+from Kerniq.plugins.base import PluginContext
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("cli")
@@ -94,7 +94,7 @@ async def run_agent(args: argparse.Namespace, config) -> int:
     print(f"Tools: {[t.name for t in registry.list_tools()]}")
     lang = "auto"
     try:
-        from agent_platform.settings.ui_store import UiSettingsStore
+        from Kerniq.settings.ui_store import UiSettingsStore
         lang = UiSettingsStore().load().chat.response_language or "auto"
     except Exception:
         pass
@@ -216,7 +216,7 @@ async def async_main(argv: Optional[list] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.version or args.command is None:
-        from agent_platform import __version__
+        from Kerniq import __version__
         if args.version:
             print(__version__)
             return 0
@@ -390,7 +390,7 @@ async def async_main(argv: Optional[list] = None) -> int:
                 return 1
             return 0
     if args.command == "settings":
-        from agent_platform.settings.ui_store import UiSettingsStore, RESPONSE_LANGUAGES
+        from Kerniq.settings.ui_store import UiSettingsStore, RESPONSE_LANGUAGES
         ui_store = UiSettingsStore()
         if args.action == "languages":
             for code, name in RESPONSE_LANGUAGES.items():
@@ -420,7 +420,7 @@ async def async_main(argv: Optional[list] = None) -> int:
             print(f"Response language set to {code} — {RESPONSE_LANGUAGES[code]}")
             return 0
 
-        from agent_platform.settings.component_store import ComponentSettingsStore
+        from Kerniq.settings.component_store import ComponentSettingsStore
         store = ComponentSettingsStore(config.storage.state_dir)
         if args.action == "reset":
             n = store.reset_all()
@@ -440,7 +440,7 @@ async def async_main(argv: Optional[list] = None) -> int:
             print(f"MCP enabled: {config.mcp.enabled}")
             return 0
         if args.action == "serve":
-            print("Requires: pip install agent_platform[mcp]")
+            print("Requires: pip install Kerniq[mcp]")
             return 1
 
     parser.print_help()

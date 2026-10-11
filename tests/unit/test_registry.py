@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from agent_platform.tools.registry import ToolRegistry
-from agent_platform.tools.filesystem import FileSystemTools
+from Kerniq.tools.registry import ToolRegistry
+from Kerniq.tools.filesystem import FileSystemTools
 
 
 def test_register_and_list(tmp_path):

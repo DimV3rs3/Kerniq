@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from agent_platform.storage.json_store import JsonStorage
-from agent_platform.interfaces.storage import StorageValue
+from Kerniq.storage.json_store import JsonStorage
+from Kerniq.interfaces.storage import StorageValue
 
 
 def test_json_storage_roundtrip(tmp_path):
@@ -25,7 +25,7 @@ def test_json_storage_roundtrip(tmp_path):
 
 
 def test_config_defaults():
-    from agent_platform.settings.schema import PlatformConfig
+    from Kerniq.settings.schema import PlatformConfig
 
     cfg = PlatformConfig()
     assert cfg.models.default_provider == "lm_studio"

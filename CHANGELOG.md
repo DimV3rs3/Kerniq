@@ -2,7 +2,7 @@
 
 ## 0.1.0 — Initial working release
 
-- Package layout under `src/agent_platform`
+- Package layout under `src/Kerniq`
 - Contracts: models, tools, storage, providers, errors, approvals
 - Agent + Orchestrator loop with tool calls and verification hook
 - MockProvider (offline) and LM Studio OpenAI-compatible adapter

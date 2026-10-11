@@ -33,7 +33,7 @@ def host_shell_hint() -> str:
 
 
 def language_instruction(lang_key: str) -> str:
-    from agent_platform.settings.ui_store import RESPONSE_LANGUAGES
+    from Kerniq.settings.ui_store import RESPONSE_LANGUAGES
     if not lang_key or lang_key == "auto":
         return (
             "Answer in the same language the user is writing in, "

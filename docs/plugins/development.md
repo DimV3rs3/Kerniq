@@ -31,11 +31,11 @@ tools = true
 ```
 
 ## 3. Implementing the Plugin Class
-Your plugin must implement the `Plugin` base class from `agent_platform.plugins.base`.
+Your plugin must implement the `Plugin` base class from `Kerniq.plugins.base`.
 
 ```python
-from agent_platform.plugins.base import Plugin, PluginContext
-from agent_platform.interfaces.tools import Tool, ToolResult
+from Kerniq.plugins.base import Plugin, PluginContext
+from Kerniq.interfaces.tools import Tool, ToolResult
 
 class MyTool(Tool):
     @property

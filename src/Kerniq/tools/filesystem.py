@@ -714,7 +714,7 @@ class SearchCodeTool(FileSystemToolBase):
         }
 
     def settings_schema(self):
-        from agent_platform.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
+        from Kerniq.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
         return SettingsSchema(
             component_id=self.tool_id,
             component_type="tool",

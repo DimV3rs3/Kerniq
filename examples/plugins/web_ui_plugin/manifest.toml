@@ -1,0 +1,11 @@
+plugin_id = "plugin_web_ui"
+name = "Web UI"
+version = "0.2.0"
+api_version = "1.0"
+manifest_version = "1.0"
+entry_point = "main.PluginImpl"
+description = "Cursor-like local UI: explorer, editor, chat, settings tabs"
+capabilities = ["ui", "http"]
+author = "Agent Platform"
+license = "MIT"
+permissions = ["network.bind"]

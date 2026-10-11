@@ -1,0 +1,10 @@
+plugin_id = "plugin_weather"
+name = "Weather Plugin"
+version = "1.0.0"
+api_version = "1.0"
+manifest_version = "1.0"
+entry_point = "main.PluginImpl"
+description = "Provides weather information tools"
+capabilities = ["tools"]
+author = "Agent Platform Examples"
+license = "MIT"

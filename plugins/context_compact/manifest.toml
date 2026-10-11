@@ -1,0 +1,8 @@
+plugin_id = "plugin_context_compact"
+name = "Context Compact"
+version = "0.1.0"
+api_version = "1.0"
+manifest_version = "1.0"
+entry_point = "main.PluginImpl"
+description = "Compacts long conversation context for the agent runtime"
+capabilities = ["context"]

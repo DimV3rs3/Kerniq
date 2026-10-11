@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Agent Platform</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--fg:#e6edf3;--muted:#8b949e;--acc:#2f81f7;--ok:#3fb950;--err:#f85149;--warn:#d29922;--think:#6e7681;--tab:#21262d;--user-border:#388bfd}
+*{box-sizing:border-box}html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--fg);font-size:13px;overflow:hidden;display:flex;flex-direction:column}
+button,input,select,textarea{font:inherit;color:var(--fg)}
+button{background:var(--acc);border:0;border-radius:6px;padding:6px 12px;cursor:pointer;font-weight:600}
+button.ghost{background:transparent;border:1px solid var(--border)}
+button.stop{background:var(--err)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.save-active{background:var(--ok)}
+button.cancel-active{background:var(--err)}
+button.factory{background:var(--err)}
+button.secondary{background:var(--tab);border:1px solid var(--border)}
+input,select,textarea{background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:6px 8px;width:100%}
+.topbar{display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--border);background:var(--panel);height:44px;flex-shrink:0}
+.brand{font-weight:700;cursor:pointer;border:0;background:transparent;color:var(--fg);font-size:14px;padding:6px 4px}
+.top-center{flex:1;text-align:center;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Consolas,monospace}
+.top-actions{display:flex;gap:6px;align-items:center}
+body.settings-mode .panel-toggles{display:none!important}
+.icon-btn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--border);background:transparent;cursor:pointer;color:var(--fg);padding:0}
+.icon-btn:hover,.icon-btn.on{background:var(--tab);border-color:var(--acc)}
+.badge{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--tab);color:var(--muted)}
+.badge.on{color:var(--ok)}.badge.off{color:var(--err)}
+#main-area{flex:1;min-height:0;display:flex;flex-direction:column}
+#view-main{display:flex;flex:1;min-height:0}
+#view-settings{display:none;flex:1;min-height:0;padding:0;overflow:hidden}
+.panel{background:var(--panel);overflow:hidden;display:flex;flex-direction:column;min-width:0}
+#explorer{width:280px;min-width:280px;max-width:50%;border-right:1px solid var(--border);flex-shrink:0;transition:width .3s ease-in-out,min-width .3s ease-in-out,opacity .3s ease-in-out,border-width .3s ease-in-out;overflow:hidden;--panel-w:280px}
+#chat-panel{width:360px;min-width:360px;max-width:50%;border-left:1px solid var(--border);flex-shrink:0;transition:width .3s ease-in-out,min-width .3s ease-in-out,opacity .3s ease-in-out,border-width .3s ease-in-out;overflow:hidden;--panel-w:360px}
+#explorer > *, #chat-panel > * { min-width: 260px; }
+#chat-panel > * { min-width: 340px; }
+#explorer.collapsed,#chat-panel.collapsed{width:0!important;min-width:0!important;opacity:0;border-width:0!important;pointer-events:none}
+#editor-panel{flex:1;min-width:120px;display:flex;flex-direction:column;background:var(--bg)}
+.resizer{width:4px;cursor:col-resize;background:transparent;flex-shrink:0;z-index:5}
+.resizer:hover,.resizer.active{background:var(--acc)}
+.panel h3{margin:0;padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.panel h3 .grow{flex:1}
+.tree{overflow:auto;flex:1;padding:6px 4px;user-select:none}
+.tree .row{display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px;cursor:pointer;white-space:nowrap}
+.tree .row:hover,.tree .row.active{background:var(--tab)}
+.tree .twist{width:14px;text-align:center;color:var(--muted);font-size:10px;flex-shrink:0}
+.tabs{display:flex;gap:2px;padding:4px 4px 0;background:var(--panel);border-bottom:1px solid var(--border);overflow-x:auto;flex-shrink:0}
+.tab{display:flex;gap:6px;align-items:center;padding:6px 10px;background:var(--tab);border-radius:6px 6px 0 0;cursor:pointer;max-width:160px}
+.tab.active{background:var(--bg)}.tab .x{opacity:.5;padding:0 2px}.tab .x:hover{color:var(--err);opacity:1}
+.editor-toolbar{display:flex;gap:8px;padding:4px 8px;border-bottom:1px solid var(--border);align-items:center;flex-shrink:0}
+.code-wrap{flex:1;display:flex;min-height:0;overflow:hidden;position:relative}
+.line-nums{flex-shrink:0;width:44px;background:var(--panel);border-right:1px solid var(--border);overflow:hidden;padding:12px 8px 12px 0;text-align:right;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.45;color:var(--muted);user-select:none;white-space:pre;box-sizing:border-box}
+#editor{flex:1;border:0;resize:none;background:var(--bg);padding:12px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.45;outline:none;width:100%;min-height:0;overflow:auto;white-space:pre;tab-size:4;scrollbar-width:thin;scrollbar-color:#484f58 transparent}
+#editor:disabled{opacity:.7;cursor:default;color:var(--muted)}
+.chat-hist{max-height:100px;overflow:auto;border-bottom:1px solid var(--border);padding:4px;flex-shrink:0}
+.chat-hist .h{padding:4px 8px;cursor:pointer;border-radius:4px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.chat-hist .h.active,.chat-hist .h:hover{background:var(--tab);color:var(--fg)}
+.chat-hist .h .title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-hist .del{color:var(--err);opacity:.7;flex-shrink:0}
+.msgs{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
+.msg{padding:8px 10px;border-radius:8px;line-height:1.4;max-width:100%;word-break:break-word}
+.msg.user{background:#1f6feb22;border:1px solid var(--user-border);align-self:stretch}
+.msg.assistant{background:var(--tab);align-self:stretch}
+.msg.system{color:var(--muted);font-size:12px}
+.status-bar{padding:6px 10px;border-top:1px solid var(--border);color:var(--muted);min-height:28px;flex-shrink:0;display:flex;align-items:center;gap:8px}
+.spin{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--acc);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;display:none}
+.spin.on{display:inline-block}@keyframes spin{to{transform:rotate(360deg)}}
+.composer{display:flex;gap:6px;padding:8px;border-top:1px solid var(--border);align-items:flex-end;flex-shrink:0}
+.composer .ta-wrap{flex:1;background:#0d1117;border:1px solid var(--border);border-radius:6px}
+#prompt{border:0;resize:none;overflow-y:auto;min-height:calc(1.4em + 12px);max-height:calc(1.4em * 15 + 12px);line-height:1.4;padding:6px 8px;width:100%;background:transparent}
+.footer{height:26px;flex-shrink:0;border-top:1px solid var(--border);background:var(--panel);display:flex;align-items:center;gap:12px;padding:0 12px;font-size:11px;color:var(--muted)}
+.footer.hidden{display:none}
+.footer .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.footer .dot.err{background:var(--err)}.footer .dot.idle{background:var(--warn)}.footer .dot.work{background:var(--ok)}
+.settings-layout{display:flex;align-items:stretch;height:calc(100vh - 52px);max-width:1200px;margin:0 auto;overflow:hidden}
+.stab{padding:8px 10px;border-radius:6px;cursor:pointer;color:var(--muted)}.stab.active,.stab:hover{background:var(--tab);color:var(--fg)}
+.scard{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}.scard h2{margin:0 0 12px;font-size:16px}
+.field{margin-bottom:12px}.field>label.lbl{display:block;margin-bottom:4px;color:var(--muted);font-size:12px;text-align:left}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.hint{color:var(--muted);font-size:11px;margin-top:4px}
+.nullmax{display:flex;gap:8px;align-items:center}.nullmax input[type=checkbox]{width:auto}
+.cat-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+.tools-split{display:grid;grid-template-columns:1fr 280px;gap:12px;min-height:320px}
+.tools-list{max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:8px}
+.tool-group{margin-bottom:14px}
+.tool-group h4{margin:0 0 6px;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase}
+.tool-row{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;cursor:pointer;text-align:left}
+.tool-row:hover,.tool-row.selected{background:var(--tab)}
+.tool-row input[type=checkbox]{width:auto;flex-shrink:0;margin:0}
+.tool-row .tname{font-family:ui-monospace,Consolas,monospace;font-size:12px;text-align:left}
+.tool-row .tdesc{color:var(--muted);font-size:11px;margin-left:auto;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.detail-panel{border:1px solid var(--border);border-radius:8px;padding:12px;background:#0d1117;overflow:auto;max-height:360px}
+.detail-panel h3{margin:0 0 8px;font-size:14px}.detail-panel .empty{color:var(--muted);font-size:12px}
+.settings-actions{position:fixed;right:20px;bottom:40px;display:flex;gap:8px;z-index:50}
+.settings-actions button{min-width:100px}
+.hr{border:0;border-top:1px solid var(--border);margin:16px 0}
+.reset-block h3{margin:0 0 8px;font-size:14px}
+.reset-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)}
+.reset-item span{flex:1;text-align:left}
+.toast{position:fixed;bottom:48px;right:24px;background:#238636;color:#fff;padding:10px 16px;border-radius:8px;box-shadow:0 4px 16px #0008;opacity:0;transform:translateY(8px);transition:.2s;z-index:100;pointer-events:none}
+.toast.show{opacity:1;transform:none}.toast.err{background:#da3633}
+.modal-bg{position:fixed;inset:0;background:#000a;z-index:300;display:none;align-items:center;justify-content:center}
+.modal-bg.on{display:flex}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:420px;width:90%}
+.modal h3{margin:0 0 10px}
+.modal .btn-row{margin-top:16px;display:flex;flex-direction:column;gap:8px}
+
+.ctx{position:fixed;z-index:200;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:180px;box-shadow:0 8px 24px #000a}
+.ctx button{display:block;width:100%;text-align:left;background:transparent;border:0;padding:8px 12px;border-radius:4px;font-weight:500}
+.ctx button:hover{background:var(--tab)}
+.tree::-webkit-scrollbar,.msgs::-webkit-scrollbar,#editor::-webkit-scrollbar,#prompt::-webkit-scrollbar,.tools-list::-webkit-scrollbar,.line-nums::-webkit-scrollbar{width:10px;height:10px}
+.tree::-webkit-scrollbar-thumb,.msgs::-webkit-scrollbar-thumb,#editor::-webkit-scrollbar-thumb,#prompt::-webkit-scrollbar-thumb,.tools-list::-webkit-scrollbar-thumb{background:#484f58;border-radius:5px;border:2px solid transparent;background-clip:padding-box}
+.tree::-webkit-scrollbar-thumb:hover,.msgs::-webkit-scrollbar-thumb:hover,#editor::-webkit-scrollbar-thumb:hover,#prompt::-webkit-scrollbar-thumb:hover,.tools-list::-webkit-scrollbar-thumb:hover{background:#6e7681;background-clip:padding-box}
+#editor{cursor:text}
+/* overlay to force default cursor on scrollbar track area is limited in pure CSS;
+   we handle editor scrollbar via JS hit-test */
+
+
+/* modern soft UI */
+* { box-sizing: border-box; }
+button, .icon-btn, .tab, .chat-item, .tree-item, input, select, textarea, .tools-list .item, .side-nav button {
+  transition: background .3s ease-in-out, color .3s ease-in-out, opacity .3s ease-in-out, border-color .3s ease-in-out, transform .3s ease-in-out, box-shadow .3s ease-in-out;
+}
+.icon-btn {
+  border: none !important;
+  background: transparent;
+  border-radius: 10px;
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.icon-btn:hover { background: var(--hover); }
+.icon-btn.on { background: #1f6feb33; color: var(--accent); }
+.icon-btn.active-settings { background: #1f6feb55; color: #fff; }
+button {
+  border: none !important;
+  border-radius: 10px;
+  background: #21262d;
+  color: var(--text);
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button:hover { background: var(--hover); }
+button.save-active {
+  background: var(--accent);
+  color: #fff;
+  opacity: 1;
+}
+button.save-active:disabled {
+  background: var(--accent);
+  color: #fff;
+  opacity: .35;
+  cursor: default;
+}
+button.cancel-active {
+  background: #30363d;
+  color: var(--text);
+  opacity: 1;
+}
+button.cancel-active:disabled {
+  background: #30363d;
+  color: var(--text);
+  opacity: .35;
+  cursor: default;
+}
+button:disabled { opacity: .35; cursor: default; }
+
+/* custom circle checkbox */
+input[type=checkbox].soft-check {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  border-radius: 50%;
+  border: 2px solid #6e7681;
+  background: #21262d;
+  cursor: pointer;
+  margin: 0;
+  flex-shrink: 0;
+  padding: 0;
+  vertical-align: middle;
+  transition: background .25s ease-in-out, border-color .25s ease-in-out;
+  box-sizing: border-box;
+}
+input[type=checkbox].soft-check:checked {
+  background: #2f81f7;
+  border-color: #2f81f7;
+}
+input[type=checkbox].soft-check:checked::after { content: none; display: none; }
+
+.field-row-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+  margin: 8px 0;
+}
+.field-row-check span { flex: 1; }
+
+/* side panels slide */
+.explorer, .chat-panel {
+  transition: width .3s ease-in-out, min-width .3s ease-in-out, opacity .3s ease-in-out, padding .3s ease-in-out, border-width .3s ease-in-out;
+  overflow: hidden;
+}
+.explorer.collapsed, .chat-panel.collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  opacity: 0;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-width: 0 !important;
+  pointer-events: none;
+}
+
+.tab { border: none; border-radius: 8px 8px 0 0; }
+.chat-item, .tree-item, .tools-list .item { border: none; border-radius: 8px; }
+.side-nav button { border: none; border-radius: 8px; text-align: left; }
+.side-nav button.active { background: #1f6feb33; color: var(--accent); }
+.panel { border-radius: 12px; }
+input, select, textarea {
+  border: 1px solid transparent;
+  background: #0d1117;
+  border-radius: 8px;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+
+/* all settings checkboxes as soft circles */
+#view-settings input[type=checkbox] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  min-height: 18px !important;
+  border-radius: 50% !important;
+  border: 2px solid #6e7681 !important;
+  background: #21262d !important;
+  cursor: pointer;
+  margin: 0;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 0;
+  vertical-align: middle;
+  transition: background .25s ease-in-out, border-color .25s ease-in-out;
+}
+#view-settings input[type=checkbox]:checked {
+  background: #2f81f7 !important;
+  border-color: #2f81f7 !important;
+}
+#view-settings input[type=checkbox]:checked::after { content: none !important; }
+.settings-actions button {
+  min-width: 110px;
+  transition: background .3s ease-in-out, opacity .3s ease-in-out, color .3s ease-in-out;
+  border: none !important;
+  border-radius: 10px;
+  background: #30363d;
+  color: #e6edf3;
+}
+.settings-actions button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+.settings-actions button.save-active:not(:disabled) {
+  background: #238636 !important;
+  color: #fff !important;
+  opacity: 1;
+}
+.settings-actions button.cancel-active:not(:disabled) {
+  background: #da3633 !important;
+  color: #fff !important;
+  opacity: 1;
+}
+#view-settings input[type=text],
+#view-settings input[type=number],
+#view-settings input[type=password],
+#view-settings select,
+#view-settings textarea {
+  background: #161b22 !important;
+  border: 1px solid #3d444d !important;
+  border-radius: 8px;
+}
+#view-settings input::placeholder,
+#view-settings textarea::placeholder {
+  color: #6e7681;
+  opacity: 1;
+}
+
+
+.msg.bot { line-height: 1.45; }
+.msg.bot p { margin: 0 0 .6em; }
+.msg.bot pre.md-code { background:#0d1117; padding:10px; border-radius:8px; overflow:auto; }
+.msg.bot code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.msg.bot a { color: var(--accent); }
+
+#explorer, #chat-panel { will-change: width; }
+body.resizing-panels #explorer,
+body.resizing-panels #chat-panel {
+  transition: none !important;
+}
+#chat-panel {
+  display: flex;
+  flex-direction: column;
+}
+#chat-panel > h3,
+#chat-panel > .chat-hist,
+#chat-panel > .msgs,
+#chat-panel > .status-bar,
+#chat-panel > .composer {
+  min-width: var(--panel-w, 360px);
+  width: var(--panel-w, 360px);
+  max-width: none;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+#chat-panel > .msgs,
+#chat-panel > .chat-hist {
+  flex: 1 1 auto;
+  flex-shrink: 1;
+  overflow: auto;
+}
+#explorer > h3,
+#explorer > .tree {
+  min-width: var(--panel-w, 280px);
+  width: var(--panel-w, 280px);
+  box-sizing: border-box;
+}
+/* soft radio (same look as soft-check) */
+input[type=radio].soft-check {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  min-height: 18px !important;
+  border-radius: 50% !important;
+  border: 2px solid #6e7681 !important;
+  background: #21262d !important;
+  cursor: pointer;
+  margin: 0;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 0;
+  vertical-align: middle;
+  transition: background .25s ease-in-out, border-color .25s ease-in-out;
+}
+input[type=radio].soft-check:checked {
+  background: #2f81f7 !important;
+  border-color: #2f81f7 !important;
+}
+.radio-group { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+
+
+.chat-hist { flex: 0 0 auto !important; max-height: none !important; overflow: visible !important; }
+.msg.bot.assistant, .msg.assistant { background:#21262d; border-radius:10px; padding:10px 12px; max-width:95%; }
+.md-table { border-collapse:collapse; width:100%; margin:8px 0; font-size:12px; }
+.md-table th,.md-table td { border:1px solid var(--border); padding:4px 8px; text-align:left; }
+.md-table th { background:#161b22; }
+
+.msg.assistant.completed, .msg.bot.completed {
+  border: 1px solid #238636 !important;
+  box-shadow: 0 0 0 1px rgba(35,134,54,.35);
+}
+.md-table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 12px; }
+.md-table th, .md-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.md-table th { background: #161b22; color: #e6edf3; }
+.msg.bot h3, .msg.bot h4 { margin: .6em 0 .3em; font-size: 13px; color: #e6edf3; }
+
+.settings-layout { display: flex; align-items: stretch; height: calc(100vh - 52px); overflow: hidden; }
+.settings-layout > nav {
+  flex: 0 0 200px; min-width: 180px; max-width: 220px;
+  height: 100%; overflow-y: auto; overflow-x: hidden;
+  border-right: 1px solid var(--border);
+  padding: 12px 8px;
+  position: relative;
+}
+.settings-layout .settings-main {
+  flex: 1; min-width: 0; height: 100%;
+  overflow-y: auto; overflow-x: auto;
+  padding: 16px 20px 88px;
+}
+* { scrollbar-width: thin; scrollbar-color: #484f58 transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: #484f58; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: #6e7681; background-clip: padding-box; }
+*::-webkit-scrollbar-corner { background: transparent; }
+.msg.assistant.completed, .msg.bot.completed {
+  border: 1.5px solid #3fb950 !important;
+  box-shadow: 0 0 0 1px rgba(63,185,80,.25);
+}
+.msg.bot ul, .msg.bot ol { margin: 0.4em 0 0.4em 1.2em; padding: 0; }
+.msg.bot li { margin: 0.15em 0; }
+.msg.bot hr { border: none; border-top: 1px solid var(--border); margin: 0.8em 0; }
+
+</style></head><body>
+<div class="topbar">
+  <button class="brand" id="nav-logo" title="Workspace">Agent Platform</button>
+  <div class="top-center" id="top-workspace">./workspace</div>
+  <div class="top-actions">
+    <span class="panel-toggles" style="display:inline-flex;gap:6px">
+      <button class="icon-btn on" id="btn-toggle-explorer" title="Explorer">☰</button>
+      <button class="icon-btn on" id="btn-toggle-chat" title="Chat">💬</button>
+    </span>
+    <button class="icon-btn" id="nav-settings" title="Settings">⚙</button>
+  </div>
+</div>
+<div id="main-area">
+<div id="view-main">
+  <aside class="panel" id="explorer">
+    <h3><span class="grow">Explorer</span><button class="ghost" id="btn-refresh-tree" style="padding:2px 6px">↻</button></h3>
+    <div class="tree" id="tree"></div>
+  </aside>
+  <div class="resizer" id="resizer-left" data-side="left"></div>
+  <section id="editor-panel">
+    <div class="tabs" id="tabs"></div>
+    <div class="editor-toolbar">
+      <button class="ghost" id="btn-undo" title="Ctrl+Z" disabled>Undo</button>
+      <button class="ghost" id="btn-redo" title="Ctrl+Y" disabled>Redo</button>
+      <span id="open-path" style="color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis"></span>
+      <button class="ghost" id="btn-save" disabled>Save</button>
+      <button class="ghost" id="btn-close-tab" disabled>Close</button>
+    </div>
+    <div class="code-wrap">
+      <div class="line-nums" id="line-nums"></div>
+      <textarea id="editor" spellcheck="false" placeholder="Open a file…" disabled></textarea>
+    </div>
+  </section>
+  <div class="resizer" id="resizer-right" data-side="right"></div>
+  <aside class="panel" id="chat-panel">
+    <h3><span class="grow">Chat</span><button class="ghost" id="btn-new-chat" style="padding:2px 6px">+ New</button></h3>
+    <div class="chat-hist" id="chat-hist"></div>
+    <div class="msgs" id="msgs"></div>
+    <div class="status-bar"><span class="spin" id="agent-spin"></span><span id="agent-status">Готов</span></div>
+    <div class="composer">
+      <div class="ta-wrap"><textarea id="prompt" rows="1" placeholder="Сообщение агенту…"></textarea></div>
+      <button id="btn-action" disabled>Send</button>
+    </div>
+  </aside>
+</div>
+<div id="view-settings">
+  <div class="settings-layout">
+    <nav>
+      <div class="stab active" data-tab="agent">Агент</div>
+      <div class="stab" data-tab="api">API и модель</div>
+      <div class="stab" data-tab="prompt">Системный промпт</div>
+      <div class="stab" data-tab="chat">Чат</div>
+      <div class="stab" data-tab="tools">Инструменты</div>
+      <div class="stab" data-tab="plugins">Плагины</div>
+      <div class="stab" data-tab="reset">Сброс настроек</div>
+    </nav>
+    <div class="settings-main">
+      <div class="scard tabp" id="tab-agent">
+        <h2>Настройки агента</h2>
+        <div class="field"><label class="lbl">Workspace</label>
+          <div class="row">
+            <input id="s-workspace" placeholder="./workspace" style="flex:1"/>
+            <button class="ghost" type="button" id="btn-pick-ws">Обзор…</button>
+          </div>
+          <div class="hint">Путь можно ввести вручную или выбрать папку</div>
+        </div>
+        <div class="field"><label class="lbl">Max iterations</label>
+          <input type="number" id="s-max-iter" min="1" placeholder="20 (по умолчанию)"/>
+          <div class="hint">Пустое = значение по умолчанию (20)</div>
+        </div>
+        <div class="field"><label class="lbl">Таймаут ответа модели</label>
+          <div class="row">
+            <input type="number" id="s-timeout" min="1" style="flex:1" placeholder="120"/>
+            <select id="s-timeout-unit" style="width:110px">
+              <option value="s">секунды</option>
+              <option value="m">минуты</option>
+              <option value="h">часы</option>
+            </select>
+          </div>
+          <div class="hint">Максимальное ожидание ответа от модели на один запрос</div>
+        </div>
+        <div class="field"><label class="lbl">Undo history size</label>
+          <input type="number" id="s-undo-size" min="10" max="1000" value="100"/>
+          <div class="hint">Сколько действий хранится для Undo (правки / открытие / закрытие файлов)</div>
+        </div>
+      </div>
+      <div class="scard tabp" id="tab-api" style="display:none">
+        <h2>API и модель</h2>
+        <div class="field"><label class="lbl">Провайдер</label><select id="s-provider"><option value="lm_studio">lm_studio</option><option value="mock">mock</option></select></div>
+        <div class="field"><label class="lbl">Base URL</label><input id="s-base-url" placeholder="http://127.0.0.1:1234"/></div>
+        <div class="field"><label class="lbl">API token</label><input id="s-api-token" placeholder="API KEY (необязательно)" type="password"/></div>
+        <div class="field"><label class="lbl">Модель</label><div class="row"><select id="s-model" style="flex:1"></select><button class="ghost" id="btn-refresh-models">Обновить</button></div></div>
+        <div class="field"><label class="lbl">Temperature</label><input type="number" id="s-api-temp" step="0.05"/></div>
+        <div class="field"><label class="lbl">Max tokens</label>
+          <input type="number" id="s-api-max-tokens" min="1" placeholder="авто (максимум модели)"/>
+          <div class="hint">Пустое = максимум модели</div>
+        </div>
+      </div>
+      <div class="scard tabp" id="tab-prompt" style="display:none">
+        <h2>Системный промпт</h2>
+        <div class="field"><label class="lbl">System prompt</label>
+          <textarea id="s-system" rows="10" style="resize:none;width:100%;min-height:160px"></textarea>
+        </div>
+        <div class="field" style="text-align:left">
+          <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="s-include-tools" class="soft-check" style="width:auto;margin:0"/>
+            <span>Каталог инструментов в контекст</span>
+          </label>
+          <div class="hint">Если включено — список tool schemas добавляется к system prompt при запуске</div>
+        </div>
+      </div>
+      <div class="scard tabp" id="tab-chat" style="display:none">
+        <h2>Настройки чата</h2>
+        <div class="field" style="text-align:left">
+          <label class="field-row-check"><input type="checkbox" id="s-chat-streaming" class="soft-check" checked/><span>Стриминг ответа</span></label>
+          <div class="hint">Как в benchmark: /v1/chat/completions stream (reasoning + content по мере генерации)</div>
+        </div>
+        <div class="field" style="text-align:left">
+          <label class="field-row-check"><input type="checkbox" id="s-chat-reasoning" class="soft-check" checked/><span>Показывать reasoning</span></label>
+        </div>
+        <div class="field" style="text-align:left">
+          <label class="field-row-check"><input type="checkbox" id="s-chat-empty" class="soft-check" checked/><span>Статус при пустом ответе</span></label>
+        </div>
+        <div class="field" style="text-align:left">
+          <label class="field-row-check"><input type="checkbox" id="s-chat-debug" class="soft-check"/><span>Режим разработчика</span></label>
+          <div class="hint">Показывать аргументы tool calls и служебные детали в чате</div>
+        </div>
+        <div class="field" style="text-align:left">
+          <div class="lbl">Отправка сообщения</div>
+          <div class="radio-group">
+            <label class="field-row-check">
+              <input type="radio" name="send-key" id="s-send-enter" class="soft-check" value="enter" checked/>
+              <span>Enter — отправить, Shift+Enter — новая строка</span>
+            </label>
+            <label class="field-row-check">
+              <input type="radio" name="send-key" id="s-send-shift-enter" class="soft-check" value="shift_enter"/>
+              <span>Shift+Enter — отправить, Enter — новая строка</span>
+            </label>
+          </div>
+        </div>
+        <div class="field" style="text-align:left">
+          <label class="field-row-check"><input type="checkbox" id="s-chat-fileops" class="soft-check"/><span>Только имена файловых операций</span></label>
+          <div class="hint">В чате показывать create/edit/delete файлов кратко, без длинных summary</div>
+        </div>
+        <div class="field" style="text-align:left">
+          <label class="field-row-check"><input type="checkbox" id="s-chat-agg" class="soft-check" checked/><span>Объединять одинаковые tool-вызовы</span></label>
+          <div class="hint">Несколько fetch_url / web_search / search_code подряд → «просмотрено N ссылок»</div>
+        </div>
+        <div class="field" style="text-align:left">
+          <label class="lbl">Язык ответа</label>
+          <select id="s-chat-lang" style="width:100%">
+            <option value="en">English</option>
+            <option value="ar">Arabic</option>
+            <option value="hy">Armenian</option>
+            <option value="az">Azerbaijani</option>
+            <option value="be">Belarusian</option>
+            <option value="bn">Bengali</option>
+            <option value="bg">Bulgarian</option>
+            <option value="zh">Chinese (Simplified)</option>
+            <option value="zh-TW">Chinese (Traditional)</option>
+            <option value="hr">Croatian</option>
+            <option value="cs">Czech</option>
+            <option value="da">Danish</option>
+            <option value="nl">Dutch</option>
+            <option value="et">Estonian</option>
+            <option value="fi">Finnish</option>
+            <option value="fr">French</option>
+            <option value="ka">Georgian</option>
+            <option value="de">German</option>
+            <option value="el">Greek</option>
+            <option value="he">Hebrew</option>
+            <option value="hi">Hindi</option>
+            <option value="hu">Hungarian</option>
+            <option value="id">Indonesian</option>
+            <option value="it">Italian</option>
+            <option value="ja">Japanese</option>
+            <option value="kk">Kazakh</option>
+            <option value="ko">Korean</option>
+            <option value="lv">Latvian</option>
+            <option value="lt">Lithuanian</option>
+            <option value="ms">Malay</option>
+            <option value="no">Norwegian</option>
+            <option value="fa">Persian</option>
+            <option value="pl">Polish</option>
+            <option value="pt">Portuguese</option>
+            <option value="ro">Romanian</option>
+            <option value="ru">Russian</option>
+            <option value="sr">Serbian</option>
+            <option value="sk">Slovak</option>
+            <option value="es">Spanish</option>
+            <option value="sv">Swedish</option>
+            <option value="th">Thai</option>
+            <option value="tr">Turkish</option>
+            <option value="uk">Ukrainian</option>
+            <option value="uz">Uzbek</option>
+            <option value="vi">Vietnamese</option>
+            <option value="auto">Auto (match the user)</option>
+          </select>
+          <div class="hint">Вшивается в system prompt: отвечать строго на выбранном языке</div>
+        </div>
+      </div>
+<div class="scard tabp" id="tab-tools" style="display:none">
+        <h2>Инструменты</h2>
+        <div class="cat-row" id="s-cats"></div>
+        <div class="tools-split">
+          <div class="tools-list" id="s-tools-list"></div>
+          <div class="detail-panel" id="s-tool-detail"><div class="empty">Выберите инструмент</div></div>
+        </div>
+      </div>
+      <div class="scard tabp" id="tab-plugins" style="display:none">
+        <h2>Плагины</h2>
+        <div class="tools-split">
+          <div class="tools-list" id="s-plugins-list"></div>
+          <div class="detail-panel" id="s-plugin-detail"><div class="empty">Выберите плагин</div></div>
+        </div>
+      </div>
+      <div class="scard tabp" id="tab-reset" style="display:none">
+        <h2>Сброс настроек</h2>
+        <div class="reset-block">
+          <button class="factory" id="btn-factory-reset">Сбросить всё к заводским</button>
+          <div class="hint">Потребуется двойное подтверждение</div>
+        </div>
+        <hr class="hr"/>
+        <div class="reset-block">
+          <h3>Инструменты</h3>
+          <div id="reset-tools-list"></div>
+        </div>
+        <hr class="hr"/>
+        <div class="reset-block">
+          <h3>Плагины</h3>
+          <div id="reset-plugins-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="settings-actions">
+    <button id="btn-settings-save" disabled class="save-active">Сохранить</button>
+    <button id="btn-settings-cancel" disabled class="cancel-active">Отменить</button>
+  </div>
+</div>
+</div>
+<div class="footer" id="app-footer">
+  <span class="dot idle" id="footer-dot"></span>
+  <span id="footer-provider">provider: —</span>
+  <span id="footer-tps">0 tok/s</span>
+  <span id="footer-extra"></span>
+</div>
+<div class="modal-bg" id="model-modal">
+  <div class="modal">
+    <h3>Другая модель уже загружена</h3>
+    <p id="model-modal-text" style="color:var(--muted);line-height:1.4"></p>
+    <div class="btn-row">
+      <button id="mm-alongside">Загрузить рядом</button>
+      <button id="mm-replace" class="save-active">Выгрузить все и загрузить</button>
+      <button id="mm-cancel" class="cancel-active">Отменить</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="ctx" id="ctx" style="display:none"></div>
+<input type="file" id="folder-picker" webkitdirectory directory style="display:none"/>
+<script src="/static/app.js"></script>
+</body></html>

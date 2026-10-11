@@ -1,0 +1,54 @@
+[application]
+name = "AI Agent Platform"
+version = "0.1.0"
+workspace_root = "./workspace"
+auto_install_deps = true
+
+[logging]
+level = "INFO"
+log_file = "./logs/platform.jsonl"
+enable_tracing = true
+
+[runtime]
+max_iterations = 15
+max_tool_calls = 20
+timeout_seconds = 600
+retry_limit = 3
+
+[models]
+default_provider = "lm_studio"
+default_model = ""
+temperature = 0.7
+max_tokens = 4096
+
+[models.providers.lm_studio]
+base_url = "http://localhost:1234"
+
+[models.providers.mock]
+enabled = true
+
+[security]
+require_approval_for_high_risk = true
+allowed_terminal_commands = []
+disallowed_terminal_commands = ["rm -rf /", "format C:", "mkfs", ":(){:|:&};:"]
+
+[tools]
+web_search_enabled = true
+fetch_url_enabled = true
+terminal_enabled = true
+fs_enabled = true
+
+[mcp]
+enabled = false
+servers = []
+published_tools = []
+
+[storage]
+type = "json"
+sessions_dir = "./sessions"
+state_dir = "./state"
+
+[ui]
+enabled = true
+host = "127.0.0.1"
+port = 8765

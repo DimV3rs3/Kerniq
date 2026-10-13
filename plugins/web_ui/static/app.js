@@ -3,24 +3,86 @@ const UI_I18N = {
   en: {
     explorer: 'Explorer', chat: 'Chat', newChat: 'New', settings: 'Settings',
     save: 'Save', cancel: 'Cancel', send: 'Send', stop: 'Stop',
-    openFile: 'Open a file…', ready: 'Ready', done: 'Done',
+    openFile: 'Open a file…', ready: 'Готово', done: 'Done', error: 'Error',
+    stopping: 'Stopping…', stopped: 'Stopped',
+    processing: 'Processing prompt…', thinking: 'Thinking…', generating: 'Generating…',
     aggHint: 'Merge consecutive collapsible tool calls into one chat block',
     aggLabel: 'Merge tool calls when possible',
     attach: 'Attach', attachSearch: 'Search project files…',
     createFile: 'New file', createDir: 'New folder', reveal: 'Show in explorer',
     delete: 'Delete', rename: 'Rename', promptPh: 'Message agent…',
     serverMode: 'Server mode',
+    chatSettings: 'Chat settings', agentSettings: 'Agent settings',
+    apiModel: 'API & model', systemPrompt: 'System prompt',
+    tools: 'Tools', plugins: 'Plugins', resetSettings: 'Reset settings',
+    streamResponses: 'Stream responses', showReasoning: 'Show reasoning',
+    emptyStatus: 'Status on empty response', developerMode: 'Developer mode',
+    sendMessage: 'Send message',
+    sendEnter: 'Enter — send, Shift+Enter — new line',
+    sendShift: 'Shift+Enter — send, Enter — new line',
+    fileOpsOnly: 'File ops: names only', responseLang: 'Response language',
+    baseUrl: 'Base URL', workspace: 'Workspace', undo: 'Undo', redo: 'Redo',
+    close: 'Close', refresh: 'Refresh', provider: 'provider', model: 'model',
+    notLoaded: 'not loaded', loaded: 'loaded', offline: 'offline',
+    available: 'available', ctx: 'ctx',
+    tabAgent: 'Agent', tabApi: 'API & model', tabPrompt: 'System prompt',
+    tabChat: 'Chat', tabTools: 'Tools', tabPlugins: 'Plugins', tabReset: 'Reset settings',
+    workspace: 'Workspace', browse: 'Browse…', maxIterations: 'Max iterations',
+    modelTimeout: 'Model response timeout', undoSize: 'Undo history size',
+    provider: 'provider', model: 'model', temperature: 'Temperature',
+    maxTokens: 'Max tokens', apiToken: 'API token', refresh: 'Refresh',
+    includeTools: 'Include tool catalog in context',
+    factoryReset: 'Reset everything to factory defaults',
+    requiresDouble: 'Requires double confirmation',
+    toolsHeading: 'Tools',
+    pluginsHeading: 'Plugins',
+    stopUi: 'Stop UI',
+
+    selectTool: 'Select a tool', selectPlugin: 'Select a plugin',
+    noMatches: 'No matches', typeToSearch: 'Type to search project files',
+    seconds: 'seconds', minutes: 'minutes', hours: 'hours',
   },
   ru: {
     explorer: 'Проводник', chat: 'Чат', newChat: 'Новый', settings: 'Настройки',
-    save: 'Сохранить', cancel: 'Отменить', send: 'Отправить', stop: 'Стоп',
-    openFile: 'Откройте файл…', ready: 'Готов', done: 'Готово',
-    aggHint: 'Объединять подряд идущие вызовы инструментов в один блок в чате',
-    aggLabel: 'Объединять вызовы инструментов, когда возможно',
+    save: 'Сохранить', cancel: 'Отмена', send: 'Отправить', stop: 'Стоп',
+    openFile: 'Откройте файл…', ready: 'Готово', done: 'Готово', error: 'Ошибка',
+    stopping: 'Остановка…', stopped: 'Остановлено',
+    processing: 'Обработка промпта…', thinking: 'Обдумывание…', generating: 'Генерация…',
+    aggHint: 'Объединять подряд идущие вызовы tools в один блок',
+    aggLabel: 'Объединять вызовы инструментов',
     attach: 'Вложение', attachSearch: 'Поиск файлов проекта…',
     createFile: 'Новый файл', createDir: 'Новая папка', reveal: 'Показать в проводнике',
     delete: 'Удалить', rename: 'Переименовать', promptPh: 'Сообщение агенту…',
     serverMode: 'Серверный режим',
+    chatSettings: 'Настройки чата', agentSettings: 'Настройки агента',
+    apiModel: 'API и модель', systemPrompt: 'Системный промпт',
+    tools: 'Инструменты', plugins: 'Плагины', resetSettings: 'Сброс настроек',
+    streamResponses: 'Поток ответа', showReasoning: 'Показывать рассуждения',
+    emptyStatus: 'Статус при пустом ответе', developerMode: 'Режим разработчика',
+    sendMessage: 'Отправка сообщения',
+    sendEnter: 'Enter — отправить, Shift+Enter — новая строка',
+    sendShift: 'Shift+Enter — отправить, Enter — новая строка',
+    fileOpsOnly: 'Только имена файловых операций', responseLang: 'Язык ответа',
+    baseUrl: 'Base URL', workspace: 'Workspace', undo: 'Отменить', redo: 'Повторить',
+    close: 'Закрыть', refresh: 'Обновить', provider: 'Провайдер', model: 'модель',
+    notLoaded: 'не загружена', loaded: 'загружена', offline: 'офлайн',
+    available: 'доступно', ctx: 'контекст',
+    tabAgent: 'Агент', tabApi: 'API и модель', tabPrompt: 'Системный промпт',
+    tabChat: 'Чат', tabTools: 'Инструменты', tabPlugins: 'Плагины', tabReset: 'Сброс',
+    workspace: 'Workspace', browse: 'Обзор…', maxIterations: 'Макс. итераций',
+    modelTimeout: 'Таймаут ответа модели', undoSize: 'Размер истории отмены',
+    provider: 'Провайдер', model: 'модель', temperature: 'Temperature',
+    maxTokens: 'Макс. токенов', apiToken: 'API token', refresh: 'Обновить',
+    includeTools: 'Добавлять каталог tools в контекст',
+    factoryReset: 'Сбросить всё к заводским настройкам',
+    requiresDouble: 'Требуется двойное подтверждение',
+    toolsHeading: 'Инструменты',
+    pluginsHeading: 'Плагины',
+    stopUi: 'Выключить UI',
+
+    selectTool: 'Выберите инструмент', selectPlugin: 'Выберите плагин',
+    noMatches: 'Нет совпадений', typeToSearch: 'Введите запрос для поиска файлов',
+    seconds: 'сек', minutes: 'мин', hours: 'ч',
   },
 };
 let uiLocale = 'en';
@@ -29,8 +91,27 @@ function t(key) {
 }
 function applyUiLocale(locale) {
   uiLocale = (locale === 'ru') ? 'ru' : 'en';
-  const setTxt = (id, key) => { const el = document.getElementById(id); if (el) el.textContent = t(key); };
-  // soft labels
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const k = el.getAttribute('data-i18n');
+    if (k) el.textContent = t(k);
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const k = el.getAttribute('data-i18n-title');
+    if (k) el.title = t(k);
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const k = el.getAttribute('data-i18n-placeholder');
+    if (k) el.placeholder = t(k);
+  });
+  // settings tabs
+  const tabMap = {
+    agent: 'tabAgent', api: 'tabApi', prompt: 'tabPrompt', chat: 'tabChat',
+    tools: 'tabTools', plugins: 'tabPlugins', reset: 'tabReset',
+  };
+  document.querySelectorAll('.stab').forEach(el => {
+    const k = tabMap[el.dataset.tab];
+    if (k) el.textContent = t(k);
+  });
   const ex = document.querySelector('#explorer h3 .grow');
   if (ex) ex.textContent = t('explorer');
   const ch = document.querySelector('#chat-panel h3 .grow');
@@ -41,12 +122,57 @@ function applyUiLocale(locale) {
   if (pr) pr.placeholder = t('promptPh');
   const ed = document.getElementById('editor');
   if (ed) ed.placeholder = t('openFile');
-  const agg = document.querySelector('label[for="s-chat-agg"], #s-chat-agg');
-  const aggHint = document.querySelector('#s-chat-agg')?.closest('.field')?.querySelector('.hint');
-  if (aggHint) aggHint.textContent = t('aggHint');
-  const aggSpan = document.querySelector('#s-chat-agg')?.parentElement?.querySelector('span');
-  if (aggSpan) aggSpan.textContent = t('aggLabel');
+  const save = document.getElementById('btn-settings-save');
+  if (save) save.textContent = t('save');
+  const cancel = document.getElementById('btn-settings-cancel');
+  if (cancel) cancel.textContent = t('cancel');
+  const und = document.getElementById('btn-undo');
+  if (und) und.textContent = t('undo');
+  const red = document.getElementById('btn-redo');
+  if (red) red.textContent = t('redo');
+  const clo = document.getElementById('btn-close-tab');
+  if (clo) clo.textContent = t('close');
+  const sav = document.getElementById('btn-save');
+  if (sav) sav.textContent = t('save');
+  const br = document.getElementById('btn-pick-ws');
+  if (br) br.textContent = t('browse');
+  const rm = document.getElementById('btn-refresh-models');
+  if (rm) rm.textContent = t('refresh');
+  const fr = document.getElementById('btn-factory-reset');
+  if (fr) fr.textContent = t('factoryReset');
+  const su = document.getElementById('btn-stop-ui');
+  if (su) su.textContent = '⏹ ' + t('stopUi');
+  const mmc = document.getElementById('mm-cancel');
+  if (mmc) mmc.textContent = t('cancel');
+  const st = document.getElementById('agent-status');
+  if (st && !running) st.textContent = t('ready');
+  const unit = document.getElementById('s-timeout-unit');
+  if (unit) {
+    [...unit.options].forEach(o => {
+      if (o.value === 's') o.textContent = t('seconds');
+      if (o.value === 'm') o.textContent = t('minutes');
+      if (o.value === 'h') o.textContent = t('hours');
+    });
+  }
+  // Labels: only elements with data-i18n (no DOM surgery that duplicates text)
+  document.querySelectorAll('.field > .lbl').forEach(lbl => {
+    // If label has leftover duplicate text nodes from older builds, normalize once
+    const tips = [...lbl.querySelectorAll('.info-tip')];
+    const i18nSpans = [...lbl.querySelectorAll('[data-i18n]')];
+    if (i18nSpans.length) {
+      const key = i18nSpans[0].getAttribute('data-i18n');
+      lbl.innerHTML = '';
+      const span = document.createElement('span');
+      span.setAttribute('data-i18n', key);
+      span.textContent = t(key);
+      lbl.appendChild(span);
+      tips.forEach(tip => lbl.appendChild(tip));
+    }
+  });
   document.documentElement.lang = uiLocale;
+  updateActionBtn();
+  if (!running) setStatus(t('ready'), false);
+  setFooterContext(null, _modelContextLimit);
 }
 const LS_CHATS = 'kerniq_chats_v1';
 const LS_PANEL = 'kerniq_panels_v1';
@@ -56,7 +182,11 @@ let openTabs = [];
 let activeTab = null;
 let chats = [];
 let activeChatId = null;
+const MAX_CHATS = 3;
 let running = false;
+let currentRunId = null;
+let streamingEnabled = true;
+let generatingTokens = false;
 let treeData = [];
 let expanded = new Set(['']);
 let settingsDirty = false;
@@ -251,20 +381,108 @@ function toast(msg, err) {
   clearTimeout(toast._t);
   toast._t = setTimeout(() => { el.className = 'toast'; }, 2200);
 }
-function loadChats() {
-  try { chats = JSON.parse(localStorage.getItem(LS_CHATS) || '[]'); } catch { chats = []; }
-}
-function saveChats() { localStorage.setItem(LS_CHATS, JSON.stringify(chats)); }
 
-function setStatus(t, busy) {
-  document.getElementById('agent-status').textContent = t;
-  const sp = document.getElementById('agent-spin');
-  if (sp) {
-    if (busy === undefined) busy = !/^(Готов|готово|ошибка|остановка)/i.test(t || '');
-    sp.classList.toggle('on', !!busy);
+function setStatus(text, spinning) {
+  const st = document.getElementById('agent-status');
+  const spin = document.getElementById('agent-spin');
+  if (st) st.textContent = text == null ? '' : String(text);
+  if (spin) {
+    if (spinning) spin.classList.add('on');
+    else spin.classList.remove('on');
   }
-  setFooterState(busy ? 'work' : (t && /ошибка/i.test(t) ? 'err' : 'idle'));
+  // keep footer state in sync lightly
+  try {
+    if (spinning) setFooterState('run');
+    else if (String(text || '').toLowerCase().includes('error')) setFooterState('err');
+    else setFooterState('idle');
+  } catch (_) {}
 }
+function loadChats() {
+  try {
+    let raw = localStorage.getItem(LS_CHATS);
+    // migrate from older keys that saveChats accidentally used
+    if (!raw) raw = localStorage.getItem('kerniq_chats');
+    chats = JSON.parse(raw || '[]');
+    if (!Array.isArray(chats)) chats = [];
+    // normalize per-chat context fields
+    chats.forEach(c => {
+      if (c.prompt_tokens == null) c.prompt_tokens = null;
+      if (c.context_limit == null) c.context_limit = null;
+    });
+    if (chats.length > MAX_CHATS) chats = chats.slice(-MAX_CHATS);
+  } catch {
+    chats = [];
+  }
+}
+function saveChats() {
+  if (chats.length > MAX_CHATS) {
+    chats = chats.slice(-MAX_CHATS);
+    if (!chats.find(c => c.id === activeChatId)) {
+      activeChatId = chats.length ? chats[chats.length - 1].id : null;
+    }
+  }
+  try {
+    localStorage.setItem(LS_CHATS, JSON.stringify(chats));
+    // remove legacy key so deleted chats cannot resurrect
+    localStorage.removeItem('kerniq_chats');
+  } catch (_) {}
+}
+
+
+function fmtTokens(n) {
+  if (n == null || isNaN(n)) return '—';
+  n = Number(n);
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, '') + 'K';
+  return String(Math.round(n));
+}
+
+function estimateChatTokens() {
+  // Heuristic only when server usage is unknown.
+  // ~4 chars/token is the common Latin estimate (OpenAI tokenizer ≈ 4 chars/token on English).
+  // For Cyrillic/CJK use ~2 chars/token. Mixed: per-message.
+  const c = currentChat();
+  let charsLat = 0, charsCjk = 0;
+  const add = (s) => {
+    s = String(s || '');
+    for (const ch of s) {
+      const code = ch.codePointAt(0);
+      // CJK + Cyrillic denser tokens
+      if ((code >= 0x0400 && code <= 0x04FF) || (code >= 0x3040 && code <= 0x30FF) ||
+          (code >= 0x3400 && code <= 0x9FFF) || (code >= 0xAC00 && code <= 0xD7AF)) {
+        charsCjk += 1;
+      } else {
+        charsLat += 1;
+      }
+    }
+  };
+  if (c) {
+    for (const m of (c.messages || [])) {
+      add(m.content); add(m.text); add(m.summary);
+      if (m.args) add(JSON.stringify(m.args));
+      if (m.name) add(m.name);
+      // tool results stored in content for role tool
+    }
+  }
+  // System prompt + tool schemas also go into the real model request
+  try {
+    if (settings && settings.prompt && settings.prompt.system_prompt) add(settings.prompt.system_prompt);
+  } catch (_) {}
+  try {
+    // Approximate tool catalog: ~400 tokens base + names
+    if (settings && settings.prompt && settings.prompt.include_tool_catalog !== false) {
+      charsLat += 1600; // ~400 tokens of tool JSON schemas
+    }
+  } catch (_) {}
+  const est = Math.round(charsLat / 4 + charsCjk / 2);
+  return Math.max(0, est);
+}
+
+let _modelContextLimit = null; // tokens — loaded window when known
+let _lastPromptTokens = null; // from provider usage (real)
+let _lastCompletionTokens = null;
+let _toolsSchemaTokens = 400; // approx when tool catalog enabled
+
 
 function setFooterState(mode) {
   const dot = document.getElementById('footer-dot');
@@ -272,23 +490,123 @@ function setFooterState(mode) {
   dot.className = 'dot ' + (mode || 'idle');
 }
 function setFooterProvider(name, ok) {
-  document.getElementById('footer-provider').textContent = 'provider: ' + (name || '—');
+  const el = document.getElementById('footer-provider');
+  if (el) el.textContent = t('provider') + ': ' + (name || '—');
   if (ok === false) setFooterState('err');
   else if (!running) setFooterState('idle');
 }
-let tpsWindow = [];
-function setFooterTps(n) {
+
+function setFooterContext(used, limit) {
+  const el = document.getElementById('footer-ctx');
+  if (!el) return;
+  if (limit == null) limit = _modelContextLimit;
+  if (used == null) used = _lastPromptTokens;
+  // Sticky: do not clear a good value with null (stops 17K <-> — flicker)
+  if (used == null && el.dataset.lastUsed) used = Number(el.dataset.lastUsed);
+  if ((limit == null || !(limit > 0)) && el.dataset.lastLimit) limit = Number(el.dataset.lastLimit);
+  if (used != null && used >= 0) el.dataset.lastUsed = String(used);
+  if (limit != null && limit > 0) el.dataset.lastLimit = String(limit);
+  if (limit && limit > 0) {
+    if (used != null && used >= 0) {
+      const pct = Math.min(100, (used / limit) * 100);
+      const pctStr = pct >= 10 ? String(Math.round(pct)) : pct.toFixed(1);
+      el.textContent = t('ctx') + ': ' + fmtTokens(used) + '/' + fmtTokens(limit) + ' (' + pctStr + '%)';
+    } else {
+      el.textContent = t('ctx') + ': —/' + fmtTokens(limit);
+    }
+  } else if (used != null && used >= 0) {
+    el.textContent = t('ctx') + ': ' + fmtTokens(used) + '/—';
+  } else {
+    el.textContent = t('ctx') + ': —';
+  }
+}
+// Rolling tok/s: 4 one-second buckets (3 past + current). Only while streaming generation.
+let tpsBuckets = []; // [{sec: number, tokens: number}]
+let tpsTimer = null;
+let tokensThisSecond = 0;
+let currentSec = 0;
+
+function _estimateTokens(text) {
+  const s = String(text || '');
+  if (!s) return 0;
+  // rough: ~4 chars per token for latin, ~2 for denser scripts
+  return Math.max(1, Math.round(s.length / 4));
+}
+
+function _tpsTick() {
   const el = document.getElementById('footer-tps');
   if (!el) return;
+  el.style.display = '';
+  const sec = Math.floor(Date.now() / 1000);
+  if (sec !== currentSec) {
+    if (currentSec) tpsBuckets.push({ sec: currentSec, tokens: tokensThisSecond });
+    currentSec = sec;
+    tokensThisSecond = 0;
+  }
+  tpsBuckets = tpsBuckets.filter(b => sec - b.sec < 4);
+  const all = tpsBuckets.slice();
+  if (generatingTokens) all.push({ sec, tokens: tokensThisSecond });
+  const sum = all.reduce((a, b) => a + (b.tokens || 0), 0);
+  const avg = generatingTokens ? (sum / 4) : 0;
+  el.textContent = avg.toFixed(1) + ' tok/s';
+}
+
+function noteGeneratedText(text) {
+  if (!text) return;
+  generatingTokens = true;
+  const sec = Math.floor(Date.now() / 1000);
+  if (sec !== currentSec) {
+    if (currentSec) tpsBuckets.push({ sec: currentSec, tokens: tokensThisSecond });
+    currentSec = sec;
+    tokensThisSecond = 0;
+  }
+  tokensThisSecond += _estimateTokens(text);
+  _tpsTick();
+}
+
+function resetTps(hide) {
+  generatingTokens = false;
+  tokensThisSecond = 0;
+  currentSec = 0;
+  tpsBuckets = [];
+  const el = document.getElementById('footer-tps');
+  if (!el) return;
+  el.style.display = '';
+  el.textContent = '0.0 tok/s';
+}
+
+function startTpsTimer() {
+  if (tpsTimer) return;
+  tpsTimer = setInterval(_tpsTick, 1000);
+}
+function stopTpsTimer() {
+  if (tpsTimer) { clearInterval(tpsTimer); tpsTimer = null; }
+}
+
+function setFooterTps(n) {
+  // legacy single-shot: treat as instantaneous rate sample into current bucket
+  if (!streamingEnabled) return;
   if (n == null || n === 0) {
-    if (!running) el.textContent = '0.0 tok/s';
+    if (!generatingTokens) resetTps(false);
     return;
   }
-  const now = Date.now();
-  tpsWindow.push({ t: now, v: Number(n) });
-  tpsWindow = tpsWindow.filter(x => now - x.t < 5000);
-  const avg = tpsWindow.reduce((a, b) => a + b.v, 0) / tpsWindow.length;
-  el.textContent = avg.toFixed(1) + ' tok/s';
+  generatingTokens = true;
+  const sec = Math.floor(Date.now() / 1000);
+  if (sec !== currentSec) {
+    if (currentSec) tpsBuckets.push({ sec: currentSec, tokens: tokensThisSecond });
+    currentSec = sec;
+    tokensThisSecond = 0;
+  }
+  tokensThisSecond += Number(n);
+  _tpsTick();
+}
+
+function setFooterModelStatus(text, ok) {
+  const el = document.getElementById('footer-model');
+  if (!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('bad', ok === false);
+  el.classList.toggle('ok', ok === true);
 }
 
 function showView(n) {
@@ -560,7 +878,7 @@ function showCtx(ev, path, isDir, isRoot) {
   ctx.style.top = ev.clientY + 'px';
   const parent = isDir ? path : (path ? path.split('/').slice(0, -1).join('/') : '');
   let html = '';
-  if (!isRoot && !isDir) html += `<button data-a="open">${uiLocale==='ru'?'Открыть':'Open'}</button>`;
+  if (!isRoot && !isDir) html += `<button data-a="open">${'Open'}</button>`;
   html += `<button data-a="newfile">${t('createFile')}</button>`;
   html += `<button data-a="newdir">${t('createDir')}</button>`;
   html += `<button data-a="reveal">${t('reveal')}</button>`;
@@ -587,23 +905,23 @@ function showCtx(ev, path, isDir, isRoot) {
           if (parent) expanded.add(parent);
           await refreshTree();
           if (a === 'newfile') openFile(full);
-          toast(uiLocale==='ru'?'Создано':'Created');
+          toast('Created');
         }
       } else if (a === 'reveal') {
         const r = await api('/api/fs/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: path || '.' }) });
-        if (r.error) toast(r.error, true); else toast(uiLocale==='ru'?'Открыто':'Opened');
+        if (r.error) toast(r.error, true); else toast('Opened');
       } else if (a === 'rename') {
         const base = path.split('/').pop();
         const nn = prompt(t('rename'), base);
         if (!nn || nn === base) return;
         const r = await api('/api/fs/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, new_name: nn }) });
         if (r.error) toast(r.error, true);
-        else { toast(uiLocale==='ru'?'Переименовано':'Renamed'); await refreshTree(); }
+        else { toast('Renamed'); await refreshTree(); }
       } else if (a === 'delete') {
-        if (!confirm((uiLocale==='ru'?'Удалить ':'Delete ') + path + '?')) return;
+        if (!confirm('Delete ' + path + '?')) return;
         const r = await api('/api/fs/file?path=' + encodePath(path), { method: 'DELETE' });
         if (r.error) toast(r.error, true);
-        else { toast(uiLocale==='ru'?'Удалено':'Deleted'); openTabs = openTabs.filter(t => t.path !== path); if (activeTab === path) clearEditor(); await refreshTree(); renderTabs(); }
+        else { toast('Deleted'); openTabs = openTabs.filter(t => t.path !== path); if (activeTab === path) clearEditor(); await refreshTree(); renderTabs(); }
       }
     };
   });
@@ -659,7 +977,7 @@ function closeTab(path, force, skipUndo) {
   const t = openTabs.find(x => x.path === path);
   if (!t) return;
   if (t.dirty && !force) {
-    if (!confirm('Файл изменён. Закрыть без сохранения?')) return;
+    if (!confirm('File has changes. Close without saving?')) return;
   }
   if (!skipUndo) pushUndo({ type: 'close', path, content: t.content, dirty: t.dirty });
   openTabs = openTabs.filter(x => x.path !== path);
@@ -679,7 +997,7 @@ async function saveActive() {
     body: JSON.stringify({ path: t.path, content: t.content }),
   });
   if (r.error) toast(r.error, true);
-  else { t.dirty = false; document.getElementById('btn-save').disabled = true; renderTabs(); toast('Сохранено'); await refreshTree(); }
+  else { t.dirty = false; document.getElementById('btn-save').disabled = true; renderTabs(); toast(t('save')); await refreshTree(); }
 }
 
 let editTimer = null;
@@ -749,37 +1067,67 @@ function chatTitleFromPrompt(text) {
     if (out.length >= 2 && chars + w.length > 28) break;
     out.push(w); chars += w.length + 1;
   }
-  return out.join(' ') || 'Чат';
+  return out.join(' ') || 'Chat';
 }
 function renderChatList() {
   const el = document.getElementById('chat-hist');
-  el.innerHTML = '';
+  if (!el) return;
+  // Enforce max chats in memory
+  if (chats.length > MAX_CHATS) {
+    chats = chats.slice(-MAX_CHATS);
+    saveChats();
+  }
+  // Collapse strip when 0 or 1 chat
+  if (chats.length <= 1) {
+    el.classList.add('hidden-hist');
+    el.innerHTML = '';
+    return;
+  }
+  el.classList.remove('hidden-hist');
   const list = running
     ? chats.filter(c => c.id === activeChatId)
     : chats.slice().reverse();
+  el.innerHTML = '';
   list.forEach(c => {
     const d = document.createElement('div');
     d.className = 'h' + (c.id === activeChatId ? ' active' : '');
-    d.innerHTML = `<span class="title">${esc(c.title || 'Chat')}</span><span class="del">×</span>`;
-    d.querySelector('.title').onclick = () => { activeChatId = c.id; renderChatList(); renderMessages(); };
-    d.querySelector('.del').onclick = ev => {
-      ev.stopPropagation();
+    d.innerHTML = '<span class="title"></span><button class="x" title="×">×</button>';
+    d.querySelector('.title').textContent = c.title || 'Chat';
+    d.querySelector('.title').onclick = () => {
+      activeChatId = c.id;
+      applyChatContextFooter();
+      renderChatList(); renderMessages();
+    };
+    d.querySelector('.x').onclick = (e) => {
+      e.stopPropagation();
       chats = chats.filter(x => x.id !== c.id);
-      if (activeChatId === c.id) {
-        if (chats.length) activeChatId = chats[chats.length - 1].id;
-        else newChat(true);
-      }
-      saveChats(); renderChatList(); renderMessages();
+      if (activeChatId === c.id) activeChatId = chats.length ? chats[chats.length - 1].id : null;
+      saveChats(); applyChatContextFooter(); renderChatList(); renderMessages();
     };
     el.appendChild(d);
   });
 }
+
 function currentChat() { return chats.find(c => c.id === activeChatId); }
+function applyChatContextFooter() {
+  const ch = currentChat();
+  _lastPromptTokens = (ch && ch.prompt_tokens != null) ? ch.prompt_tokens : null;
+  const lim = (ch && ch.context_limit != null) ? ch.context_limit : _modelContextLimit;
+  // reset sticky dataset so we don't show previous chat's numbers
+  const el = document.getElementById('footer-ctx');
+  if (el) {
+    if (_lastPromptTokens != null) el.dataset.lastUsed = String(_lastPromptTokens);
+    else delete el.dataset.lastUsed;
+    if (lim != null) el.dataset.lastLimit = String(lim);
+  }
+  setFooterContext(_lastPromptTokens, lim);
+}
+
 function newChat(force) {
   const empty = chats.find(c => !c.messages.length);
-  if (!force && empty) { activeChatId = empty.id; renderChatList(); renderMessages(); toast('Уже есть пустой чат'); return; }
-  const c = { id: uid(), title: 'Новый чат', messages: [], created: Date.now() };
-  chats.push(c); activeChatId = c.id; saveChats(); renderChatList(); renderMessages();
+  if (!force && empty) { activeChatId = empty.id; renderChatList(); renderMessages(); toast('An empty chat already exists'); return; }
+  const c = { id: uid(), title: 'New chat', messages: [], created: Date.now() };
+  chats.push(c); if (chats.length > MAX_CHATS) chats = chats.slice(-MAX_CHATS); activeChatId = c.id; saveChats(); applyChatContextFooter(); renderChatList(); renderMessages();
 }
 
 function isToolCollapsible(name) {
@@ -863,7 +1211,7 @@ function renderMessages() {
   aggregateMessages(c.messages).filter(m => !(m.kind === 'think_collapsed' && !(m.text || '').trim())).forEach(m => {
     const d = document.createElement('div');
     if (m.kind === 'think_collapsed') {
-      d.className = 'msg system'; d.innerHTML = '<span style="color:var(--think)">▸ Обдумано</span>';
+      d.className = 'msg system'; d.innerHTML = '<span style="color:var(--think)">▸ Thought</span>';
     } else if (m.kind === 'think_live') {
       d.className = 'msg system'; d.innerHTML = '<span style="color:var(--muted);font-size:12px">' + esc(m.text || '…') + '</span>';
     } else if (m.kind === 'assistant_live') {
@@ -875,24 +1223,24 @@ function renderMessages() {
       d.innerHTML = renderMarkdown(m.content || '');
     } else if (m.kind === 'tool_agg') {
       const labels = {
-        web_search: 'поисков',
-        fetch_url: 'ссылок',
-        search_code: 'поисков по коду',
-        read_file: 'файлов прочитано',
-        list_directory: 'просмотров папок',
-        file_exists: 'проверок файлов',
-        get_file_info: 'info файлов',
+        web_search: 'searches',
+        fetch_url: 'links',
+        search_code: 'code searches',
+        read_file: 'files read',
+        list_directory: 'folder views',
+        file_exists: 'file checks',
+        get_file_info: 'file info',
       };
       const label = labels[m.name] || m.name;
       d.className = 'msg tool ' + (m.errors ? 'err' : 'ok');
       d.innerHTML = '<b>⚙ ' + esc(m.name) + '</b> — ' + m.count + ' ' + label
-        + (m.errors ? ' <span class="muted">(' + m.errors + ' с ошибкой)</span>' : '');
+        + (m.errors ? ' <span class="muted">(' + m.errors + ' failed)</span>' : '');
     } else if (m.kind === 'tool') {
       const ok = m.success !== false && m.status !== 'error';
       const pending = m.status === 'pending';
       d.className = 'msg tool ' + (pending ? '' : (ok ? 'ok' : 'err'));
       const debug = !!(settings && settings.chat && settings.chat.developer_mode);
-      let body = '<b>⚙ ' + esc(m.name) + '</b> — ' + (pending ? '…' : (ok ? 'успешно' : 'ошибка'));
+      let body = '<b>⚙ ' + esc(m.name) + '</b> — ' + (pending ? '…' : (ok ? 'ok' : 'error'));
       if (!pending && m.stop_reason && m.stop_reason !== 'completed') body += ' <span class="muted">(' + esc(m.stop_reason) + ')</span>';
       if (debug && m.args && !pending) body += '<br/><span class="muted">' + esc(typeof m.args === 'string' ? m.args : JSON.stringify(m.args)) + '</span>';
       if (!pending && m.summary) body += '<br/><span class="muted">' + esc(m.summary) + '</span>';
@@ -935,66 +1283,145 @@ function autoGrow() {
   promptEl.style.overflowY = promptEl.scrollHeight > max ? 'auto' : 'hidden';
 }
 function updateActionBtn() {
-  if (running) { actionBtn.disabled = false; actionBtn.textContent = 'Stop'; actionBtn.className = 'stop'; return; }
-  actionBtn.className = ''; actionBtn.textContent = 'Send';
-  actionBtn.disabled = !hasMeaningfulText(promptEl.value);
+  const btn = document.getElementById('btn-action');
+  if (!btn) return;
+  btn.classList.toggle('is-stop', !!running);
+  btn.classList.toggle('is-send', !running);
+  btn.disabled = false;
+  btn.textContent = '';
+  if (running) {
+    btn.innerHTML = '<span class="stop-ico" aria-hidden="true"></span>';
+    btn.title = t('stop');
+    btn.setAttribute('aria-label', t('stop'));
+  } else {
+    btn.innerHTML = '<span class="send-ico" aria-hidden="true">↑</span>';
+    btn.title = t('send');
+    btn.setAttribute('aria-label', t('send'));
+    const pr = document.getElementById('prompt');
+    if (pr && !(pr.value || '').trim()) btn.disabled = true;
+  }
 }
 promptEl.addEventListener('input', () => { autoGrow(); updateActionBtn(); });
-async function ensureModelReady() {
-  const info = await api('/api/lms/loaded');
-  if (info.error || !info.conflict) return true;
-  const loadedNames = (info.loaded || []).map(x => x.model || x.instance_id).join(', ');
-  document.getElementById('model-modal-text').textContent =
-    'Сейчас загружено: ' + loadedNames + '. Выбрано в настройках: ' + (info.selected_model || '(auto)') + '.';
-  document.getElementById('model-modal').classList.add('on');
-  return await new Promise(resolve => {
-    const done = async (action) => {
-      document.getElementById('model-modal').classList.remove('on');
-      if (action === 'cancel') { resolve(false); return; }
-      setStatus('загрузка модели…', true);
-      if (action === 'replace') {
-        const u = await api('/api/lms/unload_all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        if (u.error) { toast(u.error, true); resolve(false); return; }
-        const l = await api('/api/lms/load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: info.selected_model, alongside: false }) });
-        if (l.error) { toast(l.error, true); resolve(false); return; }
-      } else if (action === 'alongside') {
-        const l = await api('/api/lms/load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: info.selected_model, alongside: true }) });
-        if (l.error) { toast(l.error, true); resolve(false); return; }
-      }
-      setStatus('Готов', false);
-      resolve(true);
-    };
-    document.getElementById('mm-cancel').onclick = () => done('cancel');
-    document.getElementById('mm-alongside').onclick = () => done('alongside');
-    document.getElementById('mm-replace').onclick = () => done('replace');
-  });
+function _modelMatch(a, b) {
+  if (!a || !b) return false;
+  a = String(a); b = String(b);
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  const ta = a.split(/[\\/]/).pop();
+  const tb = b.split(/[\\/]/).pop();
+  return !!(ta && tb && (ta === tb || ta.includes(tb) || tb.includes(ta)));
 }
 
-actionBtn.onclick = async () => {
-  if (running) { running = false; setStatus('остановка…', true); updateActionBtn(); return; }
-  const text = promptEl.value;
-  if (!hasMeaningfulText(text)) return;
-  const apiTok = (settings && settings.api && settings.api.api_token) || '';
-  // optional warning only if provider errors previously required auth — skip hard block for local LMS
-  const ok = await ensureModelReady();
-  if (!ok) return;
-  if (!activeChatId) newChat(true);
-  const c = currentChat();
-  let taskToSend = text.trim();
-  if (chatAttachments.length) {
-    taskToSend = text.trim() + '\n\nAttached files (use these paths):\n' + chatAttachments.map(a => a.path).join('\n');
+/** Ensure a usable model is loaded. Never hangs on a modal. */
+async function ensureModelReady() {
+  let info;
+  try {
+    info = await api('/api/lms/loaded');
+  } catch (e) {
+    toast('Cannot reach LM Studio status: ' + e, true);
+    return true; // still try /api/chat/run — provider may work
   }
-  c.messages.push({ role: 'user', content: text.trim(), attachments: chatAttachments.slice() });
-  if (c.title === 'Новый чат' || c.title === 'New chat') c.title = chatTitleFromPrompt(text);
-  chatAttachments = [];
-  renderAttachChips();
-  promptEl.value = ''; autoGrow();
-  saveChats(); renderChatList(); renderMessages();
-  setStatus(t('ready') === 'Ready' ? 'processing…' : 'обработка промпта…', true);
-  await runAgent(taskToSend);
+  if (info && info.error) {
+    toast('LM Studio: ' + info.error, true);
+    return true;
+  }
+  const selected = String((info && info.selected_model) || '').trim();
+  const loaded = (info && info.loaded) || [];
+  const loadedIds = loaded.map(x => x.model || x.id || x.key || '').filter(Boolean);
+  const selectedLoaded = selected && loadedIds.some(id => _modelMatch(id, selected));
+
+  // auto or already loaded
+  if (!selected || selectedLoaded) return true;
+
+  setStatus('Loading model…', true);
+  try {
+    if (loadedIds.length) {
+      const u = await api('/api/lms/unload_all', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      if (u && u.error) {
+        toast('Unload failed: ' + u.error, true);
+        // continue try load anyway
+      }
+    }
+    const l = await api('/api/lms/load', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: selected, alongside: false }),
+    });
+    setStatus(t('ready'), false);
+    if (l && l.error) {
+      toast('Load failed: ' + l.error, true);
+      return false;
+    }
+    await refreshModelFooter().catch(() => {});
+    return true;
+  } catch (e) {
+    setStatus(t('ready'), false);
+    toast('Model load error: ' + e, true);
+    return false;
+  }
+}
+
+
+
+actionBtn.onclick = async () => {
+  if (running) {
+    setStatus(t('stopping') || 'Stopping…', true);
+    updateActionBtn();
+    const rid = currentRunId;
+    if (rid) {
+      try {
+        await api('/api/chat/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ run_id: rid }),
+        });
+      } catch (e) { /* ignore */ }
+    }
+    return;
+  }
+  try {
+    const text = promptEl.value;
+    if (!hasMeaningfulText(text)) return;
+    const ok = await ensureModelReady();
+    if (!ok) {
+      toast(uiLocale === 'ru' ? 'Модель не готова — отправка отменена' : 'Model not ready — send cancelled', true);
+      return;
+    }
+    if (!activeChatId) newChat(true);
+    const c = currentChat();
+    if (!c) {
+      toast('No active chat', true);
+      return;
+    }
+    let taskToSend = text.trim();
+    if (chatAttachments.length) {
+      taskToSend = text.trim() + '\n\nAttached files (use these paths):\n' + chatAttachments.map(a => a.path).join('\n');
+    }
+    c.messages.push({ role: 'user', content: text.trim(), attachments: chatAttachments.slice() });
+    if (c.title === 'New chat') c.title = chatTitleFromPrompt(text);
+    chatAttachments = [];
+    renderAttachChips();
+    promptEl.value = ''; autoGrow(); updateActionBtn();
+    saveChats(); renderChatList(); renderMessages();
+    setStatus(statusLabel('processing'), true);
+    await runAgent(taskToSend);
+  } catch (err) {
+    console.error('send failed', err);
+    toast('Send failed: ' + (err && err.message ? err.message : err), true);
+    running = false;
+    setStatus(t('error') || 'Error', false);
+    updateActionBtn();
+  }
 };
 async function runAgent(task) {
-  running = true; updateActionBtn(); setStatus('обработка промпта…', true); setFooterTps(0);
+  running = true;
+  currentRunId = null;
+  updateActionBtn();
+  streamingEnabled = !(settings && settings.chat && settings.chat.streaming === false);
+  resetTps(!streamingEnabled);
+  if (streamingEnabled) startTpsTimer();
+  setStatus(statusLabel('processing'), true);
   const hist = [];
   const chat = currentChat();
   if (chat) {
@@ -1005,24 +1432,139 @@ async function runAgent(task) {
     }
     if (hist.length && hist[hist.length - 1].role === 'user') hist.pop();
   }
-  const r = await api('/api/chat/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task, chat_id: activeChatId, history: hist }) });
-  if (r.error) {
-    currentChat().messages.push({ role: 'assistant', content: 'Ошибка: ' + r.error });
-    saveChats(); renderMessages(); setStatus('ошибка', false);
-  } else await pollRun(r.run_id);
-  running = false; updateActionBtn();
+  try {
+    const r = await api('/api/chat/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, chat_id: activeChatId, history: hist }),
+    });
+    if (r.error) {
+      currentChat().messages.push({ role: 'assistant', content: 'Error: ' + r.error });
+      saveChats(); renderMessages(); setStatus('Error', false);
+    } else {
+      currentRunId = r.run_id;
+      await pollRun(r.run_id);
+    }
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : String(e);
+    currentChat().messages.push({ role: 'assistant', content: 'Error: ' + msg });
+    saveChats(); renderMessages(); setStatus('Error', false);
+  }
+  finalizeLiveMessages();
+  generatingTokens = false;
+  stopTpsTimer();
+  resetTps(!streamingEnabled);
+  currentRunId = null;
+  running = false;
+  updateActionBtn();
+  try { await refreshModelFooter(); } catch (_) {}
 }
 async function pollRun(runId) {
   let done = false;
-  while (!done && running) {
-    await new Promise(r => setTimeout(r, 400));
-    const ev = await api('/api/chat/events?run_id=' + encodeURIComponent(runId));
-    if (ev.error) { setStatus(ev.error, false); break; }
-    for (const e of (ev.events || [])) handleEvent(e);
-    if (ev.done) { done = true; setStatus('готово', false); tpsWindow = []; setFooterTps(0); }
+  let idleTicks = 0;
+  let networkFails = 0;
+  // Match agent timeout (seconds) — long prompt prefill must not kill the UI
+  const timeoutSec = Math.max(
+    120,
+    Number((settings && settings.agent && settings.agent.timeout_seconds) || 600)
+  );
+  // idle ticks of 350ms; allow full timeout + 2 min slack with no events
+  const maxIdleTicks = Math.ceil((timeoutSec + 120) / 0.35);
+  while (!done) {
+    await new Promise(r => setTimeout(r, 350));
+    let ev;
+    try {
+      ev = await api('/api/chat/events?run_id=' + encodeURIComponent(runId));
+      networkFails = 0;
+    } catch (e) {
+      networkFails++;
+      if (networkFails > 60) { // ~21s of pure network failure
+        setStatus('Error', false);
+        const c = currentChat();
+        if (c) {
+          c.messages.push({ role: 'assistant', content: 'Error: lost connection to Kerniq UI server while waiting for the model.' });
+          saveChats(); renderMessages();
+        }
+        break;
+      }
+      continue;
+    }
+    if (ev.error) {
+      const msg = ev.error === 'unknown run' ? 'Error: run not found on server' : String(ev.error);
+      setStatus(msg, false);
+      const c = currentChat();
+      if (c && !c.messages.some(m => m.role === 'assistant' && String(m.content||'').startsWith('Error'))) {
+        c.messages.push({ role: 'assistant', content: msg });
+        saveChats(); renderMessages();
+      }
+      break;
+    }
+    const events = ev.events || [];
+    if (events.length) idleTicks = 0;
+    else idleTicks++;
+    for (const e of events) handleEvent(e);
+    if (ev.done) {
+      done = true;
+      const lastStatus = (events.filter(x => x.type === 'status').pop() || {}).status;
+      const lastText = (events.filter(x => x.type === 'status').pop() || {}).text;
+      if (lastStatus === 'cancelled') setStatus('Stopped', false);
+      else if (lastStatus === 'error') setStatus(lastText || 'Error', false);
+      else setStatus('Done', false);
+      generatingTokens = false;
+    }
+    // Only bail on idle after agent timeout window (not ~2 min)
+    if (!done && idleTicks > maxIdleTicks) {
+      const msg = 'Error: no events from agent for ' + timeoutSec + 's+ (timeout). Model may still be running in LM Studio.';
+      setStatus(msg, false);
+      const c = currentChat();
+      if (c) {
+        c.messages.push({ role: 'assistant', content: msg });
+        saveChats(); renderMessages();
+      }
+      break;
+    }
   }
-  saveChats(); renderMessages(); await refreshTree();
+  finalizeLiveMessages();
+  saveChats();
+  renderMessages();
+  try { await refreshTree(); } catch (_) {}
 }
+
+const STATUS_KEYS = {
+  loading_model: 'processing',
+  processing: 'processing',
+  thinking: 'thinking',
+  generating: 'generating',
+  tool: 'processing',
+  waiting_tool: 'processing',
+  cancelled: 'stopped',
+  done: 'done',
+  error: 'error',
+  empty_done: 'done',
+};
+function statusLabel(st, fallback) {
+  const k = STATUS_KEYS[st];
+  if (k) return t(k);
+  return fallback || st || '…';
+}
+
+function finalizeLiveMessages() {
+  const c = currentChat();
+  if (!c) return;
+  for (const m of c.messages) {
+    if (m.kind === 'assistant_live') {
+      m.kind = undefined;
+      m.role = 'assistant';
+      m.content = m.content || '';
+    }
+    if (m.kind === 'think_live') {
+      m.kind = 'think_collapsed';
+    }
+  }
+  saveChats();
+  renderMessages();
+}
+
 function handleEvent(e) {
   if (e.type === 'cleanup_think') {
     const c = currentChat(); if (!c) return;
@@ -1038,27 +1580,49 @@ function handleEvent(e) {
   }
 
   const c = currentChat(); if (!c) return;
+  if (e.type === 'heartbeat') {
+    // keep poll alive during long prefill / thinking with no tokens yet
+    setStatus(e.text || statusLabel('processing'), true);
+    return;
+  }
   if (e.type === 'status') {
-    if (e.status === 'thinking') setStatus('обдумывание…', true);
-    else if (e.status === 'tool') setStatus('вызов инструмента…', true);
-    else if (e.status === 'processing') setStatus('обработка промпта…', true);
-    else if (e.status === 'empty_done') {
-      setStatus(e.text || 'Модель завершила ответ', false);
-      const c = currentChat();
+    const st = e.status || '';
+    if (st === 'empty_done') {
+      generatingTokens = false;
+      setStatus(statusLabel(st, e.text), false);
       if (c) {
-        c.messages.push({ role: 'system', content: e.text || 'Модель завершила ответ (пусто)', kind: 'empty_done' });
+        c.messages.push({ role: 'system', content: e.text || 'Model finished (empty response)', kind: 'empty_done' });
         renderMessages();
       }
+    } else if (st === 'done' || st === 'cancelled') {
+      generatingTokens = false;
+      setStatus(statusLabel(st, e.text), false);
+    } else if (st === 'error') {
+      generatingTokens = false;
+      setStatus(statusLabel(st, e.text || 'Error'), false);
+    } else if (st === 'generating') {
+      generatingTokens = true;
+      setStatus(statusLabel(st, e.text), true);
+    } else if (st === 'thinking' || st === 'processing' || st === 'loading_model') {
+      generatingTokens = false;
+      setStatus(statusLabel(st, e.text), true);
+    } else if (st === 'tool' || st === 'waiting_tool') {
+      generatingTokens = false;
+      setStatus(statusLabel(st, e.text), true);
+    } else {
+      setStatus(e.text || statusLabel(st), true);
     }
-    else setStatus(e.text || '…', true);
   } else if (e.type === 'reasoning_delta') {
-    setStatus('обдумывание…', true);
+    // Reasoning streams tokens too — count for tok/s while thinking
+    noteGeneratedText(e.text || '');
+    setStatus(statusLabel('thinking'), true);
     let live = c.messages.find(m => m.kind === 'think_live');
     if (!live) { live = { kind: 'think_live', text: '' }; c.messages.push(live); }
     live.text = (live.text || '') + (e.text || '');
     scheduleRender();
   } else if (e.type === 'content_delta') {
-    setStatus('генерация…', true);
+    setStatus(statusLabel('generating'), true);
+    noteGeneratedText(e.text || '');
     // New live block only after the last tool (or at end). Never reuse pre-tool text.
     let liveIdx = -1;
     for (let i = c.messages.length - 1; i >= 0; i--) {
@@ -1137,7 +1701,89 @@ function handleEvent(e) {
   } else if (e.type === 'file_op') {
     c.messages.push({ kind: 'file_op', op: e.op, path: e.path, added: e.added, removed: e.removed }); renderMessages();
   } else if (e.type === 'tps') {
-    setFooterTps(e.value || 0);
+    // Provider instantaneous rate → feed as tokens into current second bucket
+    if (e.value) {
+      generatingTokens = true;
+      const sec = Math.floor(Date.now() / 1000);
+      if (sec !== currentSec) {
+        if (currentSec) tpsBuckets.push({ sec: currentSec, tokens: tokensThisSecond });
+        currentSec = sec; tokensThisSecond = 0;
+      }
+      // value is tok/s — approximate tokens for this tick
+      tokensThisSecond += Math.max(1, Number(e.value) * 0.35);
+      _tpsTick();
+    }
+  } else if (e.type === 'usage') {
+    if (e.prompt_tokens != null) _lastPromptTokens = Number(e.prompt_tokens);
+    if (e.completion_tokens != null) _lastCompletionTokens = Number(e.completion_tokens);
+    const ch = currentChat();
+    if (ch) {
+      if (_lastPromptTokens != null) ch.prompt_tokens = _lastPromptTokens;
+      if (_modelContextLimit != null) ch.context_limit = _modelContextLimit;
+      if (e.completion_tokens != null) ch.completion_tokens = Number(e.completion_tokens);
+      saveChats();
+    }
+    setFooterContext(_lastPromptTokens, ch && ch.context_limit != null ? ch.context_limit : _modelContextLimit);
+  }
+}
+
+
+async function refreshModelFooter() {
+  try {
+    const s = settings || {};
+    const prov = (s.api && s.api.provider) || 'lm_studio';
+    setFooterProvider(prov);
+    streamingEnabled = !(s.chat && s.chat.streaming === false);
+    if (prov === 'mock') {
+      setFooterModelStatus(t('model') + ': mock', true);
+      setFooterContext(_lastPromptTokens, null);
+      const fe = document.getElementById('footer-extra');
+      if (fe) fe.textContent = '';
+      return;
+    }
+    const selected = (s.api && s.api.model) || '';
+    const info = await api('/api/lms/loaded');
+    const modelsData = await api('/api/models').catch(() => ({}));
+    // context limit from first matching model if available
+    _modelContextLimit = null;
+    for (const m of (modelsData.models || [])) {
+      // Prefer actual loaded window, then max capability
+      const lim = m.loaded_context_length || m.context_length || m.max_context_length || m.context || null;
+      if (!lim) continue;
+      const mid = m.id || m.name || '';
+      if (selected && (mid === selected || String(mid).includes(selected) || selected.includes(String(mid)))) {
+        _modelContextLimit = Number(lim);
+        break;
+      }
+      if (_modelContextLimit == null) _modelContextLimit = Number(lim);
+    }
+    if (info && info.error) {
+      setFooterModelStatus(t('model') + ': ' + t('offline'), false);
+      setFooterContext(_lastPromptTokens, _modelContextLimit);
+      return;
+    }
+    const loaded = (info && (info.loaded || info.models || info.instances)) || [];
+    const names = Array.isArray(loaded)
+      ? loaded.map(x => (typeof x === 'string' ? x : (x.model || x.id || x.key || ''))).filter(Boolean)
+      : [];
+    const selectedFromApi = (info && info.selected_model) || selected;
+    const sel = selectedFromApi || selected || (names[0] || '');
+    const match = !sel || names.some(n => n === sel || n.includes(sel) || sel.includes(n));
+    if (!sel) {
+      setFooterModelStatus(t('model') + ': —', false);
+    } else if (!names.length) {
+      setFooterModelStatus(t('model') + ': ' + sel + ' (' + t('notLoaded') + ')', false);
+    } else {
+      setFooterModelStatus(t('model') + ': ' + sel + ' (' + (match ? t('loaded') : t('notLoaded')) + ')', !!match);
+    }
+    const fe = document.getElementById('footer-extra');
+    if (fe) {
+      const n = (modelsData.models || []).length;
+      fe.textContent = n ? (n + ' ' + t('available')) : '';
+    }
+    setFooterContext(_lastPromptTokens, _modelContextLimit);
+  } catch (e) {
+    setFooterModelStatus(t('model') + ': ?', false);
   }
 }
 
@@ -1204,6 +1850,8 @@ async function loadSettings() {
   const ch = settings.chat || {};
   const elS = document.getElementById('s-chat-streaming');
   if (elS) elS.checked = ch.streaming !== false;
+  streamingEnabled = ch.streaming !== false;
+  if (!streamingEnabled) resetTps(true);
   const elR = document.getElementById('s-chat-reasoning');
   if (elR) elR.checked = ch.show_reasoning_live !== false;
   const elE = document.getElementById('s-chat-empty');
@@ -1265,13 +1913,21 @@ async function refreshModelsSelect(selected) {
   if (data.error || !data.reachable) setFooterProvider('lm_studio', false);
   else setFooterProvider('lm_studio', true);
   const modelLabel = sel.value || '(auto)';
+  if (data.error || !data.reachable) setFooterModelStatus(t('model') + ': ' + (data.error || t('offline')), false);
+  else if (modelLabel && modelLabel !== '(auto)') setFooterModelStatus(t('model') + ': ' + modelLabel, null);
   const extra = document.getElementById('footer-extra');
   if (extra) {
     const n = (data.models || []).length;
-    extra.textContent = data.reachable
-      ? (`model: ${modelLabel}` + (n ? ` · ${n} available` : ''))
-      : (data.error || 'offline');
+    extra.textContent = (data.reachable && n) ? (n + ' ' + t('available')) : '';
   }
+  const selM = (document.getElementById('s-model') || {}).value || '';
+  for (const m of (data.models || [])) {
+    const lim = m.loaded_context_length || m.context_length || m.max_context_length || m.context;
+    if (!lim) continue;
+    if (selM && (m.id === selM || String(m.id||'').includes(selM))) { _modelContextLimit = Number(lim); break; }
+    if (_modelContextLimit == null) _modelContextLimit = Number(lim);
+  }
+  setFooterContext(_lastPromptTokens, _modelContextLimit);
   sel.onchange = () => {
     markSettingsDirty();
     const fe = document.getElementById('footer-extra');
@@ -1281,7 +1937,7 @@ async function refreshModelsSelect(selected) {
 
 async function loadComponents() {
   const data = await api('/api/components');
-  if (data.error) { toast('Компоненты: ' + data.error, true); console.error(data); }
+  if (data.error) { toast('Components: ' + data.error, true); console.error(data); }
   componentsCache = data || { tools: [], plugins: [] };
   if (!(componentsCache.tools || []).length) {
     console.warn('empty tools', data);
@@ -1353,7 +2009,7 @@ function renderToolDetail(id) {
   const draft = draftTools[id] || { enabled: true, values: {} };
   let html = `<h3>${esc(t.name)}</h3><div class="hint">${esc(t.description || '')}</div>`;
   const fields = (t.schema && t.schema.fields) || [];
-  if (!fields.length) html += '<div class="empty">Нет доп. настроек</div>';
+  if (!fields.length) html += '<div class="empty">No extra settings</div>';
   else fields.forEach(f => {
     const val = draft.values[f.key] !== undefined ? draft.values[f.key] : f.default;
     if (f.type === 'bool') {
@@ -1391,23 +2047,41 @@ function renderPluginDetail(id) {
   const draft = draftPlugins[id] || { values: {} };
   let html = `<h3>${esc(p.name)}</h3>`;
   const fields = (p.schema && p.schema.fields) || [];
-  if (!fields.length) html += '<div class="empty">Нет настроек</div>';
+  if (!fields.length) html += '<div class="empty">No settings</div>';
   else fields.forEach(f => {
     const val = draft.values[f.key] !== undefined ? draft.values[f.key] : f.default;
     if (f.type === 'bool') {
-      html += `<label class="field-row-check"><input type="checkbox" class="soft-check" data-fk="${esc(f.key)}" ${val ? 'checked' : ''}/><span>${esc(f.label)}</span></label>`;
-      if (f.description) html += `<div class="hint">${esc(f.description)}</div>`;
+      html += `<div class="field field-check"><label class="check-line"><input type="checkbox" class="soft-check" data-fk="${esc(f.key)}" ${val ? 'checked' : ''}/><span>${esc(f.label)}</span>`;
+      if (f.description) html += `<span class="info-tip" tabindex="0" data-tip="${esc(f.description)}">i</span>`;
+      html += `</label></div>`;
+    } else if (f.type === 'select' && f.options && f.options.length) {
+      html += `<div class="field"><label class="lbl">${esc(f.label)}`;
+      if (f.description) html += `<span class="info-tip" tabindex="0" data-tip="${esc(f.description)}">i</span>`;
+      html += `</label><select data-fk="${esc(f.key)}" class="input-std">`;
+      f.options.forEach(o => {
+        const ov = o.value != null ? o.value : o;
+        const ol = o.label != null ? o.label : String(ov);
+        html += `<option value="${esc(ov)}" ${String(val) === String(ov) ? 'selected' : ''}>${esc(ol)}</option>`;
+      });
+      html += `</select></div>`;
     } else {
-      html += `<div class="field"><label class="lbl">${esc(f.label)}</label>`;
-      html += `<input type="${f.type === 'int' || f.type === 'float' ? 'number' : 'text'}" data-fk="${esc(f.key)}" value="${esc(val ?? '')}"/>`;
-      if (f.description) html += `<div class="hint">${esc(f.description)}</div>`;
+      html += `<div class="field"><label class="lbl">${esc(f.label)}`;
+      if (f.description) html += `<span class="info-tip" tabindex="0" data-tip="${esc(f.description)}">i</span>`;
+      html += `</label>`;
+      html += `<input class="input-std" type="${f.type === 'int' || f.type === 'float' ? 'number' : 'text'}" data-fk="${esc(f.key)}" value="${esc(val ?? '')}"/>`;
       html += `</div>`;
     }
   });
   panel.innerHTML = html;
+  if (!draftPlugins[id]) draftPlugins[id] = { values: {} };
   panel.querySelectorAll('[data-fk]').forEach(inp => {
-    inp.addEventListener(inp.type === 'checkbox' ? 'change' : 'input', () => {
-      draftPlugins[id].values[inp.dataset.fk] = inp.type === 'checkbox' ? inp.checked : (inp.type === 'number' ? Number(inp.value) : inp.value);
+    const ev = (inp.type === 'checkbox' || inp.tagName === 'SELECT') ? 'change' : 'input';
+    inp.addEventListener(ev, () => {
+      let v;
+      if (inp.type === 'checkbox') v = inp.checked;
+      else if (inp.type === 'number') v = Number(inp.value);
+      else v = inp.value;
+      draftPlugins[id].values[inp.dataset.fk] = v;
       markSettingsDirty();
     });
   });
@@ -1420,13 +2094,13 @@ function renderResetLists() {
     (componentsCache.tools || []).forEach(t => {
       const d = document.createElement('div');
       d.className = 'reset-item';
-      d.innerHTML = `<span>${esc(t.name)}</span><button class="secondary" data-id="${esc(t.id)}">Сбросить</button>`;
+      d.innerHTML = `<span>${esc(t.name)}</span><button class="secondary" data-id="${esc(t.id)}">Reset</button>`;
       d.querySelector('button').onclick = async () => {
-        if (!confirm('Сбросить настройки ' + t.name + '?')) return;
+        if (!confirm('Reset settings for ' + t.name + '?')) return;
         await api('/api/settings/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'tool', id: t.id }) });
         draftTools[t.id] = undefined;
         await loadComponents();
-        toast('Сброшено: ' + t.name);
+        toast('Reset: ' + t.name);
       };
       tl.appendChild(d);
     });
@@ -1436,13 +2110,13 @@ function renderResetLists() {
     (componentsCache.plugins || []).forEach(p => {
       const d = document.createElement('div');
       d.className = 'reset-item';
-      d.innerHTML = `<span>${esc(p.name)}</span><button class="secondary" data-id="${esc(p.id)}">Сбросить</button>`;
+      d.innerHTML = `<span>${esc(p.name)}</span><button class="secondary" data-id="${esc(p.id)}">Reset</button>`;
       d.querySelector('button').onclick = async () => {
-        if (!confirm('Сбросить настройки ' + p.name + '?')) return;
+        if (!confirm('Reset settings for ' + p.name + '?')) return;
         await api('/api/settings/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'plugin', id: p.id }) });
         draftPlugins[p.id] = undefined;
         await loadComponents();
-        toast('Сброшено: ' + p.name);
+        toast('Reset: ' + p.name);
       };
       pl.appendChild(d);
     });
@@ -1506,7 +2180,7 @@ async function saveAllSettings() {
   document.getElementById('top-workspace').textContent = agent.workspace;
   setFooterProvider(apiBody.provider);
   const modelName = apiBody.model || '(auto)';
-  document.getElementById('footer-extra').textContent = 'model: ' + modelName;
+  setFooterModelStatus(t('model') + ': ' + modelName, null); const _fe=document.getElementById('footer-extra'); if(_fe && !(_fe.textContent||'').includes('available')) {/* keep available count from refresh */} 
   // apply plugin footer visibility immediately
   const uiDraft = draftPlugins['plugin_web_ui'];
   if (uiDraft && uiDraft.values && uiDraft.values.show_footer === false) {
@@ -1517,7 +2191,7 @@ async function saveAllSettings() {
   clearSettingsDirty();
   const loc = draftPlugins['plugin_web_ui']?.values?.ui_locale || 'en';
   applyUiLocale(loc);
-  toast(uiLocale === 'ru' ? 'Сохранено' : 'Saved');
+  toast(t('save'));
   await refreshTree();
   await refreshModelsSelect(apiBody.model);
 }
@@ -1525,7 +2199,7 @@ async function saveAllSettings() {
 document.getElementById('btn-settings-save').onclick = saveAllSettings;
 document.getElementById('btn-settings-cancel').onclick = async () => {
   if (!settingsDirty) return;
-  if (!confirm('Отменить несохранённые изменения?')) return;
+  if (!confirm('Discard unsaved changes?')) return;
   draftTools = {}; draftPlugins = {};
   await loadSettings();
 (async () => {
@@ -1563,16 +2237,16 @@ document.getElementById('btn-settings-cancel').onclick = async () => {
       }
       const pick = document.getElementById('btn-pick-ws');
       if (pick) {
-        pick.title = 'В server mode укажите путь на хосте вручную';
+        pick.title = 'In server mode, enter the host path manually';
       }
     }
   } catch (e) {}
 })();
-  toast('Изменения отменены');
+  toast('Changes discarded');
 };
 document.getElementById('btn-factory-reset').onclick = async () => {
-  if (!confirm('Сбросить ВСЕ настройки к заводским?')) return;
-  if (!confirm('Точно? Это необратимо для локальных JSON настроек.')) return;
+  if (!confirm('Reset ALL settings to factory defaults?')) return;
+  if (!confirm('Are you sure? This cannot be undone for local JSON settings.')) return;
   await api('/api/settings/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: 'all' }) });
   draftTools = {}; draftPlugins = {};
   await loadSettings();
@@ -1611,12 +2285,12 @@ document.getElementById('btn-factory-reset').onclick = async () => {
       }
       const pick = document.getElementById('btn-pick-ws');
       if (pick) {
-        pick.title = 'В server mode укажите путь на хосте вручную';
+        pick.title = 'In server mode, enter the host path manually';
       }
     }
   } catch (e) {}
 })();
-  toast('Заводские настройки');
+  toast('Factory defaults applied');
 };
 
 /* workspace folder picker (best-effort) */
@@ -1632,7 +2306,7 @@ document.getElementById('btn-pick-ws').onclick = async () => {
 
 /* nav */
 document.getElementById('nav-logo').onclick = () => {
-  if (settingsDirty && !confirm('Настройки не сохранены. Уйти?')) return;
+  if (settingsDirty && !confirm('Settings are not saved. Leave anyway?')) return;
   showView('main');
 };
 document.getElementById('nav-settings').onclick = () => {
@@ -1684,7 +2358,7 @@ document.getElementById('nav-settings').onclick = () => {
       }
       const pick = document.getElementById('btn-pick-ws');
       if (pick) {
-        pick.title = 'В server mode укажите путь на хосте вручную';
+        pick.title = 'In server mode, enter the host path manually';
       }
     }
   } catch (e) {}
@@ -1711,6 +2385,7 @@ loadPanelWidths();
 bindResizer('resizer-left', 'left');
 bindResizer('resizer-right', 'right');
 loadChats();
+try { applyChatContextFooter(); } catch (_) {}
 if (!chats.length) newChat(true);
 else { activeChatId = chats[chats.length - 1].id; renderChatList(); renderMessages(); }
 clearEditor();
@@ -1751,7 +2426,7 @@ loadSettings();
       }
       const pick = document.getElementById('btn-pick-ws');
       if (pick) {
-        pick.title = 'В server mode укажите путь на хосте вручную';
+        pick.title = 'In server mode, enter the host path manually';
       }
     }
   } catch (e) {}
@@ -1854,23 +2529,73 @@ function showAttachMenu(anchor) {
   if (!ctx) return;
   const r = anchor.getBoundingClientRect();
   ctx.style.display = 'block';
-  ctx.style.left = r.left + 'px';
-  ctx.style.top = (r.bottom + 4) + 'px';
-  ctx.innerHTML = '<input id="attach-q" placeholder="'+t('attachSearch')+'" style="width:100%;margin-bottom:4px"/><div id="attach-hits"></div>';
+  ctx.style.minWidth = Math.max(280, r.width + 120) + 'px';
+  ctx.style.maxWidth = Math.min(420, window.innerWidth - 16) + 'px';
+  ctx.innerHTML = '<input id="attach-q" placeholder="'+t('attachSearch')+'" style="width:100%;margin-bottom:4px;box-sizing:border-box"/><div id="attach-hits" class="attach-hits"></div>';
+  // position after content so we can open upward if near bottom
+  const menuH = Math.min(320, window.innerHeight * 0.45);
+  let left = r.left;
+  let top = r.bottom + 4;
+  // prefer open upward from composer
+  if (r.bottom + menuH + 8 > window.innerHeight) {
+    top = Math.max(8, r.top - menuH - 4);
+  }
+  if (left + 300 > window.innerWidth) left = Math.max(8, window.innerWidth - 308);
+  ctx.style.left = left + 'px';
+  ctx.style.top = top + 'px';
+  ctx.style.maxHeight = menuH + 'px';
+  ctx.style.overflow = 'hidden';
   const q = document.getElementById('attach-q');
   const hits = document.getElementById('attach-hits');
+  hits.style.maxHeight = (menuH - 40) + 'px';
+  hits.style.overflowY = 'auto';
   const search = async () => {
     const data = await api('/api/fs/search?q=' + encodeURIComponent(q.value || ''));
     hits.innerHTML = '';
     (data.hits || []).forEach(h => {
       const b = document.createElement('button');
       b.textContent = h.path;
+      b.title = h.path;
       b.onclick = () => { addAttachment(h.path, true); ctx.style.display = 'none'; };
       hits.appendChild(b);
     });
+    if (!(data.hits || []).length) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding:8px 12px;color:var(--muted);font-size:12px';
+      empty.textContent = (q.value || '').trim() ? t('noMatches') : t('typeToSearch');
+      hits.appendChild(empty);
+    }
   };
   q.oninput = () => { clearTimeout(q._t); q._t = setTimeout(search, 200); };
+  q.onclick = (ev) => ev.stopPropagation();
+  hits.onclick = (ev) => ev.stopPropagation();
   q.focus();
-  const hide = () => { ctx.style.display = 'none'; document.removeEventListener('click', hide); };
+  search();
+  const hide = (ev) => {
+    if (ctx.contains(ev.target) || anchor.contains(ev.target)) return;
+    ctx.style.display = 'none';
+    document.removeEventListener('click', hide);
+  };
   setTimeout(() => document.addEventListener('click', hide), 0);
 }
+
+// Model loaded indicator in footer
+startTpsTimer();
+setInterval(() => { if (!running) refreshModelFooter().catch(() => {}); }, 8000);
+setInterval(() => { setFooterContext(_lastPromptTokens, _modelContextLimit); }, 5000);
+document.addEventListener('DOMContentLoaded', () => { setTimeout(() => refreshModelFooter().catch(() => {}), 500); });
+
+
+async function shutdownUi() {
+  if (!confirm(uiLocale === 'ru' ? 'Остановить Web UI и закрыть страницу?' : 'Stop Web UI server and close this page?')) return;
+  try {
+    await api('/api/shutdown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  } catch (_) {}
+  try { window.close(); } catch (_) {}
+  document.body.innerHTML = '<div style="padding:40px;font-family:system-ui;color:#c9d1d9;background:#0d1117;min-height:100vh">Kerniq UI stopped. You can close this tab.</div>';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const stop = document.getElementById('btn-stop-ui');
+  if (stop) stop.onclick = () => shutdownUi();
+});

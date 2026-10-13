@@ -39,9 +39,18 @@ terminal_enabled = true
 fs_enabled = true
 
 [mcp]
-enabled = false
+enabled = true
 servers = []
-published_tools = []
+# Tools exposed when running: kerniq mcp serve
+# Empty list → read-only filesystem defaults at runtime
+published_tools = [
+  "list_directory",
+  "read_file",
+  "file_exists",
+  "get_file_info",
+  "web_search",
+  "fetch_url",
+]
 
 [storage]
 type = "json"

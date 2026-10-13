@@ -174,6 +174,8 @@ class UIHandler(BaseHTTPRequestHandler):
             return self._file(STATIC_DIR / "index.html", "text/html; charset=utf-8")
         if path == "/static/app.js":
             return self._file(STATIC_DIR / "app.js", "application/javascript; charset=utf-8")
+        if path == "/static/styles.css":
+            return self._file(STATIC_DIR / "styles.css", "text/css; charset=utf-8")
         if path.startswith("/static/vendor/"):
             name = path.rsplit("/", 1)[-1]
             safe = name.replace("-", "").replace("_", "").replace(".", "")
@@ -232,6 +234,8 @@ class UIHandler(BaseHTTPRequestHandler):
             return _json(self, 200, self._pick_folder())
         if path == "/api/lms/load":
             return _json(self, 200, self._lms_load(data))
+        if path == "/api/shutdown":
+            return _json(self, 200, self._shutdown_server())
         if path == "/api/lms/unload_all":
             return _json(self, 200, self._lms_unload_all())
         if path == "/api/fs/create":
@@ -724,7 +728,7 @@ class UIHandler(BaseHTTPRequestHandler):
             root = tk.Tk()
             root.withdraw()
             root.attributes("-topmost", True)
-            path = filedialog.askdirectory(title="Выбор workspace")
+            path = filedialog.askdirectory(title="Select workspace")
             root.destroy()
             if not path:
                 return {"cancelled": True}
@@ -748,20 +752,33 @@ class UIHandler(BaseHTTPRequestHandler):
         try:
             loaded = asyncio.run(self._lms_provider().loaded_instances())
             ui = _settings_store().load()
+            selected = (ui.api.model or "").strip()
+
+            def _match(a: str, b: str) -> bool:
+                if not a or not b:
+                    return False
+                if a == b:
+                    return True
+                if a in b or b in a:
+                    return True
+                ta, tb = a.split("/")[-1], b.split("/")[-1]
+                return bool(ta and tb and (ta == tb or ta in tb or tb in ta))
+
+            selected_loaded = bool(
+                selected
+                and any(
+                    _match(str(x.get("model") or x.get("id") or ""), selected)
+                    for x in loaded
+                )
+            )
             return {
                 "loaded": loaded,
-                "selected_model": ui.api.model or "",
-                "conflict": bool(
-                    loaded
-                    and ui.api.model
-                    and not any(
-                        (x.get("model") == ui.api.model)
-                        for x in loaded
-                    )
-                ),
+                "selected_model": selected,
+                "conflict": bool(loaded and selected and not selected_loaded),
+                "selected_loaded": selected_loaded,
             }
         except Exception as e:
-            return {"loaded": [], "error": str(e), "selected_model": "", "conflict": False}
+            return {"loaded": [], "error": str(e), "selected_model": "", "conflict": False, "selected_loaded": False}
 
     def _lms_load(self, data):
         try:
@@ -778,6 +795,28 @@ class UIHandler(BaseHTTPRequestHandler):
         except Exception as e:
             return {"error": str(e)}
 
+    def _shutdown_server(self):
+        """Stop HTTP server after response is sent."""
+        import threading
+
+        def _stop():
+            import time
+            time.sleep(0.4)
+            try:
+                srv = STATE.server
+                if srv is not None and hasattr(srv, "shutdown"):
+                    srv.shutdown()
+            except Exception:
+                pass
+            try:
+                import os
+                os._exit(0)
+            except Exception:
+                pass
+
+        threading.Thread(target=_stop, daemon=True).start()
+        return {"ok": True, "message": "shutting down"}
+
     def _lms_unload_all(self):
         try:
             res = asyncio.run(self._lms_provider().unload_all())
@@ -792,8 +831,10 @@ class UIHandler(BaseHTTPRequestHandler):
             if not run:
                 return {"ok": False, "error": "run not found"}
             run["cancelled"] = True
-            run["done"] = True
-            run.setdefault("events", []).append({"type": "status", "status": "cancelled", "text": "остановлено"})
+            # Do not mark done immediately — worker emits final status and sets done
+            run.setdefault("events", []).append(
+                {"type": "status", "status": "cancelled", "text": "Stopping…"}
+            )
         return {"ok": True, "run_id": run_id}
 
     def _start_run(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -865,7 +906,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     ws.mkdir(parents=True, exist_ok=True)
     ws = ws.resolve()
 
-    _emit(run_id, {"type": "status", "status": "processing", "text": "обработка промпта…"})
+    _emit(run_id, {"type": "status", "status": "processing", "text": "Processing prompt…"})
 
     policy = SecurityPolicy(workspace_root=ws)
     reg = ToolRegistry()
@@ -891,23 +932,119 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         max_tokens=ui.api.max_tokens,
         streaming=bool(getattr(ui, "chat", None) and ui.chat.streaming),
     )
+    # Model context window for overflow protection (best-effort)
+    ctx_lim = 0
+    try:
+        models = asyncio.run(provider.list_models()) if hasattr(provider, "list_models") else []
+        want = (ui.api.model or "").strip()
+        for m in models or []:
+            lim = (
+                m.get("loaded_context_length")
+                or m.get("context_length")
+                or m.get("max_context_length")
+                or m.get("context")
+            )
+            if not lim:
+                continue
+            mid = str(m.get("id") or m.get("key") or "")
+            if want and (mid == want or want in mid or mid in want):
+                ctx_lim = int(lim)
+                break
+            if not ctx_lim:
+                ctx_lim = int(lim)
+    except Exception:
+        pass
+    agent.orchestrator.context_limit = ctx_lim or 32768
 
     orig_generate = provider.generate
 
+    def _is_cancelled() -> bool:
+        with STATE.runs_lock:
+            return bool(STATE.runs.get(run_id, {}).get("cancelled"))
+
     async def generate_with_status(request):
-        _emit(run_id, {"type": "status", "status": "processing", "text": "обработка промпта…"})
-        _emit(run_id, {"type": "status", "status": "thinking", "text": "обдумывание…"})
+        if _is_cancelled():
+            from Kerniq.interfaces.models import ModelResponse, Message, MessageRole
+            return ModelResponse(
+                messages=[Message(role=MessageRole.ASSISTANT, content="")],
+                finish_reason="cancelled",
+                metadata={"cancelled": True},
+            )
+        _emit(run_id, {"type": "status", "status": "processing", "text": "Processing prompt…"})
+        saw_content = {"v": False}
+        saw_reason = {"v": False}
+        hb_stop = {"v": False}
+
+        async def _heartbeat():
+            import asyncio as _aio
+            n = 0
+            while not hb_stop["v"] and not _is_cancelled():
+                await _aio.sleep(15.0)
+                if hb_stop["v"] or _is_cancelled():
+                    break
+                n += 1
+                phase = (
+                    "Generating…" if saw_content["v"]
+                    else ("Thinking…" if saw_reason["v"] else "Processing prompt…")
+                )
+                _emit(run_id, {
+                    "type": "heartbeat",
+                    "text": f"{phase} ({n * 15}s)",
+                    "seconds": n * 15,
+                })
+
+        import asyncio as _aio
+        hb_task = _aio.create_task(_heartbeat())
+
         def on_delta(ev):
+            if _is_cancelled():
+                return
             if ev.get("type") == "reasoning":
+                if not saw_reason["v"]:
+                    saw_reason["v"] = True
+                    _emit(run_id, {"type": "status", "status": "thinking", "text": "Thinking…"})
                 _emit(run_id, {"type": "reasoning_delta", "text": ev.get("text") or ""})
             elif ev.get("type") == "content":
+                if not saw_content["v"]:
+                    saw_content["v"] = True
+                    _emit(run_id, {"type": "status", "status": "generating", "text": "Generating…"})
                 _emit(run_id, {"type": "content_delta", "text": ev.get("text") or ""})
-        # ModelRequest.metadata is a dict
+
         try:
+            if request.metadata is None:
+                request.metadata = {}
             request.metadata["on_stream_delta"] = on_delta
+            request.metadata["cancel_check"] = _is_cancelled
         except Exception:
             pass
-        resp = await orig_generate(request)
+        try:
+            resp = await orig_generate(request)
+        except Exception as e:
+            msg = str(e)
+            low = msg.lower()
+            if any(x in low for x in ("not loaded", "no model", "unload", "model_not")):
+                _emit(run_id, {
+                    "type": "status",
+                    "status": "error",
+                    "text": "Model not loaded in LM Studio",
+                })
+                _emit(run_id, {
+                    "type": "assistant",
+                    "content": (
+                        "The selected model is not loaded in LM Studio. "
+                        "Open LM Studio and load a model, or use API & model settings to load one, then retry."
+                    ),
+                    "completed": False,
+                })
+            else:
+                _emit(run_id, {"type": "status", "status": "error", "text": "Model error"})
+                _emit(run_id, {"type": "assistant", "content": f"Model error: {msg}", "completed": False})
+            hb_stop["v"] = True
+            try:
+                hb_task.cancel()
+            except Exception:
+                pass
+            raise
         reasoning = None
         if resp.metadata:
             reasoning = resp.metadata.get("reasoning")
@@ -920,16 +1057,24 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         # empty final content marker
         texts = [m.content for m in resp.messages if (m.content or "").strip()]
         if not texts and not any(m.tool_calls for m in resp.messages):
-            _emit(run_id, {"type": "status", "status": "empty_done", "text": "Модель завершила ответ (пусто)"})
+            _emit(run_id, {"type": "status", "status": "empty_done", "text": "Model finished (empty response)"})
         tps = (resp.metadata or {}).get("tokens_per_second")
-        if not tps and resp.usage and getattr(resp.usage, "completion_tokens", None):
-            # fallback approximate if provider didn't report speed
-            tps = None
         if tps:
             _emit(run_id, {"type": "tps", "value": float(tps)})
+        # Real usage from provider when available (drives footer context)
+        if resp.usage:
+            _emit(run_id, {
+                "type": "usage",
+                "prompt_tokens": getattr(resp.usage, "prompt_tokens", None),
+                "completion_tokens": getattr(resp.usage, "completion_tokens", None),
+                "total_tokens": getattr(resp.usage, "total_tokens", None),
+            })
+        # Approximate completion tokens from stream for TPS if no provider speed
+        if not tps and resp.usage and getattr(resp.usage, "completion_tokens", None):
+            pass
         for msg in resp.messages:
             if msg.tool_calls:
-                _emit(run_id, {"type": "status", "status": "tool", "text": "вызов инструмента…"})
+                _emit(run_id, {"type": "status", "status": "tool", "text": "Calling tool…"})
                 for tc in msg.tool_calls:
                     _emit(
                         run_id,
@@ -941,6 +1086,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                             "args": tc.arguments,
                         },
                     )
+        hb_stop["v"] = True
+        try:
+            hb_task.cancel()
+        except Exception:
+            pass
         return resp
 
     provider.generate = generate_with_status
@@ -952,8 +1102,9 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             if STATE.runs.get(run_id, {}).get("cancelled"):
                 from Kerniq.interfaces.models import ModelResponse, Message, MessageRole
                 return ModelResponse(
-                    messages=[Message(role=MessageRole.ASSISTANT, content="Остановлено пользователем.")],
+                    messages=[Message(role=MessageRole.ASSISTANT, content="")],
                     finish_reason="cancelled",
+                    metadata={"cancelled": True},
                 )
         return await orig_gen2(request)
     provider.generate = generate_cancelable
@@ -964,7 +1115,8 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         tname = tool.name
 
         async def wrapped(arguments, context, _orig=orig_exec, _name=tname):
-            _emit(run_id, {"type": "status", "status": "tool", "text": f"инструмент {_name}…"})
+            _emit(run_id, {"type": "status", "status": "tool", "text": f"Running tool: {_name}…"})
+            _emit(run_id, {"type": "status", "status": "waiting_tool", "text": f"Waiting for tool: {_name}…"})
             before = None
             path = arguments.get("path")
             if _name in ("write_file", "create_file", "edit_file", "delete_file") and path:
@@ -1085,27 +1237,48 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     )
     lang = getattr(getattr(ui, "chat", None), "response_language", None) or "auto"
     agent.response_language = lang
-    result = await agent.run(
-        user_task,
-        workspace=str(ws),
-        system_prompt=system,
-        history=history_msgs or None,
-        response_language=lang,
-    )
-    completed = True  # final orchestrator return is always a terminal answer
+    try:
+        result = await agent.run(
+            user_task,
+            workspace=str(ws),
+            system_prompt=system,
+            history=history_msgs or None,
+            response_language=lang,
+        )
+    except Exception as e:
+        if _is_cancelled():
+            _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
+            _emit(run_id, {"type": "assistant", "content": "", "completed": False})
+        else:
+            msg = str(e)
+            _emit(run_id, {"type": "status", "status": "error", "text": "Error"})
+            _emit(run_id, {"type": "assistant", "content": f"Error: {msg}", "completed": False})
+        with STATE.runs_lock:
+            if run_id in STATE.runs:
+                STATE.runs[run_id]["done"] = True
+                STATE.runs[run_id]["error"] = None if _is_cancelled() else str(e)
+        return
+
+    if _is_cancelled():
+        _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
+        _emit(run_id, {"type": "cleanup_think"})
+        with STATE.runs_lock:
+            if run_id in STATE.runs:
+                STATE.runs[run_id]["done"] = True
+        return
+
+    completed = True
     if isinstance(result, str) and "TASK_COMPLETED" in result:
         result = result.replace("TASK_COMPLETED", "").rstrip()
-    # persist turn on server
     with STATE.chat_lock:
         lst = STATE.chat_histories.setdefault(chat_id, [])
         lst.append({"role": "user", "content": user_task})
         if result:
             lst.append({"role": "assistant", "content": result})
-        # keep last 100 turns
         if len(lst) > 200:
             STATE.chat_histories[chat_id] = lst[-200:]
     _emit(run_id, {"type": "assistant", "content": result or "", "completed": True})
-    _emit(run_id, {"type": "status", "status": "done", "text": "готово", "completed": True})
+    _emit(run_id, {"type": "status", "status": "done", "text": "Done", "completed": True})
     _emit(run_id, {"type": "cleanup_think"})
     with STATE.runs_lock:
         if run_id in STATE.runs:
@@ -1178,6 +1351,20 @@ class PluginImpl(Plugin):
                     description="en or ru — interface only; tools/plugins stay English",
                     options=[{"value": "en", "label": "English"}, {"value": "ru", "label": "Русский"}],
                 ),
+                SettingField(
+                    key="log_level",
+                    label="Console log level",
+                    type=SettingType.SELECT,
+                    default="warning",
+                    description="How much the terminal prints while UI runs",
+                    options=[
+                        {"value": "debug", "label": "Debug (verbose)"},
+                        {"value": "info", "label": "Info"},
+                        {"value": "warning", "label": "Warnings only"},
+                        {"value": "error", "label": "Errors only"},
+                        {"value": "critical", "label": "Critical only"},
+                    ],
+                ),
             ],
         )
 
@@ -1189,6 +1376,11 @@ class PluginImpl(Plugin):
         self._server_mode = bool(values.get("server_mode", False))
         if self._server_mode or values.get("lan_access"):
             self._ui_host = "0.0.0.0"
+        lvl = str(values.get("log_level") or "warning").upper()
+        level = getattr(logging, lvl, logging.WARNING)
+        logging.getLogger().setLevel(level)
+        for name in ("httpx", "httpcore", "Kerniq", "plugin", "plugin.web_ui", "cli"):
+            logging.getLogger(name).setLevel(level)
 
     async def initialize(self, context: PluginContext) -> bool:
         STATE.context = context

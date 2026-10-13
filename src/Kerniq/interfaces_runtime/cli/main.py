@@ -29,9 +29,80 @@ from Kerniq.core.verifier import BasicVerifier
 from Kerniq.storage.json_store import JsonStorage
 from Kerniq.sessions.manager import SessionManager
 from Kerniq.plugins.manager import PluginManager
+from Kerniq.devtools.paths import find_plugins_dirs, find_project_root
 from Kerniq.plugins.base import PluginContext
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+
+def maybe_auto_update(argv: Optional[list] = None) -> Optional[int]:
+    """If a newer release exists, apply it and re-exec the same command.
+
+    Skipped for: uninstall/remove/update --help, and when KERNIQ_NO_AUTO_UPDATE=1.
+    Settings/state are preserved (no wipe).
+    """
+    import os
+    import sys
+    if os.environ.get("KERNIQ_NO_AUTO_UPDATE", "").strip() in ("1", "true", "yes"):
+        return None
+    if os.environ.get("KERNIQ_UPDATING") == "1":
+        return None  # already re-exec after update
+    args = list(argv) if argv is not None else sys.argv[1:]
+    if not args:
+        return None
+    skip = {"uninstall", "remove", "update", "--help", "-h", "--version"}
+    if args[0] in skip:
+        return None
+    try:
+        import asyncio
+        from Kerniq.devtools.update_check import check_for_update, apply_update
+
+        info = asyncio.run(check_for_update())
+        if not info.is_newer:
+            return None
+        print(
+            f"Kerniq update available: {info.local_version} → {info.remote_version}. "
+            "Updating in place (settings kept)…"
+        )
+        ok, msg = apply_update()
+        print(msg)
+        if not ok:
+            print("Auto-update failed; continuing with current version.")
+            return None
+        # Re-exec original command with fresh code
+        env = os.environ.copy()
+        env["KERNIQ_UPDATING"] = "1"
+        os.execvpe(sys.executable, [sys.executable, "-m", "Kerniq", *args], env)
+    except Exception as e:
+        logger.debug("auto-update skipped: %s", e)
+        return None
+    return None
+
+
+
+def _apply_ui_log_level():
+    """Use Web UI plugin log_level when running plugins ui (default: warning)."""
+    try:
+        from Kerniq.settings.component_store import ComponentSettingsStore
+        from Kerniq.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
+        store = ComponentSettingsStore()
+        # minimal schema for key
+        sch = SettingsSchema(
+            component_id="plugin_web_ui",
+            component_type="plugin",
+            title="Web UI",
+            fields=[SettingField(key="log_level", label="log", type=SettingType.SELECT, default="warning")],
+        )
+        vals = store.load("plugin", "plugin_web_ui", sch) or {}
+        lvl = str(vals.get("log_level") or "warning").upper()
+        level = getattr(logging, lvl, logging.WARNING)
+        logging.getLogger().setLevel(level)
+        for name in ("httpx", "httpcore", "Kerniq", "plugin", "plugin.web_ui", "cli", "Kerniq.models.providers.lm_studio"):
+            logging.getLogger(name).setLevel(level)
+    except Exception:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 logger = logging.getLogger("cli")
 
 
@@ -224,10 +295,52 @@ async def async_main(argv: Optional[list] = None) -> int:
     lang_set = settings_sub.add_parser("language", help="Get/set response language (english name or code)")
     lang_set.add_argument("value", nargs="?", default=None, help="e.g. Russian, ru, English, auto")
 
-    mcp_parser = subparsers.add_parser("mcp")
+    mcp_parser = subparsers.add_parser("mcp", help="MCP client/server")
     mcp_sub = mcp_parser.add_subparsers(dest="action")
-    mcp_sub.add_parser("validate")
-    mcp_sub.add_parser("serve")
+    mcp_sub.add_parser("validate", help="Check MCP SDK and config")
+    mcp_serve = mcp_sub.add_parser("serve", help="Run MCP server on stdio")
+    mcp_serve.add_argument(
+        "--workspace",
+        type=str,
+        default=None,
+        help="Workspace root for tool execution (default: config workspace)",
+    )
+
+    update_parser = subparsers.add_parser(
+        "update",
+        help="Check GitHub for a newer Kerniq release",
+    )
+    update_parser.add_argument(
+        "--repo",
+        default="DimV3rs3/Kerniq",
+        help="GitHub owner/repo (default: DimV3rs3/Kerniq)",
+    )
+
+    un_parser = subparsers.add_parser(
+        "uninstall",
+        aliases=["remove"],
+        help="Uninstall Kerniq from this Python env (pip + console script cleanup)",
+    )
+    un_parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Confirm uninstall without interactive prompt",
+    )
+    un_parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="Also delete local sessions/logs/state and __pycache__ under project root",
+    )
+    un_parser.add_argument(
+        "--wipe-project",
+        action="store_true",
+        help="Also permanently delete the Kerniq project source tree(s) from disk",
+    )
+    un_parser.add_argument(
+        "--deferred",
+        action="store_true",
+        help=argparse.SUPPRESS,  # internal: spawned after kerniq.exe exits
+    )
 
     args = parser.parse_args(argv)
 
@@ -238,6 +351,18 @@ async def async_main(argv: Optional[list] = None) -> int:
             return 0
         parser.print_help()
         return 0
+
+    if args.command in ("uninstall", "remove"):
+        from Kerniq.devtools.uninstall import uninstall as do_uninstall
+        return do_uninstall(
+            purge=bool(getattr(args, "purge", False)),
+            wipe_project=bool(getattr(args, "wipe_project", False)),
+            yes=bool(getattr(args, "yes", False)),
+            deferred=bool(getattr(args, "deferred", False)),
+        )
+
+    # Soft auto-update (skip uninstall/update itself)
+    maybe_auto_update(argv)
 
     try:
         config = SettingsProvider().config
@@ -261,6 +386,21 @@ async def async_main(argv: Optional[list] = None) -> int:
         )
 
     pm = PluginManager(context_factory=plugin_ctx_factory)
+
+    if args.command == "update":
+        from Kerniq.devtools.update_check import check_for_update
+
+        info = await check_for_update(repo=getattr(args, "repo", None) or "DimV3rs3/Kerniq")
+        print(info.message)
+        if info.release_url and info.is_newer:
+            print(f"Release page: {info.release_url}")
+            print("Install/update (from a clone):")
+            print("  git pull")
+            print('  python -m pip install -e ".[dev,mcp]"')
+        # exit 0 if up to date or no remote; 2 if newer available; 1 on auth/network hard fail
+        if info.error in ("auth",) and info.remote_version is None:
+            return 1
+        return 2 if info.is_newer else 0
 
     if args.command == "run":
         return await run_agent(args, config)
@@ -357,13 +497,17 @@ async def async_main(argv: Optional[list] = None) -> int:
             print(f"Updated {key} = {parsed}")
             return 0
     if args.command == "plugins":
+        plugin_dirs = find_plugins_dirs()
         if args.action == "list":
-            for d in (Path("plugins"),):
-                if d.exists():
-                    await pm.discover_and_load(d)
+            for d in plugin_dirs:
+                await pm.discover_and_load(d)
             plugins = pm.list_plugins()
             if not plugins:
                 print("No plugins discovered.")
+                if plugin_dirs:
+                    print("Searched:", ", ".join(str(d) for d in plugin_dirs))
+                else:
+                    print("Hint: run from the Kerniq repo, or set KERNIQ_ROOT to the project folder.")
             for p in plugins:
                 name = p["manifest"].name if p["manifest"] else "Unknown"
                 print(f"ID: {p['id']} | Status: {p['status']} | Name: {name}")
@@ -372,15 +516,27 @@ async def async_main(argv: Optional[list] = None) -> int:
             print("Use: plugins list")
             return 0
         if args.action == "ui":
+            _apply_ui_log_level()
             host = args.host or getattr(config.ui, "host", "127.0.0.1")
             port = int(args.port or getattr(config.ui, "port", 8765))
             config.ui.host = host
             config.ui.port = port
-            ui_dir = Path("plugins/web_ui")
-            if not ui_dir.is_dir() or not (ui_dir / "manifest.toml").exists():
-                print("Web UI plugin not found at plugins/web_ui", file=sys.stderr)
+            ui_dir = None
+            for d in plugin_dirs:
+                cand = d / "web_ui"
+                if cand.is_dir() and (cand / "manifest.toml").exists():
+                    ui_dir = cand
+                    break
+            if ui_dir is None:
+                print(
+                    "Web UI plugin not found. Searched plugin dirs:\n  "
+                    + "\n  ".join(str(d) for d in plugin_dirs)
+                    + "\nSet KERNIQ_ROOT to the Kerniq project folder.",
+                    file=sys.stderr,
+                )
                 return 1
-            await pm.discover_and_load(Path("plugins"))
+            for d in plugin_dirs:
+                await pm.discover_and_load(d)
             # Report load status
             plugins = {p["id"]: p for p in pm.list_plugins()}
             web = plugins.get("plugin_web_ui") or plugins.get("web_ui")
@@ -486,11 +642,82 @@ async def async_main(argv: Optional[list] = None) -> int:
         return 1
     if args.command == "mcp":
         if args.action == "validate":
-            print(f"MCP enabled: {config.mcp.enabled}")
+            try:
+                import mcp  # noqa: F401
+                mcp_ok = True
+            except ImportError:
+                mcp_ok = False
+            print(f"MCP enabled in config: {config.mcp.enabled}")
+            print(f"MCP SDK installed: {mcp_ok}")
+            print(f"published_tools: {config.mcp.published_tools or '(none)'}")
+            if config.mcp.servers:
+                print(f"configured servers: {len(config.mcp.servers)}")
+            if not mcp_ok:
+                print("Install: pip install 'Kerniq[mcp]'  or  pip install mcp", file=sys.stderr)
+                return 1
             return 0
         if args.action == "serve":
-            print("Requires: pip install Kerniq[mcp]")
-            return 1
+            try:
+                import mcp  # noqa: F401
+            except ImportError:
+                print(
+                    "MCP SDK missing. Install with:\n"
+                    "  pip install 'Kerniq[mcp]'\n"
+                    "  or: pip install mcp",
+                    file=sys.stderr,
+                )
+                return 1
+            # Prefer project root so relative config/workspace resolve when LMS spawns us
+            root = find_project_root()
+            if root:
+                try:
+                    import os
+                    os.chdir(root)
+                except Exception:
+                    pass
+            workspace_path = Path(
+                getattr(args, "workspace", None) or str(config.application.workspace_root)
+            )
+            if not workspace_path.is_absolute() and root:
+                workspace_path = (root / workspace_path).resolve()
+            else:
+                workspace_path = workspace_path.resolve()
+            workspace_path.mkdir(parents=True, exist_ok=True)
+            store = ToolSettingsStore(config.storage.state_dir)
+            registry, _policy = _build_registry(config, workspace_path, store)
+            published = list(config.mcp.published_tools or [])
+            if not published:
+                published = [
+                    "list_directory",
+                    "read_file",
+                    "file_exists",
+                    "get_file_info",
+                    "web_search",
+                    "fetch_url",
+                ]
+                logger.warning(
+                    "mcp.published_tools empty — using safe defaults: %s",
+                    published,
+                )
+            adapter = MCPServerAdapter(
+                tool_registry=registry,
+                allowed_tools=published,
+                workspace=workspace_path,
+            )
+            # Diagnostics on stderr only (stdio is the MCP protocol stream)
+            import sys as _sys
+            print(
+                f"Starting MCP server (stdio). Published: {published}\n"
+                f"workspace={workspace_path}\n"
+                f"python={_sys.executable}\n"
+                f"cwd={Path.cwd()}",
+                file=_sys.stderr,
+            )
+            print("Connect an MCP client to this process stdin/stdout.", file=_sys.stderr)
+            await adapter.run_stdio()
+            return 0
+        print("Usage: mcp validate | mcp serve [--workspace PATH]")
+        return 1
 
     parser.print_help()
     return 0

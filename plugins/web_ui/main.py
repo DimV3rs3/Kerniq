@@ -843,6 +843,7 @@ class UIHandler(BaseHTTPRequestHandler):
             }
         except Exception as e:
             return {"loaded": [], "error": str(e), "selected_model": "", "conflict": False, "selected_loaded": False}
+<<<<<<< HEAD
 
     def _chat_title(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Prefer a loaded embedding model for the title. Otherwise the usual short title."""
@@ -894,6 +895,8 @@ class UIHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             logger.info("embedding title failed, using heuristic: %s", exc)
         return {"title": fallback, "source": "heuristic"}
+=======
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 
     def _lms_load(self, data):
         try:
@@ -1190,7 +1193,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     # Model context window for overflow protection (best-effort)
     ctx_lim = 0
     try:
+<<<<<<< HEAD
         models = await provider.list_models() if hasattr(provider, "list_models") else []
+=======
+        models = asyncio.run(provider.list_models()) if hasattr(provider, "list_models") else []
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
         want = (ui.api.model or "").strip()
         for m in models or []:
             lim = (
@@ -1210,6 +1217,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     except Exception:
         pass
     agent.orchestrator.context_limit = ctx_lim or 32768
+<<<<<<< HEAD
     compactor = getattr(agent.orchestrator, "compactor", None)
     if compactor is not None:
         compactor.cfg_context_limit = ctx_lim or getattr(compactor, "cfg_max_tokens", 0) or 0
@@ -1217,6 +1225,8 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     agent.orchestrator.max_content_loop_hits = max(1, retries)
     agent.orchestrator.max_identical_tool_streak = max(2, retries)
     agent.orchestrator.max_plan_continuations = max(1, retries)
+=======
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 
     orig_generate = provider.generate
 
@@ -1225,8 +1235,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             return bool(STATE.runs.get(run_id, {}).get("cancelled"))
 
     async def generate_with_status(request):
+<<<<<<< HEAD
         if (request.metadata or {}).get("kerniq_internal"):
             return await orig_generate(request)
+=======
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
         if _is_cancelled():
             from Kerniq.interfaces.models import ModelResponse, Message, MessageRole
             return ModelResponse(
@@ -1501,6 +1514,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     )
     lang = getattr(getattr(ui, "chat", None), "response_language", None) or "auto"
     agent.response_language = lang
+<<<<<<< HEAD
     allowed_files = []
     for item in data.get("attachments") or []:
         path = item.get("path") if isinstance(item, dict) else str(item)
@@ -1586,6 +1600,16 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
 
     try:
         result = await _one(user_task, history_msgs or None, mode, initial_plan)
+=======
+    try:
+        result = await agent.run(
+            user_task,
+            workspace=str(ws),
+            system_prompt=system,
+            history=history_msgs or None,
+            response_language=lang,
+        )
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     except Exception as e:
         if _is_cancelled():
             _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
@@ -1594,12 +1618,20 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             msg = str(e)
             _emit(run_id, {"type": "status", "status": "error", "text": "Error"})
             _emit(run_id, {"type": "assistant", "content": f"Error: {msg}", "completed": False})
+<<<<<<< HEAD
         _finish_run(run_id, None if _is_cancelled() else str(e))
+=======
+        with STATE.runs_lock:
+            if run_id in STATE.runs:
+                STATE.runs[run_id]["done"] = True
+                STATE.runs[run_id]["error"] = None if _is_cancelled() else str(e)
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
         return
 
     if _is_cancelled():
         _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
         _emit(run_id, {"type": "cleanup_think"})
+<<<<<<< HEAD
         _finish_run(run_id, None)
         return
 
@@ -1694,6 +1726,16 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             act_result = act_result.replace("TASK_COMPLETED", "").rstrip()
         result = act_result
         failed = outcome in fail_outcomes
+=======
+        with STATE.runs_lock:
+            if run_id in STATE.runs:
+                STATE.runs[run_id]["done"] = True
+        return
+
+    completed = True
+    if isinstance(result, str) and "TASK_COMPLETED" in result:
+        result = result.replace("TASK_COMPLETED", "").rstrip()
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     with STATE.chat_lock:
         lst = STATE.chat_histories.setdefault(chat_id, [])
         lst.append({"role": "user", "content": user_task})
@@ -1701,6 +1743,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             lst.append({"role": "assistant", "content": result})
         if len(lst) > 200:
             STATE.chat_histories[chat_id] = lst[-200:]
+<<<<<<< HEAD
     final_status = "error" if failed else "done"
     still_open = [
         item for item in (_plan_items() or plan_items)
@@ -1717,6 +1760,10 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             "completed": not failed,
         },
     )
+=======
+    _emit(run_id, {"type": "assistant", "content": result or "", "completed": True})
+    _emit(run_id, {"type": "status", "status": "done", "text": "Done", "completed": True})
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     _emit(run_id, {"type": "cleanup_think"})
     _finish_run(run_id, outcome if failed else None)
 

@@ -15,11 +15,15 @@ pip install -e ".[mcp]"
 ## How it works
 
 1. CLI starts `MCPServerAdapter` with the internal `ToolRegistry` (filesystem, web, terminal packs if enabled).
+<<<<<<< HEAD
 2. Tools advertised by `list_tools` come from `[mcp].published_tools`.
    An empty list is not a hardcoded snapshot: the server publishes every
    **currently discovered** tool the security policy would run without a human.
    Add a pack and it appears on the next `kerniq mcp serve`. `["*"]` publishes
    every non-critical tool. An explicit list is a manual allowlist.
+=======
+2. Only tools listed in `config/default.toml` → `[mcp].published_tools` are advertised (`list_tools`).
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 3. On `call_tool`, the adapter maps the MCP request to the internal `Tool.execute(...)` with a workspace-bound context.
 4. Transport is **stdio** (official `mcp` ≥ 2.0 low-level `Server` + `stdio_server`). Logs go to **stderr**.
 

@@ -1150,6 +1150,7 @@ class UnzipTool(FileSystemToolBase):
             return self._create_error_result(call_id, str(e), "UNZIP_ERROR")
 
 
+<<<<<<< HEAD
 class MoveFileTool(FileSystemToolBase):
     @property
     def tool_id(self) -> str:
@@ -1202,6 +1203,8 @@ class MoveFileTool(FileSystemToolBase):
             return self._create_error_result(call_id, str(e), "FS_ERROR")
 
 
+=======
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 class FileSystemTools:
     def __init__(self, workspace: str):
         self.workspace = pathlib.Path(workspace).resolve()
@@ -1220,7 +1223,10 @@ class FileSystemTools:
             SearchCodeTool(self.workspace),
             ZipTool(self.workspace),
             UnzipTool(self.workspace),
+<<<<<<< HEAD
             MoveFileTool(self.workspace),
+=======
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
         ]
 
     def get_tools(self) -> List[Tool]:

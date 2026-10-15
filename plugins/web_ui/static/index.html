@@ -50,6 +50,7 @@
       <button class="ghost" id="btn-new-chat" style="padding:2px 6px">+ New</button>
     </h3>
     <div class="chat-hist" id="chat-hist"></div>
+<<<<<<< HEAD
     <div class="msgs-wrap">
       <div class="plan-float collapsed" id="plan-float" hidden>
         <button type="button" class="plan-head" id="plan-toggle">
@@ -60,6 +61,9 @@
       </div>
       <div class="msgs" id="msgs"></div>
     </div>
+=======
+    <div class="msgs" id="msgs"></div>
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     <div class="status-bar"><span class="spin" id="agent-spin"></span><span id="agent-status">Ready</span></div>
     <div id="attach-chips" style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px 0 8px"></div>
     <div class="composer">
@@ -104,18 +108,28 @@
         </div>
         <div class="field"><label class="lbl"><span data-i18n="undoSize">Undo history size</span><span class="info-tip" tabindex="0" data-tip="How many editor actions to keep for Undo (edits, open, close).">i</span></label>
           <input type="number" id="s-undo-size" min="10" max="1000" value="100"/>
+<<<<<<< HEAD
         </div>
         <div class="field"><label class="lbl"><span data-i18n="loopRetries">Loop retries</span><span class="info-tip" tabindex="0" data-tip="How many repeated replies or identical tool calls to allow before stopping. Raise this if a real task is cut off as a loop.">i</span></label>
           <input type="number" id="s-loop-retries" min="1" max="20" value="4"/>
+=======
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
         </div>
       </div>
       <div class="scard tabp" id="tab-api" style="display:none">
         <h2 data-i18n="apiModel">API & model</h2>
+<<<<<<< HEAD
         <div class="field"><label class="lbl"><span data-i18n="provider">Provider</span></label><select id="s-provider"></select></div>
         <div class="field"><label class="lbl"><span data-i18n="providerDesc">Description</span></label>
           <textarea id="provider-blurb" rows="2" style="resize:vertical;min-height:52px"></textarea>
         </div>
         <div id="provider-fields"></div>
+=======
+        <div class="field"><label class="lbl"><span data-i18n="provider">Provider</span></label><select id="s-provider"><option value="lm_studio">lm_studio</option><option value="mock">mock</option></select></div>
+        <div class="field"><label class="lbl"><span data-i18n="baseUrl">Base URL</span></label><input id="s-base-url" class="input-std" placeholder="http://127.0.0.1:1234"/></div>
+        <div class="field"><label class="lbl"><span data-i18n="apiToken">API token</span></label><input id="s-api-token" placeholder="API key (optional)" type="password"/></div>
+        <div class="field"><label class="lbl"><span data-i18n="model">Model</span></label><div class="row"><select id="s-model" style="flex:1"></select><button class="ghost" id="btn-refresh-models" data-i18n="refresh">Refresh</button></div></div>
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
         <div class="field"><label class="lbl"><span data-i18n="temperature">Temperature</span></label><input type="number" id="s-api-temp" step="0.05"/></div>
         <div class="field"><label class="lbl"><span data-i18n="maxTokens">Max tokens</span><span class="info-tip" tabindex="0" data-tip="Max tokens to generate. Empty = model maximum.">i</span></label>
           <input type="number" id="s-api-max-tokens" min="1" placeholder="auto (model max)"/>
@@ -191,6 +205,7 @@
             <span class="info-tip" tabindex="0" data-tip="Merge consecutive collapsible tool calls into one chat block.">i</span>
           </label>
         </div>
+<<<<<<< HEAD
         <div class="field field-check">
           <label class="check-line">
             <input type="checkbox" id="s-mode-auto" class="soft-check" checked/>
@@ -223,6 +238,8 @@
             <option value="high">high</option>
           </select>
         </div>
+=======
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
         <div class="field">
           <label class="lbl"><span data-i18n="responseLang">Response language</span>
             <span class="info-tip" tabindex="0" data-tip="Language for agent replies. Does not change the UI language.">i</span>
@@ -277,10 +294,16 @@
   </div>
   <div class="settings-actions">
     <button type="button" id="btn-stop-ui" class="ghost danger-stop" title="Stop UI">⏹ Stop UI</button>
+<<<<<<< HEAD
     <div class="settings-actions-right">
       <button id="btn-settings-save" disabled class="save-active">Save</button>
       <button id="btn-settings-cancel" disabled class="cancel-active">Cancel</button>
     </div>
+=======
+    <span style="flex:1"></span>
+    <button id="btn-settings-save" disabled class="save-active">Save</button>
+    <button id="btn-settings-cancel" disabled class="cancel-active">Cancel</button>
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   </div>
 </div>
 </div>
@@ -300,6 +323,7 @@
       <button id="mm-alongside">Load alongside</button>
       <button id="mm-replace" class="save-active">Unload all and load</button>
       <button id="mm-cancel" class="cancel-active">Cancel</button>
+<<<<<<< HEAD
     </div>
   </div>
 </div>
@@ -311,6 +335,8 @@
     <div class="row" style="gap:8px;margin-top:12px">
       <button id="approval-deny" class="cancel-active" type="button">Deny</button>
       <button id="approval-allow" class="save-active" type="button">Allow</button>
+=======
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     </div>
   </div>
 </div>

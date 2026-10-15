@@ -327,10 +327,13 @@ async def async_main(argv: Optional[list] = None) -> int:
         default=None,
         help="Workspace root for tool execution (default: config workspace)",
     )
+<<<<<<< HEAD
     mcp_sub.add_parser(
         "install",
         help="Write a portable MCP client config for this machine (and LM Studio if present)",
     )
+=======
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 
     update_parser = subparsers.add_parser(
         "update",
@@ -725,15 +728,36 @@ async def async_main(argv: Optional[list] = None) -> int:
                 workspace_path = workspace_path.resolve()
             workspace_path.mkdir(parents=True, exist_ok=True)
             store = ToolSettingsStore(config.storage.state_dir)
+<<<<<<< HEAD
             registry, policy = _build_registry(config, workspace_path, store)
             from Kerniq.mcp.publish import resolve_published_names
 
             published = resolve_published_names(registry, policy, config.mcp.published_tools)
+=======
+            registry, _policy = _build_registry(config, workspace_path, store)
+            published = list(config.mcp.published_tools or [])
+            if not published:
+                published = [
+                    "list_directory",
+                    "read_file",
+                    "file_exists",
+                    "get_file_info",
+                    "web_search",
+                    "fetch_url",
+                ]
+                logger.warning(
+                    "mcp.published_tools empty — using safe defaults: %s",
+                    published,
+                )
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
             adapter = MCPServerAdapter(
                 tool_registry=registry,
                 allowed_tools=published,
                 workspace=workspace_path,
+<<<<<<< HEAD
                 security_policy=policy,
+=======
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
             )
             # Diagnostics on stderr only (stdio is the MCP protocol stream)
             import sys as _sys
@@ -747,6 +771,7 @@ async def async_main(argv: Optional[list] = None) -> int:
             print("Connect an MCP client to this process stdin/stdout.", file=_sys.stderr)
             await adapter.run_stdio()
             return 0
+<<<<<<< HEAD
         if args.action == "install":
             from Kerniq.mcp.launch import install_lmstudio_mcp, write_local_mcp_config
 
@@ -757,6 +782,9 @@ async def async_main(argv: Optional[list] = None) -> int:
             print(msg if ok else f"LM Studio not updated ({msg}). Point a client at {local}.")
             return 0
         print("Usage: mcp validate | mcp serve [--workspace PATH] | mcp install")
+=======
+        print("Usage: mcp validate | mcp serve [--workspace PATH]")
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
         return 1
 
     parser.print_help()

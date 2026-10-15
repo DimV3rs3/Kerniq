@@ -48,10 +48,23 @@ fs_enabled = true
 [mcp]
 enabled = true
 servers = []
+<<<<<<< HEAD
 # Empty = publish every discovered tool the policy would run without a human.
 # New packs are included automatically. ["*"] publishes every non-critical tool.
 # An explicit list is a manual allowlist (still checked by the security policy).
 published_tools = []
+=======
+# Tools exposed when running: kerniq mcp serve
+# Empty list → read-only filesystem defaults at runtime
+published_tools = [
+  "list_directory",
+  "read_file",
+  "file_exists",
+  "get_file_info",
+  "web_search",
+  "fetch_url",
+]
+>>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 
 [storage]
 type = "json"

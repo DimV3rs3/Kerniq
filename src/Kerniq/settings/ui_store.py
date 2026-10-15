@@ -68,15 +68,20 @@ class AgentRuntimeSettings(BaseModel):
     timeout_seconds: Optional[int] = 120
     workspace: str = "./workspace"
     undo_history_size: int = 100
+    # How many identical replies / tool repeats to allow before loop protection stops.
+    loop_retries: int = 4
 
 
 class ApiModelSettings(BaseModel):
-    provider: str = "lm_studio"  # lm_studio | mock
+    provider: str = "lm_studio"  # id from Kerniq.models.catalog
     base_url: str = "http://localhost:1234"
     model: str = ""  # empty → first available / loaded
     api_token: str = ""  # not written to logs
+    binary_path: str = ""  # Claude Code CLI path
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = None  # null = auto/max
+    # Editable per-provider notes. Catalog text is only the initial value.
+    provider_descriptions: Dict[str, str] = Field(default_factory=dict)
 
 
 class SystemPromptSettings(BaseModel):
@@ -98,6 +103,15 @@ class ChatSettings(BaseModel):
     file_ops_only: bool = False  # UI: only show file create/edit/delete names
     aggregate_tools: bool = True  # merge consecutive identical tool names in UI
     response_language: str = "en"  # key from RESPONSE_LANGUAGES
+    # read_only | low | medium | high. Critical always requires a human.
+    auto_approve_up_to: str = "low"
+    # plan studies the project and writes a TODO list. act edits files.
+    agent_mode: str = "act"
+    auto_act_after_plan: bool = True
+    # Auto locks Plan|Act and asks the model whether a plan is required.
+    mode_auto: bool = True
+    # Do not stop until the request is actually done. After Plan, build an Act plan.
+    compose_plan: bool = True
 
 
 class ToolsUiSettings(BaseModel):

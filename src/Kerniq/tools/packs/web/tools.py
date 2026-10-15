@@ -99,6 +99,10 @@ class WebSearchTool(Tool):
         return "web_search"
 
     @property
+    def risk_level(self) -> str:
+        return "low"
+
+    @property
     def description(self) -> str:
         return (
             "Search the internet for information. Returns titles, URLs and snippets. "
@@ -329,6 +333,10 @@ class FetchUrlTool(Tool):
     @property
     def name(self) -> str:
         return "fetch_url"
+
+    @property
+    def risk_level(self) -> str:
+        return "low"
 
     @property
     def description(self) -> str:

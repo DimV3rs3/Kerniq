@@ -65,6 +65,16 @@ class Tool(ABC):
         pass
 
     @property
+    def risk_level(self) -> str:
+        """Trusted risk floor. The model cannot lower this at call time."""
+        return "medium"
+
+    @property
+    def auto_accept(self) -> bool:
+        """Per-tool opt-out of confirmation. Ignored when risk is critical."""
+        return bool(getattr(self, "cfg_auto_accept", False))
+
+    @property
     def category(self) -> str:
         """Logical group for UI: filesystem | terminal | web | fetch | other."""
         return "other"
@@ -100,12 +110,21 @@ class Tool(ABC):
                     default=True,
                     description="When chat aggregation is on, consecutive calls of this tool merge into one block",
                 ),
+                SettingField(
+                    key="auto_accept",
+                    label="Auto-accept this tool",
+                    type=SettingType.BOOL,
+                    default=False,
+                    description="Skip confirmation for this tool. Critical risk still always asks the user.",
+                ),
             ],
         )
 
     def apply_settings(self, values: Dict[str, Any]) -> None:
         if values and "collapsible" in values:
             self.cfg_collapsible = bool(values["collapsible"])
+        if values and "auto_accept" in values:
+            self.cfg_auto_accept = bool(values["auto_accept"])
 
     @property
     def collapsible(self) -> bool:

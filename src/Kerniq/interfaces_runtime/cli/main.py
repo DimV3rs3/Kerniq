@@ -12,66 +12,104 @@ from uuid import UUID
 
 from Kerniq.bootstrap import ensure_dependencies, format_bootstrap_report
 from Kerniq.core.agent import Agent
-from Kerniq.models.providers.mock import MockProvider
+from Kerniq.models.factory import build_provider
+from Kerniq.models.catalog import provider_ids
 from Kerniq.models.providers.lm_studio import LMStudioProvider
 from Kerniq.models.system_info import collect_system_info, recommend_for_lm_studio
 from Kerniq.tools.registry import ToolRegistry
-from Kerniq.tools.loader import register_builtin_tools, load_all_tools
-from Kerniq.tools.filesystem import FileSystemTools
-from Kerniq.tools.terminal import TerminalTools
-from Kerniq.tools.web_search import WebSearchTool, FetchUrlTool
-from Kerniq.tools.terminal import TerminalTools
-from Kerniq.tools.web_search import WebSearchTool, FetchUrlTool
 from Kerniq.tools.settings import ToolSettingsStore
-from Kerniq.security.policy import SecurityPolicy
+from Kerniq.assembly import build_tool_registry
 from Kerniq.settings.loader import SettingsProvider
 from Kerniq.core.verifier import BasicVerifier
 from Kerniq.storage.json_store import JsonStorage
 from Kerniq.sessions.manager import SessionManager
+from Kerniq.mcp.server import MCPServerAdapter
 from Kerniq.plugins.manager import PluginManager
+from Kerniq.devtools.paths import find_plugins_dirs, find_project_root
 from Kerniq.plugins.base import PluginContext
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+
+def maybe_auto_update(argv: Optional[list] = None) -> Optional[int]:
+    """If a newer release exists, apply it and re-exec the same command.
+
+    Skipped for: uninstall/remove/update --help, and when KERNIQ_NO_AUTO_UPDATE=1.
+    Settings/state are preserved (no wipe).
+    """
+    import os
+    import sys
+    if os.environ.get("KERNIQ_NO_AUTO_UPDATE", "").strip() in ("1", "true", "yes"):
+        return None
+    if os.environ.get("KERNIQ_UPDATING") == "1":
+        return None  # already re-exec after update
+    args = list(argv) if argv is not None else sys.argv[1:]
+    if not args:
+        return None
+    skip = {"uninstall", "remove", "update", "--help", "-h", "--version"}
+    if args[0] in skip:
+        return None
+    try:
+        import asyncio
+        from Kerniq.devtools.update_check import check_for_update, apply_update
+
+        info = asyncio.run(check_for_update())
+        if not info.is_newer:
+            return None
+        print(
+            f"Kerniq update available: {info.local_version} → {info.remote_version}. "
+            "Updating in place (settings kept)…"
+        )
+        ok, msg = apply_update()
+        print(msg)
+        if not ok:
+            print("Auto-update failed; continuing with current version.")
+            return None
+        # Re-exec original command with fresh code
+        env = os.environ.copy()
+        env["KERNIQ_UPDATING"] = "1"
+        os.execvpe(sys.executable, [sys.executable, "-m", "Kerniq", *args], env)
+    except Exception as e:
+        logger.debug("auto-update skipped: %s", e)
+        return None
+    return None
+
+
+
+def _apply_ui_log_level():
+    """Use Web UI plugin log_level when running plugins ui (default: warning)."""
+    try:
+        from Kerniq.settings.component_store import ComponentSettingsStore
+        from Kerniq.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
+        store = ComponentSettingsStore()
+        # minimal schema for key
+        sch = SettingsSchema(
+            component_id="plugin_web_ui",
+            component_type="plugin",
+            title="Web UI",
+            fields=[SettingField(key="log_level", label="log", type=SettingType.SELECT, default="warning")],
+        )
+        vals = store.load("plugin", "plugin_web_ui", sch) or {}
+        lvl = str(vals.get("log_level") or "warning").upper()
+        level = getattr(logging, lvl, logging.WARNING)
+        logging.getLogger().setLevel(level)
+        for name in ("httpx", "httpcore", "Kerniq", "plugin", "plugin.web_ui", "cli", "Kerniq.models.providers.lm_studio"):
+            logging.getLogger(name).setLevel(level)
+    except Exception:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 logger = logging.getLogger("cli")
 
 
 def _build_registry(config, workspace: Path, tool_settings_store: ToolSettingsStore):
-    ts = tool_settings_store.settings
-    registry = ToolRegistry()
-    policy = SecurityPolicy(
-        workspace_root=workspace,
-        disallowed_commands=config.security.disallowed_terminal_commands,
-        require_approval_for_high_risk=config.security.require_approval_for_high_risk,
+    del tool_settings_store
+    return build_tool_registry(
+        workspace,
+        config=config,
+        state_dir=config.storage.state_dir,
+        auto_approve_up_to=getattr(config.security, "auto_approve_up_to", "low"),
     )
-    enabled_packs = []
-    if getattr(ts, "fs_enabled", True):
-        enabled_packs.append("filesystem")
-    if getattr(ts, "terminal_enabled", True):
-        enabled_packs.append("terminal")
-    if getattr(ts, "web_search_enabled", True) or getattr(ts, "fetch_url_enabled", True):
-        enabled_packs.append("web")
-    for tool in load_all_tools(str(workspace), policy=policy, enabled_packs=enabled_packs or None):
-        # fine-grained enable for web tools
-        if tool.name == "web_search" and not getattr(ts, "web_search_enabled", True):
-            continue
-        if tool.name == "fetch_url" and not getattr(ts, "fetch_url_enabled", True):
-            continue
-        try:
-            registry.register_tool(tool)
-        except ValueError:
-            pass
-        # apply pack-level tool settings when present
-        try:
-            if tool.name == "web_search" and hasattr(tool, "apply_settings"):
-                tool.apply_settings({
-                    "max_results": getattr(ts, "web_search_max_results", 5),
-                    "timeout": getattr(ts, "web_search_timeout", 15),
-                })
-            if tool.name == "fetch_url" and hasattr(tool, "apply_settings"):
-                tool.apply_settings({"timeout": getattr(ts, "fetch_url_timeout", 20)})
-        except Exception:
-            pass
-    return registry, policy
 
 
 async def run_agent(args: argparse.Namespace, config) -> int:
@@ -81,40 +119,95 @@ async def run_agent(args: argparse.Namespace, config) -> int:
     registry, policy = _build_registry(config, workspace_path, store)
 
     provider_name = args.provider or config.models.default_provider
-    if provider_name == "lm_studio":
-        ls_config = config.models.providers.get("lm_studio", {})
-        provider = LMStudioProvider(
-            base_url=ls_config.get("base_url", "http://localhost:1234"),
-            api_key=ls_config.get("api_key"),
-            model=ls_config.get("model") or config.models.default_model or None,
+    ui_api = None
+    try:
+        from Kerniq.settings.ui_store import UiSettingsStore
+        ui_api = UiSettingsStore(config.storage.state_dir).load().api
+    except Exception:
+        ui_api = None
+    try:
+        provider = build_provider(
+            provider_name,
+            api=ui_api,
+            config=config,
+            timeout=float(getattr(config.runtime, "timeout_seconds", None) or 600),
         )
-        if not await provider.check_connection():
-            logger.warning("LM Studio not reachable — falling back to mock")
-            if args.provider == "lm_studio":
-                print("ERROR: LM Studio is not reachable. Start it or use --provider mock.", file=sys.stderr)
-                return 1
-            provider = MockProvider()
-            provider_name = "mock"
-    elif provider_name == "mock":
-        provider = MockProvider()
-    else:
-        logger.error("Unsupported provider: %s", provider_name)
+    except Exception as exc:
+        logger.error("Cannot build provider %s: %s", provider_name, exc)
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 1
+    if provider_name not in ("mock", "mock_provider"):
+        if not await provider.check_connection():
+            # Implicit default LM Studio may be down in a fresh checkout.
+            # An explicit --provider never falls through to mock.
+            if provider_name == "lm_studio" and not args.provider:
+                logger.warning("LM Studio not reachable — falling back to mock")
+                from Kerniq.models.providers.mock import MockProvider
+                provider = MockProvider()
+                provider_name = "mock"
+            else:
+                print(
+                    f"ERROR: provider '{provider_name}' is not reachable. "
+                    "Check the key, URL, or CLI path.",
+                    file=sys.stderr,
+                )
+                return 1
 
     agent = Agent(provider, registry)
     agent.orchestrator.security_policy = policy
-    agent.orchestrator.verifier = BasicVerifier()
+    agent.orchestrator.verifier = BasicVerifier(check_files=list(getattr(args, "expect_file", None) or []))
     agent.orchestrator.max_iterations = config.runtime.max_iterations
+    agent.orchestrator.provider_retries = int(config.runtime.retry_limit or 0)
+    from Kerniq.interfaces.approvals import ConsoleApprovalProvider
+    agent.orchestrator.approval_provider = ConsoleApprovalProvider()
+
+    storage = JsonStorage(Path(config.storage.sessions_dir))
+    sessions = SessionManager(storage)
+
+    def _checkpoint(ctx):
+        transcript = (ctx.metadata or {}).get("transcript") or [
+            m.model_dump(mode="json") for m in ctx.messages
+        ]
+        sessions.save_task_sync(
+            session_id=ctx.session_id,
+            task_id=ctx.task_id,
+            goal=ctx.goal,
+            status=str((ctx.metadata or {}).get("outcome") or "running"),
+            result="",
+            workspace=str(workspace_path),
+            messages=transcript,
+            metadata={"provider": provider_name, "outcome": (ctx.metadata or {}).get("outcome")},
+        )
+
+    agent.orchestrator.on_progress = _checkpoint
 
     print(f"Provider: {provider_name} | Workspace: {workspace_path}")
     print(f"Tools: {[t.name for t in registry.list_tools()]}")
     lang = "auto"
     try:
         from Kerniq.settings.ui_store import UiSettingsStore
-        lang = UiSettingsStore().load().chat.response_language or "auto"
+        lang = UiSettingsStore(config.storage.state_dir).load().chat.response_language or "auto"
     except Exception:
         pass
-    result = await agent.run(args.task, workspace=str(workspace_path, response_language=lang))
+    result = await agent.run(args.task, workspace=str(workspace_path), response_language=lang)
+    ctx = agent.last_context
+    if ctx is not None:
+        transcript = (ctx.metadata or {}).get("transcript") or [
+            m.model_dump(mode="json") for m in ctx.messages
+        ]
+        await sessions.save_task(
+            session_id=ctx.session_id,
+            task_id=ctx.task_id,
+            goal=ctx.goal,
+            status=str((ctx.metadata or {}).get("outcome") or "unknown"),
+            result=result,
+            workspace=str(workspace_path),
+            messages=transcript,
+            metadata={
+                "outcome": (ctx.metadata or {}).get("outcome"),
+                "provider": provider_name,
+            },
+        )
     print(f"\nAgent Result:\n{result}")
     return 0
 
@@ -181,7 +274,7 @@ async def async_main(argv: Optional[list] = None) -> int:
     run_parser = subparsers.add_parser("run", help="Run an agent task")
     run_parser.add_argument("--task", type=str, required=True)
     run_parser.add_argument("--workspace", type=str)
-    run_parser.add_argument("--provider", type=str, help="lm_studio | mock")
+    run_parser.add_argument("--provider", type=str, help="Provider id (kerniq models list)")
 
     subparsers.add_parser("doctor", help="System health, deps, LM Studio")
 
@@ -224,10 +317,56 @@ async def async_main(argv: Optional[list] = None) -> int:
     lang_set = settings_sub.add_parser("language", help="Get/set response language (english name or code)")
     lang_set.add_argument("value", nargs="?", default=None, help="e.g. Russian, ru, English, auto")
 
-    mcp_parser = subparsers.add_parser("mcp")
+    mcp_parser = subparsers.add_parser("mcp", help="MCP client/server")
     mcp_sub = mcp_parser.add_subparsers(dest="action")
-    mcp_sub.add_parser("validate")
-    mcp_sub.add_parser("serve")
+    mcp_sub.add_parser("validate", help="Check MCP SDK and config")
+    mcp_serve = mcp_sub.add_parser("serve", help="Run MCP server on stdio")
+    mcp_serve.add_argument(
+        "--workspace",
+        type=str,
+        default=None,
+        help="Workspace root for tool execution (default: config workspace)",
+    )
+    mcp_sub.add_parser(
+        "install",
+        help="Write a portable MCP client config for this machine (and LM Studio if present)",
+    )
+
+    update_parser = subparsers.add_parser(
+        "update",
+        help="Check GitHub for a newer Kerniq release",
+    )
+    update_parser.add_argument(
+        "--repo",
+        default="DimV3rs3/Kerniq",
+        help="GitHub owner/repo (default: DimV3rs3/Kerniq)",
+    )
+
+    un_parser = subparsers.add_parser(
+        "uninstall",
+        aliases=["remove"],
+        help="Uninstall Kerniq from this Python env (pip + console script cleanup)",
+    )
+    un_parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Confirm uninstall without interactive prompt",
+    )
+    un_parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="Also delete local sessions/logs/state and __pycache__ under project root",
+    )
+    un_parser.add_argument(
+        "--wipe-project",
+        action="store_true",
+        help="Also permanently delete the Kerniq project source tree(s) from disk",
+    )
+    un_parser.add_argument(
+        "--deferred",
+        action="store_true",
+        help=argparse.SUPPRESS,  # internal: spawned after kerniq.exe exits
+    )
 
     args = parser.parse_args(argv)
 
@@ -239,6 +378,18 @@ async def async_main(argv: Optional[list] = None) -> int:
         parser.print_help()
         return 0
 
+    if args.command in ("uninstall", "remove"):
+        from Kerniq.devtools.uninstall import uninstall as do_uninstall
+        return do_uninstall(
+            purge=bool(getattr(args, "purge", False)),
+            wipe_project=bool(getattr(args, "wipe_project", False)),
+            yes=bool(getattr(args, "yes", False)),
+            deferred=bool(getattr(args, "deferred", False)),
+        )
+
+    # Soft auto-update (skip uninstall/update itself)
+    maybe_auto_update(argv)
+
     try:
         config = SettingsProvider().config
     except Exception as e:
@@ -247,6 +398,17 @@ async def async_main(argv: Optional[list] = None) -> int:
 
     if config.application.auto_install_deps and args.command in ("run", "doctor", "plugins"):
         ensure_dependencies(auto_install=True)
+
+    if not (args.command == "mcp" and getattr(args, "action", None) == "serve"):
+        try:
+            from Kerniq.mcp.launch import write_local_mcp_config
+
+            write_local_mcp_config(
+                Path(config.application.workspace_root),
+                Path(config.storage.state_dir),
+            )
+        except Exception as exc:
+            logger.debug("mcp config not written: %s", exc)
 
     storage = JsonStorage(Path(config.storage.sessions_dir))
     sm = SessionManager(storage)
@@ -261,6 +423,21 @@ async def async_main(argv: Optional[list] = None) -> int:
         )
 
     pm = PluginManager(context_factory=plugin_ctx_factory)
+
+    if args.command == "update":
+        from Kerniq.devtools.update_check import check_for_update
+
+        info = await check_for_update(repo=getattr(args, "repo", None) or "DimV3rs3/Kerniq")
+        print(info.message)
+        if info.release_url and info.is_newer:
+            print(f"Release page: {info.release_url}")
+            print("Install/update (from a clone):")
+            print("  git pull")
+            print('  python -m pip install -e ".[dev,mcp]"')
+        # exit 0 if up to date or no remote; 2 if newer available; 1 on auth/network hard fail
+        if info.error in ("auth",) and info.remote_version is None:
+            return 1
+        return 2 if info.is_newer else 0
 
     if args.command == "run":
         return await run_agent(args, config)
@@ -277,7 +454,11 @@ async def async_main(argv: Optional[list] = None) -> int:
         return 1
     if args.command == "models":
         if args.action == "list":
-            print(f"Providers: mock, lm_studio (default: {config.models.default_provider})")
+            print("Providers:")
+            for pid in provider_ids():
+                mark = " (default)" if pid == config.models.default_provider else ""
+                print(f"  - {pid}{mark}")
+            print("Tools are loaded from discovered packs, not a hardcoded list in the CLI.")
             ls_cfg = config.models.providers.get("lm_studio", {})
             ls = LMStudioProvider(
                 base_url=ls_cfg.get("base_url", "http://localhost:1234"),
@@ -357,13 +538,17 @@ async def async_main(argv: Optional[list] = None) -> int:
             print(f"Updated {key} = {parsed}")
             return 0
     if args.command == "plugins":
+        plugin_dirs = find_plugins_dirs()
         if args.action == "list":
-            for d in (Path("plugins"),):
-                if d.exists():
-                    await pm.discover_and_load(d)
+            for d in plugin_dirs:
+                await pm.discover_and_load(d)
             plugins = pm.list_plugins()
             if not plugins:
                 print("No plugins discovered.")
+                if plugin_dirs:
+                    print("Searched:", ", ".join(str(d) for d in plugin_dirs))
+                else:
+                    print("Hint: run from the Kerniq repo, or set KERNIQ_ROOT to the project folder.")
             for p in plugins:
                 name = p["manifest"].name if p["manifest"] else "Unknown"
                 print(f"ID: {p['id']} | Status: {p['status']} | Name: {name}")
@@ -372,15 +557,27 @@ async def async_main(argv: Optional[list] = None) -> int:
             print("Use: plugins list")
             return 0
         if args.action == "ui":
+            _apply_ui_log_level()
             host = args.host or getattr(config.ui, "host", "127.0.0.1")
             port = int(args.port or getattr(config.ui, "port", 8765))
             config.ui.host = host
             config.ui.port = port
-            ui_dir = Path("plugins/web_ui")
-            if not ui_dir.is_dir() or not (ui_dir / "manifest.toml").exists():
-                print("Web UI plugin not found at plugins/web_ui", file=sys.stderr)
+            ui_dir = None
+            for d in plugin_dirs:
+                cand = d / "web_ui"
+                if cand.is_dir() and (cand / "manifest.toml").exists():
+                    ui_dir = cand
+                    break
+            if ui_dir is None:
+                print(
+                    "Web UI plugin not found. Searched plugin dirs:\n  "
+                    + "\n  ".join(str(d) for d in plugin_dirs)
+                    + "\nSet KERNIQ_ROOT to the Kerniq project folder.",
+                    file=sys.stderr,
+                )
                 return 1
-            await pm.discover_and_load(Path("plugins"))
+            for d in plugin_dirs:
+                await pm.discover_and_load(d)
             # Report load status
             plugins = {p["id"]: p for p in pm.list_plugins()}
             web = plugins.get("plugin_web_ui") or plugins.get("web_ui")
@@ -486,11 +683,81 @@ async def async_main(argv: Optional[list] = None) -> int:
         return 1
     if args.command == "mcp":
         if args.action == "validate":
-            print(f"MCP enabled: {config.mcp.enabled}")
+            try:
+                import mcp  # noqa: F401
+                mcp_ok = True
+            except ImportError:
+                mcp_ok = False
+            print(f"MCP enabled in config: {config.mcp.enabled}")
+            print(f"MCP SDK installed: {mcp_ok}")
+            print(f"published_tools: {config.mcp.published_tools or '(none)'}")
+            if config.mcp.servers:
+                print(f"configured servers: {len(config.mcp.servers)}")
+            if not mcp_ok:
+                print("Install: pip install 'Kerniq[mcp]'  or  pip install mcp", file=sys.stderr)
+                return 1
             return 0
         if args.action == "serve":
-            print("Requires: pip install Kerniq[mcp]")
-            return 1
+            try:
+                import mcp  # noqa: F401
+            except ImportError:
+                print(
+                    "MCP SDK missing. Install with:\n"
+                    "  pip install 'Kerniq[mcp]'\n"
+                    "  or: pip install mcp",
+                    file=sys.stderr,
+                )
+                return 1
+            # Prefer project root so relative config/workspace resolve when LMS spawns us
+            root = find_project_root()
+            if root:
+                try:
+                    import os
+                    os.chdir(root)
+                except Exception:
+                    pass
+            workspace_path = Path(
+                getattr(args, "workspace", None) or str(config.application.workspace_root)
+            )
+            if not workspace_path.is_absolute() and root:
+                workspace_path = (root / workspace_path).resolve()
+            else:
+                workspace_path = workspace_path.resolve()
+            workspace_path.mkdir(parents=True, exist_ok=True)
+            store = ToolSettingsStore(config.storage.state_dir)
+            registry, policy = _build_registry(config, workspace_path, store)
+            from Kerniq.mcp.publish import resolve_published_names
+
+            published = resolve_published_names(registry, policy, config.mcp.published_tools)
+            adapter = MCPServerAdapter(
+                tool_registry=registry,
+                allowed_tools=published,
+                workspace=workspace_path,
+                security_policy=policy,
+            )
+            # Diagnostics on stderr only (stdio is the MCP protocol stream)
+            import sys as _sys
+            print(
+                f"Starting MCP server (stdio). Published: {published}\n"
+                f"workspace={workspace_path}\n"
+                f"python={_sys.executable}\n"
+                f"cwd={Path.cwd()}",
+                file=_sys.stderr,
+            )
+            print("Connect an MCP client to this process stdin/stdout.", file=_sys.stderr)
+            await adapter.run_stdio()
+            return 0
+        if args.action == "install":
+            from Kerniq.mcp.launch import install_lmstudio_mcp, write_local_mcp_config
+
+            workspace_path = Path(config.application.workspace_root).resolve()
+            local = write_local_mcp_config(workspace_path, Path(config.storage.state_dir))
+            print(f"Wrote portable MCP config: {local}")
+            ok, msg = install_lmstudio_mcp(workspace_path)
+            print(msg if ok else f"LM Studio not updated ({msg}). Point a client at {local}.")
+            return 0
+        print("Usage: mcp validate | mcp serve [--workspace PATH] | mcp install")
+        return 1
 
     parser.print_help()
     return 0

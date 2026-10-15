@@ -1,11 +1,12 @@
-"""LM Studio provider — native LMS API (/api/v1/...).
+"""LM Studio provider.
 
-Endpoints:
-  GET  {host}/api/v1/models
-  POST {host}/api/v1/chat
+Model catalog, load, and unload use the native LMS API (``/api/v1/...``).
+Chat and tool calls use the OpenAI-compatible endpoint
+``/v1/chat/completions``, which is what current LM Studio builds expose for
+tools. ``/api/v1/chat`` is not used for generation.
 
-On Windows, system HTTP_PROXY often breaks localhost → 503.
-We force trust_env=False for local hosts.
+On Windows, system HTTP_PROXY often breaks localhost. Local hosts set
+``trust_env=False``.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import uuid
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -30,6 +32,15 @@ from ...interfaces.models import (
 from ...interfaces.errors import ProviderError, ErrorCode
 
 logger = logging.getLogger(__name__)
+
+# Back-to-back UI polls (loaded + catalog) must not hit /api/v1/models twice.
+_LIST_CACHE: Dict[str, Any] = {"key": None, "at": 0.0, "data": None}
+_LIST_TTL = 2.0
+
+
+def _invalidate_model_cache() -> None:
+    _LIST_CACHE["at"] = 0.0
+    _LIST_CACHE["data"] = None
 
 
 def _normalize_host(base_url: str) -> str:
@@ -93,9 +104,20 @@ class LMStudioProvider(ModelProvider):
         return f"{self.host}{path}"
 
     def _client(self, timeout: Optional[float] = None) -> httpx.AsyncClient:
-        # Critical on Windows: do NOT use system proxy for local LMS
+        # Critical on Windows: do NOT use system proxy for local LMS.
+        # Use split timeouts: long *read* so prefill/reasoning can take minutes–hours
+        # without killing the whole stream (default scalar timeout is total wall time).
+        t = float(timeout if timeout is not None else self.timeout)
+        if t <= 0:
+            t = 600.0
+        http_timeout = httpx.Timeout(
+            connect=30.0,
+            read=t,
+            write=60.0,
+            pool=30.0,
+        )
         return httpx.AsyncClient(
-            timeout=timeout if timeout is not None else self.timeout,
+            timeout=http_timeout,
             trust_env=not _is_local_host(self.host),
             follow_redirects=True,
         )
@@ -130,9 +152,22 @@ class LMStudioProvider(ModelProvider):
             return False
 
     async def list_models(self) -> List[Dict[str, Any]]:
+        key = (self.host, bool(self.api_key))
+        now = time.monotonic()
+        cached = _LIST_CACHE.get("data")
+        if (
+            _LIST_CACHE.get("key") == key
+            and cached is not None
+            and (now - float(_LIST_CACHE.get("at") or 0)) < _LIST_TTL
+        ):
+            return list(cached)
         data, url = await self._get_json(self.models_path)
         logger.info("LM Studio models OK via %s", url)
-        return self._parse_models_payload(data)
+        parsed = self._parse_models_payload(data)
+        _LIST_CACHE["key"] = key
+        _LIST_CACHE["at"] = now
+        _LIST_CACHE["data"] = parsed
+        return list(parsed)
 
     def _parse_models_payload(self, data: Any) -> List[Dict[str, Any]]:
         result: List[Dict[str, Any]] = []
@@ -147,6 +182,18 @@ class LMStudioProvider(ModelProvider):
                 result.append({"id": str(m), "name": str(m)})
                 continue
             mid = m.get("key") or m.get("id") or m.get("name")
+            # max_context_length = model capability; loaded config.context_length = actual window
+            max_ctx = m.get("max_context_length") or m.get("max_context") or None
+            loaded_ctx = None
+            for inst in (m.get("loaded_instances") or []):
+                if not isinstance(inst, dict):
+                    continue
+                cfg = inst.get("config") or {}
+                if isinstance(cfg, dict) and cfg.get("context_length"):
+                    loaded_ctx = int(cfg["context_length"])
+                    break
+            # Prefer loaded window for fill %; fall back to max
+            effective = loaded_ctx or max_ctx
             result.append(
                 {
                     "id": mid,
@@ -155,6 +202,9 @@ class LMStudioProvider(ModelProvider):
                     "architecture": m.get("architecture"),
                     "quantization": m.get("quantization"),
                     "loaded_instances": m.get("loaded_instances"),
+                    "max_context_length": int(max_ctx) if max_ctx else None,
+                    "context_length": int(effective) if effective else None,
+                    "loaded_context_length": loaded_ctx,
                     "raw": m,
                 }
             )
@@ -165,7 +215,8 @@ class LMStudioProvider(ModelProvider):
             "provider": self.provider_id,
             "host": self.host,
             "models_url": self._url(self.models_path),
-            "chat_url": self._url(self.chat_path),
+            "chat_url": self._url("/v1/chat/completions"),
+            "native_chat_url": self._url(self.chat_path),
             "api": "lms /api/v1",
             "auth": bool(self.api_key),
             "trust_env_proxy": not _is_local_host(self.host),
@@ -214,11 +265,18 @@ class LMStudioProvider(ModelProvider):
     def get_capabilities(self) -> Dict[str, Any]:
         return {
             "tool_calls": True,
-            "streaming": False,
+            "streaming": True,
             "vision": False,
             "reasoning": True,
             "list_models": True,
-            "api": "lms_native_api_v1",
+            "load_model": True,
+            "api": "openai_compat_/v1/chat/completions",
+            "native_model_api": "lms_/api/v1/models",
+            "notes": (
+                "Tool calls and streaming are implemented on /v1/chat/completions. "
+                "Model load/unload uses /api/v1. Context length is taken from the "
+                "catalog when LM Studio reports it; otherwise Kerniq uses a labelled estimate."
+            ),
         }
 
 
@@ -343,6 +401,7 @@ class LMStudioProvider(ModelProvider):
                     ErrorCode.PROVIDER_REQUEST_FAILED,
                     f"Unload failed: {r.status_code} {r.text[:300]}",
                 )
+            _invalidate_model_cache()
             return r.json() if r.content else {}
 
     async def unload_all(self) -> List[Dict[str, Any]]:
@@ -366,6 +425,7 @@ class LMStudioProvider(ModelProvider):
                     ErrorCode.PROVIDER_REQUEST_FAILED,
                     f"Load failed: {r.status_code} {r.text[:400]}",
                 )
+            _invalidate_model_cache()
             return r.json() if r.content else {}
 
 
@@ -469,28 +529,86 @@ class LMStudioProvider(ModelProvider):
             },
         )
 
+
+    def _friendly_chat_error(self, status: int, body: str, url: str) -> str:
+        b = (body or "").lower()
+        if status in (400, 404) and any(x in b for x in ("not loaded", "no model", "model_not", "unload", "not found")):
+            return (
+                "Model is not loaded in LM Studio. Load a model in LM Studio "
+                "(or use Kerniq → API & model → Refresh / load), then try again."
+            )
+        if status == 404:
+            return f"LM Studio endpoint not found ({url}). Is the local server running?"
+        if status >= 500:
+            return f"LM Studio server error ({status}). The model may have crashed or been unloaded."
+        return f"LM Studio chat error ({url}): {status} {body[:400]}"
+
+
+    async def resolve_auto_model(self) -> Optional[str]:
+        """Pick a model when settings say (auto).
+
+        Priority:
+        1. First *loaded* LLM (skip embeddings)
+        2. First catalog LLM that has loaded_instances
+        3. None (caller must error — do not silently use an unloaded model)
+        """
+        try:
+            models = await self.list_models()
+        except Exception as e:
+            logger.warning("resolve_auto_model: list_models failed: %s", e)
+            return None
+        if not models:
+            return None
+
+        def is_llm(m: Dict[str, Any]) -> bool:
+            t = (m.get("type") or "").lower()
+            if t in ("embedding", "embeddings", "reranker"):
+                return False
+            name = str(m.get("id") or m.get("name") or "").lower()
+            if "embed" in name:
+                return False
+            return True
+
+        # Prefer explicitly loaded
+        for m in models:
+            if not is_llm(m):
+                continue
+            inst = m.get("loaded_instances") or []
+            if inst:
+                mid = m.get("id")
+                if mid:
+                    logger.info("auto model -> loaded %s", mid)
+                    return str(mid)
+        # Also check list_loaded if available
+        try:
+            loaded = await self.loaded_instances()
+            for item in loaded or []:
+                mid = item.get("model") or item.get("id") or item.get("key")
+                if mid and "embed" not in str(mid).lower():
+                    logger.info("auto model -> list_loaded %s", mid)
+                    return str(mid)
+        except Exception:
+            pass
+        logger.warning(
+            "auto model: no loaded LLM found among %s catalog entries",
+            len(models),
+        )
+        return None
+
     async def generate(self, request: ModelRequest) -> ModelResponse:
         """Chat via OpenAI-compatible /v1/chat/completions (same as benchmark/analyzer).
 
         Model list/load/unload stay on /api/v1/*. Custom tools work only on /v1/chat/completions.
         """
-        model = self.model or request.metadata.get("model")
+        meta = request.metadata or {}
+        model = (self.model or meta.get("model") or "").strip() or None
         if not model:
-            try:
-                models = await self.list_models()
-                if models:
-                    for m in models:
-                        if m.get("loaded_instances"):
-                            model = m.get("id")
-                            break
-                    if not model:
-                        model = models[0].get("id")
-            except Exception:
-                pass
+            model = await self.resolve_auto_model()
         if not model:
             raise ProviderError(
                 ErrorCode.PROVIDER_REQUEST_FAILED,
-                "No model specified and none available from /api/v1/models",
+                "No model specified (settings = auto) and no loaded LLM found in LM Studio. "
+                "Load a model in LM Studio or pick one under API & model.",
             )
 
         payload: Dict[str, Any] = {
@@ -517,7 +635,7 @@ class LMStudioProvider(ModelProvider):
                 if response.status_code >= 400:
                     raise ProviderError(
                         ErrorCode.PROVIDER_REQUEST_FAILED,
-                        f"LM Studio chat error ({url}): {response.status_code} {body[:500]}",
+                        self._friendly_chat_error(response.status_code, body, url),
                     )
                 data = response.json()
         except ProviderError:
@@ -569,9 +687,35 @@ class LMStudioProvider(ModelProvider):
                     body = await response.aread()
                     raise ProviderError(
                         ErrorCode.PROVIDER_REQUEST_FAILED,
-                        f"LM Studio stream error ({url}): {response.status_code} {body[:500]!r}",
+                        self._friendly_chat_error(response.status_code, body.decode("utf-8", errors="replace") if isinstance(body, (bytes, bytearray)) else str(body), url),
                     )
+                cancel_check = (request.metadata or {}).get("cancel_check")
                 async for line in response.aiter_lines():
+                    if callable(cancel_check):
+                        try:
+                            if cancel_check():
+                                await response.aclose()
+                                # Use module-level Message/ModelResponse — do NOT import
+                                # them here (that makes Message a local and breaks the
+                                # normal return path: "not associated with a value").
+                                content = "".join(content_parts)
+                                reasoning = "".join(reasoning_parts) or None
+                                meta: Dict[str, Any] = {"cancelled": True}
+                                if reasoning:
+                                    meta["reasoning"] = reasoning
+                                return ModelResponse(
+                                    messages=[
+                                        Message(
+                                            role=MessageRole.ASSISTANT,
+                                            content=content,
+                                            metadata=meta if reasoning else None,
+                                        )
+                                    ],
+                                    finish_reason="cancelled",
+                                    metadata=meta,
+                                )
+                        except Exception:
+                            pass
                     line = (line or "").strip()
                     if not line or line.startswith(":") or not line.startswith("data:"):
                         continue

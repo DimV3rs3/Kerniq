@@ -6,8 +6,13 @@ The goal is to provide a modular, extensible foundation for autonomous AI agents
 ## 2. Core Components
 - **Agent Facade**: Public entry point for running tasks.
 - **Orchestrator**: Manages the execution loop (Plan -> Model -> Tool -> Verify).
-- **Model Router & Providers**: Abstracts LLM interactions. Supports multiple providers (LM Studio, OpenAI-compatible, Mock).
-- **Tool Registry & Execution**: Manages a set of tools with strict JSON Schema validation and security policies.
+- **Model Router & Providers**: `ModelRouter` returns the requested provider or
+  raises. It does not substitute another provider. LM Studio chat goes through
+  `/v1/chat/completions`; catalog and load/unload stay on `/api/v1`. Mock stays
+  available for tests.
+- **Tool Registry & Execution**: Tools declare JSON Schema. The orchestrator
+  rejects missing or wrongly typed arguments before execution. Results are
+  marked success or error; a tool exception is an error result, not a success.
 - **Plugin System**: Allows extending the platform with new tools and services via manifests.
 - **MCP Adapter**: Integrates Model Context Protocol for external tool discovery and exposure.
 - **Session & Storage**: Persists agent state, history, and results.
@@ -21,7 +26,7 @@ The Core depends only on abstract contracts defined in the `interfaces` layer. C
 1. **Task Initiation**: User provides a task and workspace.
 2. **Session Setup**: A session is created or restored from storage.
 3. **Orchestration Loop**:
-    - Context preparation (ContextManager).
+    - Context preparation (token estimate, group-safe trim, optional context_compact plugin). The original goal is kept.
     - Model selection (ModelRouter).
     - Inference (ModelProvider).
     - Tool Call Analysis: If the model requests tools, they are validated against security policies.

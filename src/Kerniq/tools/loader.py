@@ -14,13 +14,6 @@ from ..interfaces.tools import Tool
 
 logger = logging.getLogger(__name__)
 
-# Built-in pack module paths under Kerniq.tools.packs
-_BUILTIN_PACKS = (
-    "Kerniq.tools.packs.filesystem",
-    "Kerniq.tools.packs.terminal",
-    "Kerniq.tools.packs.web",
-)
-
 
 def _load_pack_class(module_name: str) -> Optional[Type[ToolPack]]:
     try:
@@ -45,14 +38,24 @@ def _load_pack_class(module_name: str) -> Optional[Type[ToolPack]]:
 def discover_pack_classes(extra_dirs: Optional[Sequence[Path]] = None) -> List[Type[ToolPack]]:
     classes: List[Type[ToolPack]] = []
     seen = set()
-    for mod_name in _BUILTIN_PACKS:
-        cls = _load_pack_class(mod_name)
-        if cls and cls.pack_id not in seen if False else cls:
-            # pack_id is property on instance; use class name for seen
+    try:
+        import Kerniq.tools.packs as packs_pkg
+    except Exception as exc:
+        logger.warning("Cannot import tool packs package: %s", exc)
+        packs_pkg = None
+    if packs_pkg is not None:
+        prefix = packs_pkg.__name__ + "."
+        for mod in pkgutil.iter_modules(packs_pkg.__path__, prefix):
+            if not mod.ispkg:
+                continue
+            cls = _load_pack_class(mod.name)
+            if cls is None:
+                continue
             key = cls.__module__
-            if key not in seen:
-                seen.add(key)
-                classes.append(cls)
+            if key in seen:
+                continue
+            seen.add(key)
+            classes.append(cls)
     # optional user packs: each subdir with __init__.py defining Pack
     for d in extra_dirs or []:
         d = Path(d)

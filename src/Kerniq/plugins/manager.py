@@ -50,15 +50,16 @@ class PluginManager:
         self.manifests: Dict[str, PluginManifest] = {}
         self.errors: Dict[str, str] = {}
 
-    async def discover_and_load(self, plugins_dir: Path) -> None:
+    async def discover_and_load(self, plugins_dir: Path, *, skip_ids: Optional[List[str]] = None) -> None:
         if not plugins_dir.exists():
             logger.warning("Plugins directory %s does not exist.", plugins_dir)
             return
+        skipped = set(skip_ids or [])
         for item in sorted(plugins_dir.iterdir()):
             if item.is_dir() and (item / "manifest.toml").exists():
-                await self._load_plugin(item)
+                await self._load_plugin(item, skip_ids=skipped)
 
-    async def _load_plugin(self, plugin_path: Path) -> None:
+    async def _load_plugin(self, plugin_path: Path, *, skip_ids: Optional[set] = None) -> None:
         plugin_key = plugin_path.name
         try:
             with open(plugin_path / "manifest.toml", "rb") as f:
@@ -66,6 +67,9 @@ class PluginManager:
             manifest_data = normalize_manifest_data(raw)
             manifest = PluginManifest(**manifest_data)
             pid = manifest.plugin_id
+            if skip_ids and pid in skip_ids:
+                logger.info("Skipping plugin %s", pid)
+                return
             self.manifests[pid] = manifest
             self.statuses[pid] = PluginStatus.DISCOVERED
 

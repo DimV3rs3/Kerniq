@@ -9,6 +9,7 @@ import shutil
 
 from ....interfaces.tools import Tool, ToolResult
 from ....interfaces.settings_schema import SettingsSchema, SettingField, SettingType
+from ....security.task_scope import current_task, strict_allows
 
 def _collapse_field() -> SettingField:
     return SettingField(
@@ -31,6 +32,8 @@ class FileSystemToolBase(Tool):
     def __init__(self, workspace: pathlib.Path):
         self.workspace = pathlib.Path(workspace).resolve()
         self._cfg_keys: tuple = ()
+        self.cfg_auto_accept = False
+        self.cfg_collapsible = True
 
     @property
     def category(self) -> str:
@@ -46,7 +49,7 @@ class FileSystemToolBase(Tool):
 
     @property
     def collapsible(self) -> bool:
-        return True
+        return bool(getattr(self, "cfg_collapsible", True))
 
     def chat_label(self, count: int = 1, *, success: bool = True) -> str:
         return f"{count} файловых операций"
@@ -60,11 +63,39 @@ class FileSystemToolBase(Tool):
             if hasattr(self, attr) or k in getattr(self, "_cfg_keys", ()):
                 setattr(self, attr, v)
 
+    @property
+    def risk_level(self) -> str:
+        name = ""
+        try:
+            name = self.name
+        except Exception:
+            name = ""
+        return {
+            "delete_file": "high",
+            "write_file": "medium",
+            "create_file": "medium",
+            "edit_file": "medium",
+            "move_file": "medium",
+            "unzip": "medium",
+            "zip": "medium",
+        }.get(name, "low")
+
     def _safe_path(self, path_str: str, *, must_exist: bool = False) -> pathlib.Path:
+        raw = str(path_str)
+        if "\x00" in raw or raw.startswith("\\\\") or raw.startswith("//"):
+            raise PermissionError(f"Access denied: {path_str} is outside workspace")
         base = self.workspace
-        target = (base / path_str).resolve()
+        candidate = pathlib.Path(raw)
+        # An absolute path must not replace the workspace via Path.__truediv__.
+        if candidate.is_absolute():
+            target = candidate.resolve()
+        else:
+            target = (base / candidate).resolve()
         if not target.is_relative_to(base):
             raise PermissionError(f"Access denied: {path_str} is outside workspace")
+        blocked = strict_allows(target.relative_to(base).as_posix(), current_task())
+        if blocked:
+            raise PermissionError(blocked)
         if must_exist and not target.exists():
             raise FileNotFoundError(f"Path does not exist: {path_str}")
         return target
@@ -185,12 +216,17 @@ class ReadFileTool(FileSystemToolBase):
                 data = data[:max_bytes]
             content = data.decode("utf-8", errors="replace")
             note = "\n...[truncated]" if truncated else ""
+            wrapped = (
+                f'<untrusted_file_content path="{arguments["path"]}">\n'
+                f"{content}{note}\n"
+                "</untrusted_file_content>"
+            )
             return ToolResult(
                 tool_call_id=call_id,
                 tool_id=self.tool_id,
                 status="success",
-                output={"content": content, "truncated": truncated, "size": path.stat().st_size},
-                human_readable=f"Content of {arguments['path']}:\n{content}{note}",
+                output={"content": wrapped, "truncated": truncated, "size": path.stat().st_size},
+                human_readable=wrapped,
             )
         except Exception as e:
             return self._create_error_result(call_id, str(e), "FS_ERROR")
@@ -848,6 +884,324 @@ class SearchCodeTool(FileSystemToolBase):
             return self._create_error_result(call_id, str(e), "FS_ERROR")
 
 
+
+class ReadDocxTool(FileSystemToolBase):
+    """Read a .docx file into structured text (paragraphs + tables)."""
+
+    @property
+    def tool_id(self) -> str:
+        return "fs_read_docx"
+
+    @property
+    def name(self) -> str:
+        return "read_docx"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Read a Microsoft Word .docx file from the workspace. "
+            "Returns paragraphs and tables as plain structured text."
+        )
+
+    @property
+    def input_schema(self):
+        return {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Workspace-relative path to a .docx file"},
+                "max_chars": {
+                    "type": "integer",
+                    "description": "Truncate output after this many characters (default 100000)",
+                },
+            },
+            "required": ["path"],
+        }
+
+    def _extract_docx(self, path) -> str:
+        import zipfile
+        import xml.etree.ElementTree as ET
+
+        NS = {
+            "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        }
+        parts: list[str] = []
+        with zipfile.ZipFile(path, "r") as zf:
+            # main document
+            xml = zf.read("word/document.xml")
+            root = ET.fromstring(xml)
+            for child in root.iter():
+                tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                if tag == "p":
+                    texts = []
+                    for node in child.iter():
+                        nt = node.tag.split("}")[-1] if "}" in node.tag else node.tag
+                        if nt == "t" and node.text:
+                            texts.append(node.text)
+                        if nt == "tab":
+                            texts.append("\t")
+                    line = "".join(texts).strip()
+                    if line:
+                        parts.append(line)
+                elif tag == "tbl":
+                    parts.append("\n[Table]")
+                    for row in child.iter():
+                        rt = row.tag.split("}")[-1] if "}" in row.tag else row.tag
+                        if rt != "tr":
+                            continue
+                        cells = []
+                        for cell in row:
+                            ct = cell.tag.split("}")[-1] if "}" in cell.tag else cell.tag
+                            if ct != "tc":
+                                continue
+                            cell_texts = []
+                            for node in cell.iter():
+                                nt = node.tag.split("}")[-1] if "}" in node.tag else node.tag
+                                if nt == "t" and node.text:
+                                    cell_texts.append(node.text)
+                            cells.append("".join(cell_texts).strip())
+                        if any(cells):
+                            parts.append(" | ".join(cells))
+                    parts.append("[/Table]\n")
+        return "\n".join(parts)
+
+    async def execute(self, arguments, context):
+        call_id = arguments.get("tool_call_id", "unknown")
+        try:
+            path = self._safe_path(arguments["path"])
+            if not path.exists() or not path.is_file():
+                return self._create_error_result(call_id, f"File not found: {arguments.get('path')}", "FS_NOT_FOUND")
+            if path.suffix.lower() != ".docx":
+                return self._create_error_result(
+                    call_id,
+                    "Not a .docx file (use read_file for plain text)",
+                    "FS_BAD_TYPE",
+                )
+            text = self._extract_docx(path)
+            max_chars = int(arguments.get("max_chars") or 100_000)
+            truncated = False
+            if len(text) > max_chars:
+                text = text[:max_chars] + "\n…[truncated]"
+                truncated = True
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="success",
+                output={"path": arguments["path"], "chars": len(text), "truncated": truncated, "text": text},
+                human_readable=text if len(text) < 2000 else text[:2000] + "…",
+            )
+        except KeyError as e:
+            return self._create_error_result(call_id, f"Invalid docx structure: {e}", "DOCX_ERROR")
+        except Exception as e:
+            return self._create_error_result(call_id, str(e), "DOCX_ERROR")
+
+
+
+class ZipTool(FileSystemToolBase):
+    """Create a zip archive from workspace files/dirs."""
+
+    @property
+    def tool_id(self) -> str:
+        return "fs_zip"
+
+    @property
+    def name(self) -> str:
+        return "zip"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Create a .zip archive inside the workspace from one or more paths "
+            "(files or directories). Does not use the terminal."
+        )
+
+    @property
+    def input_schema(self):
+        return {
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Workspace-relative paths to include",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Single path (alternative to paths)",
+                },
+                "archive": {
+                    "type": "string",
+                    "description": "Output .zip path relative to workspace (default: archive.zip)",
+                },
+            },
+        }
+
+    async def execute(self, arguments, context):
+        import zipfile
+        call_id = arguments.get("tool_call_id", "unknown")
+        try:
+            paths = list(arguments.get("paths") or [])
+            if arguments.get("path"):
+                paths.append(arguments["path"])
+            if not paths:
+                return self._create_error_result(call_id, "Provide path or paths", "ZIP_ARGS")
+            archive_rel = arguments.get("archive") or "archive.zip"
+            if not str(archive_rel).lower().endswith(".zip"):
+                archive_rel = str(archive_rel) + ".zip"
+            out = self._safe_path(archive_rel)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            added = []
+            with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for rel in paths:
+                    src = self._safe_path(rel, must_exist=True)
+                    if src.is_file():
+                        arcname = src.relative_to(self.workspace).as_posix()
+                        zf.write(src, arcname)
+                        added.append(arcname)
+                    elif src.is_dir():
+                        for f in src.rglob("*"):
+                            if f.is_file():
+                                arcname = f.relative_to(self.workspace).as_posix()
+                                zf.write(f, arcname)
+                                added.append(arcname)
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="success",
+                output={"archive": archive_rel, "files": len(added)},
+                human_readable=f"Created {archive_rel} with {len(added)} file(s)",
+            )
+        except Exception as e:
+            return self._create_error_result(call_id, str(e), "ZIP_ERROR")
+
+
+class UnzipTool(FileSystemToolBase):
+    """Extract a zip archive into the workspace."""
+
+    @property
+    def tool_id(self) -> str:
+        return "fs_unzip"
+
+    @property
+    def name(self) -> str:
+        return "unzip"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Extract a .zip archive into the workspace (optional destination folder). "
+            "Blocks path traversal. Does not use the terminal."
+        )
+
+    @property
+    def input_schema(self):
+        return {
+            "type": "object",
+            "properties": {
+                "archive": {"type": "string", "description": "Workspace-relative .zip path"},
+                "path": {"type": "string", "description": "Alias for archive"},
+                "destination": {
+                    "type": "string",
+                    "description": "Folder to extract into (default: archive stem next to zip)",
+                },
+            },
+            "required": [],
+        }
+
+    async def execute(self, arguments, context):
+        import zipfile
+        call_id = arguments.get("tool_call_id", "unknown")
+        try:
+            arch_rel = arguments.get("archive") or arguments.get("path")
+            if not arch_rel:
+                return self._create_error_result(call_id, "Provide archive path", "UNZIP_ARGS")
+            src = self._safe_path(arch_rel, must_exist=True)
+            if src.suffix.lower() != ".zip":
+                return self._create_error_result(call_id, "Not a .zip file", "UNZIP_TYPE")
+            dest_rel = arguments.get("destination")
+            if dest_rel:
+                dest = self._safe_path(dest_rel)
+            else:
+                dest = src.with_suffix("")
+            dest.mkdir(parents=True, exist_ok=True)
+            extracted = []
+            with zipfile.ZipFile(src, "r") as zf:
+                for info in zf.infolist():
+                    name = info.filename.replace("\\\\", "/").lstrip("/")
+                    if ".." in name.split("/"):
+                        continue
+                    target = (dest / name).resolve()
+                    if not target.is_relative_to(self.workspace.resolve()):
+                        continue
+                    if info.is_dir():
+                        target.mkdir(parents=True, exist_ok=True)
+                        continue
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(info) as src_f, open(target, "wb") as out_f:
+                        out_f.write(src_f.read())
+                    extracted.append(target.relative_to(self.workspace).as_posix())
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="success",
+                output={"destination": str(dest.relative_to(self.workspace)), "files": len(extracted)},
+                human_readable=f"Extracted {len(extracted)} file(s) to {dest.relative_to(self.workspace)}",
+            )
+        except Exception as e:
+            return self._create_error_result(call_id, str(e), "UNZIP_ERROR")
+
+
+class MoveFileTool(FileSystemToolBase):
+    @property
+    def tool_id(self) -> str:
+        return "fs_move_file"
+
+    @property
+    def name(self) -> str:
+        return "move_file"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Move or rename a file or directory inside the workspace. "
+            "Both paths are checked against the workspace root."
+        )
+
+    @property
+    def input_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "src": {"type": "string"},
+                "dst": {"type": "string"},
+            },
+            "required": ["src", "dst"],
+        }
+
+    async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
+        call_id = arguments.get("tool_call_id", "unknown")
+        try:
+            src = self._safe_path(arguments["src"], must_exist=True)
+            dst = self._safe_path(arguments["dst"])
+            if dst == src:
+                raise PermissionError("Source and destination are the same")
+            if dst.is_relative_to(src):
+                raise PermissionError("Cannot move a directory into itself")
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(dst))
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="success",
+                output={
+                    "src": src.relative_to(self.workspace).as_posix(),
+                    "dst": dst.relative_to(self.workspace).as_posix(),
+                },
+                human_readable=f"Moved {arguments['src']} -> {arguments['dst']}",
+            )
+        except Exception as e:
+            return self._create_error_result(call_id, str(e), "FS_ERROR")
+
+
 class FileSystemTools:
     def __init__(self, workspace: str):
         self.workspace = pathlib.Path(workspace).resolve()
@@ -855,6 +1209,7 @@ class FileSystemTools:
         self._tools: List[Tool] = [
             FileExistsTool(self.workspace),
             ReadFileTool(self.workspace),
+            ReadDocxTool(self.workspace),
             WriteFileTool(self.workspace),
             CreateFileTool(self.workspace),
             EditFileTool(self.workspace),
@@ -863,6 +1218,9 @@ class FileSystemTools:
             ListDirectoryTool(self.workspace),
             GetFileInfoTool(self.workspace),
             SearchCodeTool(self.workspace),
+            ZipTool(self.workspace),
+            UnzipTool(self.workspace),
+            MoveFileTool(self.workspace),
         ]
 
     def get_tools(self) -> List[Tool]:

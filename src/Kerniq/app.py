@@ -11,12 +11,12 @@ from .settings.loader import SettingsProvider
 from .interfaces.providers import ModelProvider
 from .models.providers.mock import MockProvider
 from .models.providers.lm_studio import LMStudioProvider
+from .models.router import ModelRouter
+from .interfaces.errors import ProviderError, ErrorCode
 from .tools.registry import ToolRegistry
-from .tools.filesystem import FileSystemTools
-from .tools.terminal import TerminalTools
-from .tools.web_search import WebSearchTool, FetchUrlTool
 from .tools.settings import ToolSettingsStore
 from .security.policy import SecurityPolicy
+from .assembly import build_tool_registry
 from .storage.json_store import JsonStorage
 from .interfaces.storage import Storage
 from .bootstrap import ensure_dependencies, format_bootstrap_report
@@ -53,6 +53,7 @@ class Application:
         self._setup_tools()
         self.providers: Dict[str, ModelProvider] = {}
         self._setup_providers()
+        self.router = ModelRouter(list(self.providers.values()))
 
     def _load_config(self, config_path: Optional[Path]) -> PlatformConfig:
         return SettingsProvider(config_path).config
@@ -70,31 +71,12 @@ class Application:
         return JsonStorage(self.config.storage.sessions_dir)
 
     def _setup_tools(self) -> None:
-        ts = self.tool_settings.settings
         workspace = Path(self.config.application.workspace_root)
-        if ts.fs_enabled:
-            for tool in FileSystemTools(workspace=str(workspace)).get_tools():
-                self.tool_registry.register_tool(tool)
-        policy = SecurityPolicy(
-            workspace_root=workspace,
-            disallowed_commands=self.config.security.disallowed_terminal_commands,
-            require_approval_for_high_risk=self.config.security.require_approval_for_high_risk,
+        self.tool_registry, self.security_policy = build_tool_registry(
+            workspace,
+            config=self.config,
+            state_dir=self.config.storage.state_dir,
         )
-        self.security_policy = policy
-        if ts.terminal_enabled:
-            self.tool_registry.register_tool(TerminalTools(workspace, policy))
-        if ts.web_search_enabled:
-            self.tool_registry.register_tool(
-                WebSearchTool(
-                    enabled=True,
-                    max_results=ts.web_search_max_results,
-                    timeout=ts.web_search_timeout,
-                )
-            )
-        if ts.fetch_url_enabled:
-            self.tool_registry.register_tool(
-                FetchUrlTool(enabled=True, timeout=ts.fetch_url_timeout)
-            )
 
     def _setup_providers(self) -> None:
         self.providers["mock"] = MockProvider()
@@ -107,19 +89,32 @@ class Application:
         )
 
     def get_provider(self, provider_id: str) -> ModelProvider:
-        if provider_id not in self.providers:
-            raise ValueError(f"Unknown provider: {provider_id}")
-        return self.providers[provider_id]
+        try:
+            return self.router.select_provider(preferred_provider_id=provider_id)
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
 
-    async def resolve_default_provider(self) -> ModelProvider:
+    async def resolve_default_provider(self, *, allow_fallback: bool = False) -> ModelProvider:
+        """Return the configured provider.
+
+        LM Studio is not replaced by mock unless allow_fallback is explicitly
+        True. A missing provider is an error.
+        """
         preferred = self.config.models.default_provider
-        if preferred == "lm_studio":
-            ls = self.providers["lm_studio"]
-            if await ls.check_connection():
-                return ls
-            logger.warning("LM Studio unreachable; falling back to mock")
-            return self.providers["mock"]
-        return self.get_provider(preferred)
+        provider = self.get_provider(preferred)
+        if preferred in ("lm_studio",) or provider.provider_id == "lm_studio":
+            if not await provider.check_connection():
+                if allow_fallback and "mock" in self.providers:
+                    logger.warning(
+                        "LM Studio unreachable; using mock because allow_fallback=True"
+                    )
+                    return self.providers["mock"]
+                raise ProviderError(
+                    ErrorCode.PROVIDER_UNAVAILABLE,
+                    "LM Studio is not reachable and silent fallback is disabled. "
+                    "Start LM Studio or select the mock provider explicitly.",
+                )
+        return provider
 
     async def shutdown(self) -> None:
         await self.storage.close()

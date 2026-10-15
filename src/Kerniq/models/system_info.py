@@ -5,8 +5,7 @@ from __future__ import annotations
 import os
 import platform
 import shutil
-import struct
-import ctypes
+import subprocess
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +18,7 @@ class SystemInfo:
     cpu_count: int
     memory_total_gb: Optional[float]
     memory_available_gb: Optional[float]
+    vram_total_gb: Optional[float]
     python_version: str
     has_gpu_hint: bool
     notes: List[str]
@@ -30,6 +30,7 @@ class SystemInfo:
 def _windows_memory() -> tuple[Optional[float], Optional[float], List[str]]:
     notes: List[str] = []
     try:
+        import ctypes
         class MEMORYSTATUSEX(ctypes.Structure):
             _fields_ = [
                 ("dwLength", ctypes.c_ulong),
@@ -78,6 +79,37 @@ def _linux_memory() -> tuple[Optional[float], Optional[float], List[str]]:
     return mem_total, mem_avail, notes
 
 
+def _nvidia_vram_gb() -> tuple[Optional[float], List[str]]:
+    """Read total GPU memory. This is not a promise that a model fits."""
+    notes: List[str] = []
+    if not shutil.which("nvidia-smi"):
+        return None, notes
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            timeout=4,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as exc:
+        notes.append(f"nvidia-smi failed: {exc}")
+        return None, notes
+    mib = []
+    for line in out.splitlines():
+        token = line.strip().split()[0] if line.strip() else ""
+        if token.isdigit():
+            mib.append(int(token))
+    if not mib:
+        notes.append("nvidia-smi returned no VRAM figure")
+        return None, notes
+    total = round(sum(mib) / 1024, 2)
+    notes.append(
+        f"VRAM total about {total} GB from nvidia-smi (sum of GPUs). "
+        "This does not mean a model will fit in GPU memory."
+    )
+    return total, notes
+
+
 def collect_system_info() -> SystemInfo:
     notes: List[str] = []
     mem_total = None
@@ -92,14 +124,19 @@ def collect_system_info() -> SystemInfo:
         notes.extend(n)
 
     has_gpu = False
+    vram_gb, vram_notes = _nvidia_vram_gb()
+    notes.extend(vram_notes)
     try:
         if shutil.which("nvidia-smi"):
             has_gpu = True
-            notes.append("nvidia-smi present")
+            notes.append("nvidia-smi present (GPU hint only)")
         elif os.path.exists("/dev/nvidia0"):
             has_gpu = True
+            notes.append("GPU device node present; VRAM was not measured")
     except Exception:
         pass
+    if vram_gb is None:
+        notes.append("No measured VRAM. Do not assume a model fits in GPU memory.")
 
     return SystemInfo(
         os=system,
@@ -108,6 +145,7 @@ def collect_system_info() -> SystemInfo:
         cpu_count=os.cpu_count() or 1,
         memory_total_gb=mem_total,
         memory_available_gb=mem_avail,
+        vram_total_gb=vram_gb,
         python_version=platform.python_version(),
         has_gpu_hint=has_gpu,
         notes=notes,
@@ -122,9 +160,8 @@ def recommend_for_lm_studio(
     mem = system.memory_total_gb
 
     if mem is None:
-        recs.append("RAM unknown: use 3–7B Q4 as a safe default until measured.")
+        recs.append("RAM unknown (estimate only): use 3–7B Q4 until RAM is measured.")
         size_hint = "3B-7B"
-        mem = 16.0
     elif mem < 8:
         recs.append("Low RAM (<8 GB): prefer 1–3B quantized models (Q4/Q5).")
         size_hint = "1B-3B"
@@ -138,10 +175,15 @@ def recommend_for_lm_studio(
         recs.append("32+ GB RAM: larger models (13B–34B) possible depending on GPU.")
         size_hint = "13B+"
 
-    if system.has_gpu_hint:
-        recs.append("GPU detected (hint): enable GPU offload in LM Studio for speed.")
+    if system.vram_total_gb:
+        recs.append(
+            f"Measured VRAM is about {system.vram_total_gb} GB. "
+            "That is not a guarantee the selected model fits on the GPU."
+        )
+    elif system.has_gpu_hint:
+        recs.append("GPU hint only: VRAM was not measured, so GPU fit is unknown.")
     else:
-        recs.append("No clear GPU: expect slower CPU inference; keep context modest.")
+        recs.append("No clear GPU and no VRAM reading. Expect CPU inference and keep context modest.")
 
     recs.append(f"CPU cores: {system.cpu_count}. Parallel tool calls stay sequential in v0.1.")
     preferred_model = None

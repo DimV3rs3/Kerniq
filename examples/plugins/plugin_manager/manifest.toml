@@ -1,0 +1,11 @@
+plugin_id = "plugin_plugin_manager"
+name = "Plugin Manager"
+version = "1.0.0"
+api_version = "1.0"
+manifest_version = "1.0"
+entry_point = "main.PluginImpl"
+description = "Search GitHub for Kerniq plugins, install/remove them, and run basic security checks"
+capabilities = ["tools"]
+author = "Kerniq"
+license = "MIT"
+permissions = ["network", "filesystem"]

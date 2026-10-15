@@ -1,0 +1,6 @@
+pack_id = "plan"
+name = "Plan"
+version = "1.0.0"
+description = "Structured TODO plan the UI renders above the chat"
+category = "plan"
+entry = "Pack"

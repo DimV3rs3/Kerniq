@@ -42,9 +42,44 @@ def test_terminal_command_blacklist():
 
 def test_risk_level_evaluation():
     policy = SecurityPolicy(workspace_root=Path("."))
-    
-    # Low risk should be allowed
+
     assert policy.evaluate_tool_call("read_file", {}, RiskLevel.LOW) == PolicyDecision.ALLOW
-    
-    # Critical risk should require approval
+    assert policy.evaluate_tool_call("write_file", {}, RiskLevel.MEDIUM) == PolicyDecision.REQUIRE_APPROVAL
     assert policy.evaluate_tool_call("delete_all", {}, RiskLevel.CRITICAL) == PolicyDecision.REQUIRE_APPROVAL
+
+
+def test_auto_accept_never_covers_critical():
+    policy = SecurityPolicy(workspace_root=Path("."), auto_approve_up_to="high")
+
+    class Tool:
+        name = "run_command"
+        tool_id = "run_command"
+        risk_level = "critical"
+        cfg_auto_accept = True
+
+    decision = policy.evaluate_tool_call("run_command", {"command": "ls"}, "low", tool=Tool())
+    assert decision == PolicyDecision.REQUIRE_APPROVAL
+
+
+def test_auto_accept_skips_non_critical():
+    policy = SecurityPolicy(workspace_root=Path("."), auto_approve_up_to="low")
+
+    class Tool:
+        name = "delete_file"
+        tool_id = "delete_file"
+        risk_level = "high"
+        cfg_auto_accept = True
+
+    assert policy.evaluate_tool_call("delete_file", {}, "high", tool=Tool()) == PolicyDecision.ALLOW
+
+
+def test_caller_cannot_lower_intrinsic_risk():
+    policy = SecurityPolicy(workspace_root=Path("."), auto_approve_up_to="high")
+
+    class Tool:
+        name = "run_command"
+        tool_id = "run_command"
+        risk_level = "low"
+        cfg_auto_accept = False
+
+    assert policy.evaluate_tool_call("run_command", {"command": "ls"}, "low", tool=Tool()) == PolicyDecision.REQUIRE_APPROVAL

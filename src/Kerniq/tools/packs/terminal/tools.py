@@ -5,9 +5,38 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 from ....interfaces.tools import Tool, ToolResult
 from ....interfaces.settings_schema import SettingsSchema, SettingField, SettingType
-from ....security.policy import SecurityPolicy, RiskLevel, PolicyDecision
+from ....security.policy import SecurityPolicy
 
 logger = logging.getLogger(__name__)
+
+_SECRET_MARKERS = (
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PASSWD",
+    "API_KEY",
+    "APIKEY",
+    "CREDENTIAL",
+    "AWS_SECRET",
+    "AWS_ACCESS",
+    "GITHUB",
+    "PRIVATE_KEY",
+    "DATABASE_URL",
+)
+
+
+def _scrub_env(workspace: Path) -> dict:
+    """Drop credential-bearing variables before spawning a shell. PATH stays."""
+    import os
+
+    env = dict(os.environ)
+    for key in list(env):
+        upper = key.upper()
+        if any(marker in upper for marker in _SECRET_MARKERS):
+            env.pop(key, None)
+    env["KERNIQ_WORKSPACE"] = str(workspace)
+    return env
+
 
 class TerminalTools(Tool):
     def __init__(self, workspace_root: Path, security_policy: SecurityPolicy):
@@ -26,9 +55,14 @@ class TerminalTools(Tool):
     def description(self) -> str:
         return (
             "Run a shell command in the workspace. "
+            "Absolute paths, UNC paths, '..', encoded PowerShell, and network utilities are denied. "
             "On Windows this is PowerShell (not cmd). On Linux/macOS this is bash/sh. "
-            "Examples (Windows): Get-Date; Get-ChildItem. Examples (Unix): date; ls -la."
+            "Examples (Windows): Get-Date; Get-ChildItem . Examples (Unix): date; ls -la."
         )
+
+    @property
+    def risk_level(self) -> str:
+        return "critical"
 
     @property
     def input_schema(self) -> Dict[str, Any]:
@@ -83,15 +117,33 @@ class TerminalTools(Tool):
         cwd_rel = arguments.get("cwd", ".")
         timeout = arguments.get("timeout", 30)
 
-        # Security check for command content
-        if self._security_policy.check_terminal_command(command) == PolicyDecision.DENY:
+        # Security check for command content (paths, obfuscation, blacklist).
+        # This runs even if an approval provider already said yes.
+        block = self._security_policy.terminal_block_reason(str(command or ""))
+        if block:
             return ToolResult(
                 tool_call_id=getattr(context, "last_tool_call_id", "unknown"),
                 tool_id=self.tool_id,
                 status="error",
                 output="",
-                human_readable=f"Command '{command}' is forbidden by security policy.",
+                human_readable=block,
                 error="PERMISSION_DENIED"
+            )
+
+        from ....security.command_guard import escaping_symlink
+
+        escaped = escaping_symlink(self._workspace_root)
+        if escaped:
+            return ToolResult(
+                tool_call_id=getattr(context, "last_tool_call_id", "unknown"),
+                tool_id=self.tool_id,
+                status="error",
+                output="",
+                human_readable=(
+                    f"Refusing shell: symlink escapes the workspace ({escaped}). "
+                    "Remove it before running commands."
+                ),
+                error="PERMISSION_DENIED",
             )
 
         # Security check for working directory
@@ -110,6 +162,7 @@ class TerminalTools(Tool):
         logger.info(f"Executing command: {command} in {cwd_abs}")
         
         import sys
+        import os
         import time
         call_id = getattr(context, "last_tool_call_id", "unknown")
         started = time.monotonic()
@@ -118,6 +171,7 @@ class TerminalTools(Tool):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd_abs),
+            env=_scrub_env(cwd_abs),
         )
         if sys.platform == "win32":
             # Prevent interactive hangs from inheriting console input (e.g. bare `date`)

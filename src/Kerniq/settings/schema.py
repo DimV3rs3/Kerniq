@@ -41,6 +41,10 @@ class SecuritySettings(BaseModel):
     disallowed_terminal_commands: List[str] = Field(
         default_factory=lambda: ["rm -rf /", "format C:", "mkfs"]
     )
+    allow_terminal_network: bool = False
+    strict_attachments: bool = False
+    # Auto-approve tools at or below this risk. Critical always asks.
+    auto_approve_up_to: str = "low"
 
 
 class ToolsConfigSettings(BaseModel):

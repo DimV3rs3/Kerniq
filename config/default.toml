@@ -1,6 +1,6 @@
 [application]
 name = "AI Agent Platform"
-version = "0.1.0"
+version = "0.1.3"
 workspace_root = "./workspace"
 auto_install_deps = true
 
@@ -31,6 +31,13 @@ enabled = true
 require_approval_for_high_risk = true
 allowed_terminal_commands = []
 disallowed_terminal_commands = ["rm -rf /", "format C:", "mkfs", ":(){:|:&};:"]
+# Shell may not open sockets. Filesystem tools are unaffected.
+allow_terminal_network = false
+# When true, file tools may only touch allowed_files for the task.
+strict_attachments = false
+# Auto-approve tools at or below this risk. Critical always asks a human.
+# read_only | low | medium | high
+auto_approve_up_to = "low"
 
 [tools]
 web_search_enabled = true
@@ -39,8 +46,11 @@ terminal_enabled = true
 fs_enabled = true
 
 [mcp]
-enabled = false
+enabled = true
 servers = []
+# Empty = publish every discovered tool the policy would run without a human.
+# New packs are included automatically. ["*"] publishes every non-critical tool.
+# An explicit list is a manual allowlist (still checked by the security policy).
 published_tools = []
 
 [storage]

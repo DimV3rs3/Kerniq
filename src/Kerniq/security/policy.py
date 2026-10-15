@@ -74,7 +74,9 @@ class SecurityPolicy:
         self.require_approval_for_high_risk = require_approval_for_high_risk
         self.allow_terminal_network = allow_terminal_network
         parsed = _parse_risk(auto_approve_up_to) or RiskLevel.LOW
-        if parsed == RiskLevel.CRITICAL:
+        raw = str(auto_approve_up_to or "").strip().lower()
+        self.bypass_all = raw in ("all", "bypass")
+        if parsed == RiskLevel.CRITICAL and not self.bypass_all:
             parsed = RiskLevel.HIGH
         self.auto_approve_up_to = parsed
 
@@ -159,7 +161,34 @@ class SecurityPolicy:
             if reason:
                 return PolicyDecision.DENY
 
+        name = getattr(tool, "name", None) or tool_id
+        if name in ("write_file", "edit_file", "delete_file", "create_file", "move_file", "create_directory", "unzip"):
+            from .task_scope import current_task
+            task = current_task()
+            external = []
+            if task is not None:
+                for item in ((getattr(task, "metadata", None) or {}).get("external_files") or []):
+                    try:
+                        external.append(str(Path(item).resolve()))
+                    except Exception:
+                        continue
+            raw_paths = []
+            for key in ("path", "destination", "src", "dst", "source"):
+                raw = arguments.get(key)
+                if raw:
+                    raw_paths.append(str(raw))
+            if raw_paths and external and not self.bypass_all:
+                for raw_path in raw_paths:
+                    try:
+                        resolved = str(Path(raw_path).resolve())
+                    except Exception:
+                        resolved = raw_path
+                    if resolved in external:
+                        return PolicyDecision.REQUIRE_APPROVAL
+
         risk = self.resolve_risk(tool_id, risk_level, tool)
+        if self.bypass_all:
+            return PolicyDecision.ALLOW
         if risk == RiskLevel.CRITICAL:
             return PolicyDecision.REQUIRE_APPROVAL
         if tool is not None and bool(getattr(tool, "cfg_auto_accept", False)):

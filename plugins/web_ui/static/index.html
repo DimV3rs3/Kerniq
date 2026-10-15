@@ -6,12 +6,12 @@
 
 <link rel="stylesheet" href="/static/styles.css"/></head><body>
 <div class="topbar">
-  <button class="brand" id="nav-logo" title="Workspace">Kerniq</button>
-  <div class="top-center" id="top-workspace">./workspace</div>
+  <button class="brand" id="nav-logo">Kerniq</button>
+  <button type="button" class="top-center" id="top-workspace">./workspace</button>
   <div class="top-actions">
     <span class="panel-toggles" style="display:inline-flex;gap:6px">
       <button class="icon-btn on" id="btn-toggle-explorer" title="Explorer" data-i18n-title="explorer">☰</button>
-      <button class="icon-btn on" id="btn-toggle-chat" title="Chat" data-i18n-title="chat">💬</button>
+      <button class="icon-btn on" id="btn-toggle-chat" title="Chat" data-i18n-title="chat" aria-label="Chat"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 3.5V6a2 2 0 0 1 2-2z"/></svg></button>
     </span>
     <button class="icon-btn" id="nav-settings" title="Settings" data-i18n-title="settings">⚙</button>
   </div>
@@ -19,17 +19,23 @@
 <div id="main-area">
 <div id="view-main">
   <aside class="panel" id="explorer">
-    <h3><span class="grow">Explorer</span><button class="ghost" id="btn-refresh-tree" style="padding:2px 6px">↻</button></h3>
+    <h3><span class="grow">Explorer</span></h3>
     <div class="tree" id="tree"></div>
   </aside>
   <div class="resizer" id="resizer-left" data-side="left"></div>
   <section id="editor-panel">
     <div class="tabs" id="tabs"></div>
     <div class="editor-toolbar">
-      <button class="ghost" id="btn-undo" title="Ctrl+Z" disabled>Undo</button>
-      <button class="ghost" id="btn-redo" title="Ctrl+Y" disabled>Redo</button>
+      <button class="ghost icon-tool" id="btn-undo" title="Undo" aria-label="Undo" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
+      </button>
+      <button class="ghost icon-tool" id="btn-redo" title="Redo" aria-label="Redo" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/></svg>
+      </button>
       <span id="open-path" style="color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis"></span>
-      <button class="ghost" id="btn-save" disabled>Save</button>
+      <button class="ghost icon-tool" id="btn-save" title="Save" aria-label="Save" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM6 5h9v4H6V5z"/></svg>
+      </button>
       <button class="ghost" id="btn-close-tab" disabled>Close</button>
     </div>
     <div class="code-wrap">
@@ -53,17 +59,18 @@
     <div class="msgs-wrap">
       <div class="plan-float collapsed" id="plan-float" hidden>
         <button type="button" class="plan-head" id="plan-toggle">
-          <span data-i18n="planTitle">Plan</span>
+          <span id="plan-title" data-i18n="planTitle">Plan</span>
           <span class="plan-chevron" id="plan-chevron" aria-hidden="true">⌄</span>
         </button>
         <div class="plan-body" id="plan-body"></div>
       </div>
       <div class="msgs" id="msgs"></div>
+      <button type="button" id="btn-scroll-bottom" class="scroll-bottom" hidden title="Scroll to bottom" aria-label="Scroll to bottom">↓</button>
     </div>
     <div class="status-bar"><span class="spin" id="agent-spin"></span><span id="agent-status">Ready</span></div>
     <div id="attach-chips" style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px 0 8px"></div>
     <div class="composer">
-      <button type="button" id="btn-attach" class="ghost" title="Attach" data-i18n-title="attach" style="padding:6px 10px;font-size:16px;flex-shrink:0">+</button>
+      <button type="button" id="btn-attach" class="ghost composer-plus" title="Attach" data-i18n-title="attach">+</button>
       <div class="ta-wrap"><textarea id="prompt" rows="1" placeholder="Message agent…" data-i18n-placeholder="promptPh"></textarea></div>
       <button type="button" id="btn-action" class="send-btn is-send" disabled title="Send" aria-label="Send"><span class="send-ico" aria-hidden="true">↑</span></button>
     </div>
@@ -90,7 +97,7 @@
           </div>
         </div>
         <div class="field"><label class="lbl"><span data-i18n="maxIterations">Max iterations</span><span class="info-tip" tabindex="0" data-tip="Maximum agent steps per run. Leave empty for default (20).">i</span></label>
-          <input type="number" id="s-max-iter" min="1" placeholder="20 (default)"/>
+          <input type="number" id="s-max-iter" min="1" placeholder="20"/>
         </div>
         <div class="field"><label class="lbl"><span data-i18n="modelTimeout">Model response timeout</span><span class="info-tip" tabindex="0" data-tip="Maximum time to wait for one model response.">i</span></label>
           <div class="row">
@@ -103,20 +110,37 @@
           </div>
         </div>
         <div class="field"><label class="lbl"><span data-i18n="undoSize">Undo history size</span><span class="info-tip" tabindex="0" data-tip="How many editor actions to keep for Undo (edits, open, close).">i</span></label>
-          <input type="number" id="s-undo-size" min="10" max="1000" value="100"/>
+          <input type="number" id="s-undo-size" min="10" max="1000" placeholder="100"/>
         </div>
         <div class="field"><label class="lbl"><span data-i18n="loopRetries">Loop retries</span><span class="info-tip" tabindex="0" data-tip="How many repeated replies or identical tool calls to allow before stopping. Raise this if a real task is cut off as a loop.">i</span></label>
-          <input type="number" id="s-loop-retries" min="1" max="20" value="4"/>
+          <input type="number" id="s-loop-retries" min="1" max="20" placeholder="4"/>
         </div>
       </div>
       <div class="scard tabp" id="tab-api" style="display:none">
         <h2 data-i18n="apiModel">API & model</h2>
-        <div class="field"><label class="lbl"><span data-i18n="provider">Provider</span></label><select id="s-provider"></select></div>
-        <div class="field"><label class="lbl"><span data-i18n="providerDesc">Description</span></label>
-          <textarea id="provider-blurb" rows="2" style="resize:vertical;min-height:52px"></textarea>
+        <div class="field"><label class="lbl"><span data-i18n="provider">Provider</span></label>
+          <select id="s-provider" class="fit"></select>
+          <div class="provider-note" id="provider-blurb"></div>
         </div>
         <div id="provider-fields"></div>
-        <div class="field"><label class="lbl"><span data-i18n="temperature">Temperature</span></label><input type="number" id="s-api-temp" step="0.05"/></div>
+        <div class="field field-check">
+          <label class="check-line">
+            <input type="checkbox" id="s-split-models" class="soft-check"/>
+            <span data-i18n="splitModels">Different model for Act</span>
+            <span class="info-tip" tabindex="0" data-tip="Off: Plan and Act use one model. On: Act can use another. Local providers unload the Plan model and load the Act model on handoff.">i</span>
+          </label>
+        </div>
+        <div class="field" id="act-model-field" hidden>
+          <label class="lbl"><span data-i18n="actModel">Act model</span></label>
+          <div class="row">
+            <div class="model-combo" id="act-model-combo">
+              <input type="text" id="s-act-model" autocomplete="off" placeholder="(same as Plan)"/>
+              <button type="button" class="combo-arrow" id="act-model-arrow">▾</button>
+              <div class="combo-menu" id="act-model-menu" hidden></div>
+            </div>
+          </div>
+        </div>
+        <div class="field"><label class="lbl"><span data-i18n="temperature">Temperature</span><span class="info-tip" tabindex="0" data-i18n-tip="tempTip" data-tip="Higher temperature makes replies more varied. Lower keeps them closer to the most likely wording. Default is 0.7.">i</span></label><input type="number" id="s-api-temp" step="0.05" min="0" max="2" placeholder="0.7"/></div>
         <div class="field"><label class="lbl"><span data-i18n="maxTokens">Max tokens</span><span class="info-tip" tabindex="0" data-tip="Max tokens to generate. Empty = model maximum.">i</span></label>
           <input type="number" id="s-api-max-tokens" min="1" placeholder="auto (model max)"/>
         </div>
@@ -124,7 +148,7 @@
       <div class="scard tabp" id="tab-prompt" style="display:none">
         <h2 data-i18n="systemPrompt">System prompt</h2>
         <div class="field"><label class="lbl">System prompt</label>
-          <textarea id="s-system" rows="10" style="resize:none;width:100%;min-height:160px"></textarea>
+          <textarea id="s-system" rows="10" style="resize:none;width:100%;min-height:160px" placeholder="You are a helpful coding agent."></textarea>
         </div>
         <div class="field" style="text-align:left">
           <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
@@ -136,6 +160,8 @@
       </div>
       <div class="scard tabp" id="tab-chat" style="display:none">
         <h2 data-i18n="chatSettings">Chat settings</h2>
+        <div class="set-group">
+          <h3 data-i18n="groupOutput">Reply</h3>
         <div class="field field-check">
           <label class="check-line">
             <input type="checkbox" id="s-chat-streaming" class="soft-check" checked/>
@@ -161,22 +187,28 @@
           <label class="check-line">
             <input type="checkbox" id="s-chat-debug" class="soft-check"/>
             <span data-i18n="developerMode">Developer mode</span>
-            <span class="info-tip" tabindex="0" data-tip="Show tool-call arguments and internal details in chat.">i</span>
+            <span class="info-tip" tabindex="0" data-tip="Show tool-call arguments in chat. Also unlocks a risk bypass that auto-approves every level, including critical.">i</span>
           </label>
         </div>
-        <div class="field">
-          <div class="lbl" data-i18n="sendMessage">Send message</div>
-          <div class="radio-group">
-            <label class="check-line">
-              <input type="radio" name="send-key" id="s-send-enter" class="soft-check" value="enter" checked/>
-              <span data-i18n="sendEnter">Enter — send, Shift+Enter — new line</span>
-            </label>
-            <label class="check-line">
-              <input type="radio" name="send-key" id="s-send-shift-enter" class="soft-check" value="shift_enter"/>
-              <span data-i18n="sendShift">Shift+Enter — send, Enter — new line</span>
-            </label>
+        </div>
+        <div class="set-group">
+          <h3 data-i18n="groupSend">Sending</h3>
+          <div class="field">
+            <div class="lbl" data-i18n="sendMessage">Send message</div>
+            <div class="radio-group">
+              <label class="check-line">
+                <input type="radio" name="send-key" id="s-send-enter" class="soft-check" value="enter" checked/>
+                <span data-i18n="sendEnter">Enter — send, Shift+Enter — new line</span>
+              </label>
+              <label class="check-line">
+                <input type="radio" name="send-key" id="s-send-shift-enter" class="soft-check" value="shift_enter"/>
+                <span data-i18n="sendShift">Shift+Enter — send, Enter — new line</span>
+              </label>
+            </div>
           </div>
         </div>
+        <div class="set-group">
+          <h3 data-i18n="groupChatTools">Chat tools</h3>
         <div class="field field-check">
           <label class="check-line">
             <input type="checkbox" id="s-chat-fileops" class="soft-check"/>
@@ -191,6 +223,9 @@
             <span class="info-tip" tabindex="0" data-tip="Merge consecutive collapsible tool calls into one chat block.">i</span>
           </label>
         </div>
+        </div>
+        <div class="set-group">
+          <h3 data-i18n="groupPlan">Plan and Act</h3>
         <div class="field field-check">
           <label class="check-line">
             <input type="checkbox" id="s-mode-auto" class="soft-check" checked/>
@@ -212,22 +247,26 @@
             <span class="info-tip" tabindex="0" data-tip="Plan studies the project and writes the TODO list. Act then implements it.">i</span>
           </label>
         </div>
+        </div>
+        <div class="set-group">
+          <h3 data-i18n="groupSafety">Safety and language</h3>
         <div class="field">
           <label class="lbl"><span data-i18n="autoApprove">Auto-approve risk up to</span>
-            <span class="info-tip" tabindex="0" data-tip="Tools at or below this risk run without a prompt. Critical always asks, in the console and here. Per-tool auto-accept can skip a prompt except for critical.">i</span>
+            <span class="info-tip" tabindex="0" data-tip="Tools at or below this risk run without a prompt. Critical always asks, unless developer mode selects all. A tool's own auto-accept skips the prompt except for critical. Blacklisted commands are still denied.">i</span>
           </label>
-          <select id="s-auto-approve" style="width:100%">
+          <select id="s-auto-approve" class="fit">
             <option value="read_only">read only</option>
             <option value="low">low</option>
             <option value="medium">medium</option>
             <option value="high">high</option>
+            <option value="all" hidden data-i18n="approveAll">all — no prompts</option>
           </select>
         </div>
         <div class="field">
           <label class="lbl"><span data-i18n="responseLang">Response language</span>
             <span class="info-tip" tabindex="0" data-tip="Language for agent replies. Does not change the UI language.">i</span>
           </label>
-          <select id="s-chat-lang" style="width:100%">
+          <select id="s-chat-lang" class="fit">
             <option value="en">English</option>
             <option value="ru">Russian</option>
             <option value="uk">Ukrainian</option>
@@ -240,6 +279,7 @@
             <option value="auto">Auto (match the user)</option>
           </select>
         </div>
+        </div>
       </div>
 <div class="scard tabp" id="tab-tools" style="display:none">
         <h2 data-i18n="tools">Tools</h2>
@@ -251,6 +291,10 @@
       </div>
       <div class="scard tabp" id="tab-plugins" style="display:none">
         <h2 data-i18n="plugins">Plugins</h2>
+        <label class="check-line" style="margin:0 0 10px">
+          <input type="checkbox" id="s-show-hidden-plugins" class="soft-check"/>
+          <span data-i18n="showHiddenPlugins">Show hidden plugins</span>
+        </label>
         <div class="tools-split">
           <div class="tools-list" id="s-plugins-list"></div>
           <div class="detail-panel" id="s-plugin-detail"><div class="empty">Select a plugin</div></div>
@@ -286,11 +330,10 @@
 </div>
 <div class="footer" id="app-footer">
   <span class="dot idle" id="footer-dot"></span>
-  <span id="footer-provider">provider: —</span>
-  <span id="footer-model">model: —</span>
-  <span id="footer-ctx">ctx: —</span>
-  <span id="footer-tps">0.0 tok/s</span>
-  <span id="footer-extra" class="footer-extra"></span>
+  <button type="button" class="footer-hit" id="footer-provider">provider: —</button>
+  <button type="button" class="footer-hit" id="footer-model">model: —</button>
+  <button type="button" class="footer-hit" id="footer-ctx">ctx: —</button>
+  <span id="footer-tps" style="display:none">0.0 tok/s</span>
 </div>
 <div class="modal-bg" id="model-modal">
   <div class="modal">
@@ -316,7 +359,7 @@
 </div>
 <div class="toast" id="toast"></div>
 <div class="ctx" id="ctx" style="display:none"></div>
-<input type="file" id="folder-picker" webkitdirectory directory style="display:none"/>
+<input type="file" id="outside-picker" multiple style="display:none"/>
 
 <script src="/static/vendor/prism.min.js"></script>
 <script src="/static/vendor/prism-python.min.js"></script>

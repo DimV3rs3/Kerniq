@@ -31,16 +31,33 @@ class ToolResult(BaseModel):
             object.__setattr__(self, "status", "error")
 
     def to_model_content(self) -> str:
-        """Compact JSON for the model (no Python tracebacks)."""
-        import json
-        payload = {
-            "success": self.success,
-            "stop_reason": self.stop_reason,
-            "tool": self.tool_id,
-            "error": self.error,
-            "output": self.output if not isinstance(self.output, str) or len(self.output) < 8000 else self.output[:8000] + "…",
-        }
-        return json.dumps(payload, ensure_ascii=False)
+        text = (self.human_readable or "").strip()
+        if self.success:
+            if text:
+                return text
+            if isinstance(self.output, str) and self.output.strip():
+                body = self.output
+                return body if len(body) < 8000 else body[:8000] + "..."
+            return "Done."
+        low = text.lower()
+        code = (self.error or "").strip()
+        if text.startswith(("Execution error:", "External error:", "File not found", "File already exists", "The text to replace")):
+            return text
+        if self.stop_reason == "timeout" or "timed out" in low or "timeout" in low:
+            return "External error: the tool timed out. " + (text or code)
+        if "already exist" in low:
+            return text
+        if "text to replace" in low or "was not found in" in low:
+            return text or "The text to replace was not found."
+        if isinstance(self.error, str) and "NOT_FOUND" in self.error.upper() or "not found" in low:
+            if text.lower().startswith("file not found"):
+                return text
+            return "File not found. " + (text or code)
+        if self.stop_reason == "denied" or "permission" in low or "access denied" in low:
+            return "Execution error: permission denied. " + (text or code)
+        if text:
+            return "Execution error: " + text
+        return "Execution error: the tool failed." + ((" " + code) if code else "")
 
 
 class Tool(ABC):
@@ -87,7 +104,7 @@ class Tool(ABC):
     @property
     def ui_icon(self) -> str:
         """Emoji/icon for chat UI."""
-        return "⚙"
+        return "tool"
 
 
     def chat_label(self, count: int = 1, *, success: bool = True) -> str:

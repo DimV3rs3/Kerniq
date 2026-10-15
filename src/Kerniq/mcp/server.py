@@ -31,7 +31,7 @@ class MCPServerAdapter:
         allowed_tools: Optional[Sequence[str]] = None,
         workspace: Optional[Path] = None,
         server_name: str = "kerniq-mcp",
-        version: str = "0.1.3",
+        version: str = "0.1.4",
         security_policy: Any = None,
     ) -> None:
         self.tool_registry = tool_registry

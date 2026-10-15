@@ -32,6 +32,31 @@ def find_project_root(start: Optional[Path] = None) -> Optional[Path]:
     return None
 
 
+def anchored_dir(path: object) -> Path:
+    """Resolve a storage path from the project root, not from a random cwd.
+
+    ``./sessions`` must stay ``<repo>/sessions``. It must not land inside
+    ``src/Kerniq``, where it would overwrite the code package.
+    """
+    raw = Path(path)
+    if raw.is_absolute():
+        return raw
+    root = find_project_root()
+    if root is None:
+        try:
+            import Kerniq as pkg
+
+            pkg_file = Path(getattr(pkg, "__file__", "") or "")
+            if pkg_file.is_file() and len(pkg_file.parents) > 2:
+                candidate = pkg_file.parents[2]
+                if (candidate / "pyproject.toml").is_file():
+                    root = candidate
+        except Exception:
+            root = None
+    base = root or Path.cwd()
+    return (base / raw).resolve()
+
+
 def find_plugins_dirs() -> List[Path]:
     """Candidate plugin directories (first existing wins for discovery order)."""
     seen: set[str] = set()

@@ -24,12 +24,23 @@ logger = logging.getLogger(__name__)
 
 
 def to_openai_messages(messages: List[Message]) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
+    """One system message, and it is first.
+
+    Qwen and other Jinja chat templates reject a second system role
+    ("System message must be at the beginning"), so the identity prompt,
+    the pinned TODO, and any compaction note are joined into that single
+    leading message.
+    """
+    system_parts: List[str] = []
+    rest: List[Dict[str, Any]] = []
     for msg in messages:
         if msg.role == MessageRole.SYSTEM:
-            out.append({"role": "system", "content": msg.content or ""})
-        elif msg.role == MessageRole.USER:
-            out.append({"role": "user", "content": msg.content or ""})
+            text = (msg.content or "").strip()
+            if text:
+                system_parts.append(text)
+            continue
+        if msg.role == MessageRole.USER:
+            rest.append({"role": "user", "content": msg.content or ""})
         elif msg.role == MessageRole.ASSISTANT:
             item: Dict[str, Any] = {"role": "assistant", "content": msg.content or ""}
             if msg.tool_calls:
@@ -44,9 +55,9 @@ def to_openai_messages(messages: List[Message]) -> List[Dict[str, Any]]:
                     }
                     for tc in msg.tool_calls
                 ]
-            out.append(item)
+            rest.append(item)
         elif msg.role == MessageRole.TOOL:
-            out.append(
+            rest.append(
                 {
                     "role": "tool",
                     "tool_call_id": msg.tool_call_id or "",
@@ -54,7 +65,9 @@ def to_openai_messages(messages: List[Message]) -> List[Dict[str, Any]]:
                     "content": msg.content or "",
                 }
             )
-    return out
+    if not system_parts:
+        return rest
+    return [{"role": "system", "content": "\n\n".join(system_parts)}] + rest
 
 
 def to_openai_tools(tools: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
@@ -257,6 +270,12 @@ class OpenAICompatProvider(ModelProvider):
         }
         if request.options and request.options.max_tokens is not None:
             payload["max_tokens"] = request.options.max_tokens
+        if request.options and request.options.extra_params:
+            payload.update(request.options.extra_params)
+        if (request.metadata or {}).get("kerniq_internal"):
+            payload["enable_thinking"] = False
+            payload["thinking"] = {"type": "disabled"}
+            payload["reasoning_effort"] = "none"
         tools = to_openai_tools(request.tools)
         if tools:
             payload["tools"] = tools

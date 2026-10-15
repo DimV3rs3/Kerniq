@@ -48,7 +48,18 @@ def test_risk_level_evaluation():
     assert policy.evaluate_tool_call("delete_all", {}, RiskLevel.CRITICAL) == PolicyDecision.REQUIRE_APPROVAL
 
 
-def test_auto_accept_never_covers_critical():
+def test_developer_bypass_allows_critical():
+    policy = SecurityPolicy(workspace_root=Path("."), auto_approve_up_to="all")
+
+    class Tool:
+        name = "run_command"
+        tool_id = "run_command"
+        risk_level = "critical"
+        cfg_auto_accept = False
+
+    assert policy.bypass_all is True
+    assert policy.evaluate_tool_call("run_command", {"command": "ls"}, "critical", tool=Tool()) == PolicyDecision.ALLOW
+    assert policy.evaluate_tool_call("run_command", {"command": "rm -rf /"}, "critical", tool=Tool()) == PolicyDecision.DENY
     policy = SecurityPolicy(workspace_root=Path("."), auto_approve_up_to="high")
 
     class Tool:

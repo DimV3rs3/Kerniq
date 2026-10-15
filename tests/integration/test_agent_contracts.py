@@ -117,7 +117,7 @@ def test_modules_import():
     import Kerniq.models.providers.lm_studio
     import Kerniq.models.system_info
     import Kerniq.mcp.server
-    import Kerniq.sessions.manager
+    import Kerniq.persistence.manager
     import Kerniq.interfaces_runtime.cli.main
 
     assert Kerniq.app.Application
@@ -486,7 +486,7 @@ def test_router_does_not_swap_provider():
 
 
 def test_session_roundtrip_and_corrupt(tmp_path):
-    from Kerniq.sessions.manager import SessionManager
+    from Kerniq.persistence.manager import SessionManager
     from Kerniq.storage.json_store import JsonStorage
 
     async def go():

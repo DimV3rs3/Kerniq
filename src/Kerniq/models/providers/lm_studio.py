@@ -428,38 +428,44 @@ class LMStudioProvider(ModelProvider):
             _invalidate_model_cache()
             return r.json() if r.content else {}
 
+    async def embed_text(self, model: str, text: str) -> List[float]:
+        """Run a prompt through an embedding model. Returns the vector, or []."""
+        url = self._url("/v1/embeddings")
+        payload = {"model": model, "input": (text or "")[:2000]}
+        async with self._client(timeout=120) as client:
+            response = await client.post(url, json=payload, headers=self._headers())
+            if response.status_code >= 400:
+                raise ProviderError(
+                    ErrorCode.PROVIDER_REQUEST_FAILED,
+                    f"Embeddings failed: {response.status_code} {response.text[:300]}",
+                )
+            data = response.json() if response.content else {}
+        rows = data.get("data") or []
+        if not rows or not isinstance(rows[0], dict):
+            return []
+        vector = rows[0].get("embedding") or []
+        return list(vector) if isinstance(vector, list) else []
+
+    async def unload_model_instances(self, model_id: str) -> List[Dict[str, Any]]:
+        """Unload every loaded instance of one model. Other models stay loaded."""
+        want = (model_id or "").strip()
+        if not want:
+            return []
+        results: List[Dict[str, Any]] = []
+        for item in await self.loaded_instances():
+            mid = str(item.get("model") or "")
+            if mid != want and want not in mid and mid not in want:
+                continue
+            iid = item.get("instance_id") or item.get("id")
+            if not iid or str(iid) == mid:
+                continue
+            results.append(await self.unload_model(str(iid)))
+        return results
 
     def _to_openai_messages(self, messages: List[Message]) -> List[Dict[str, Any]]:
-        """Same shape as benchmark.py / analyzer.py."""
-        out: List[Dict[str, Any]] = []
-        for msg in messages:
-            if msg.role == MessageRole.SYSTEM:
-                out.append({"role": "system", "content": msg.content or ""})
-            elif msg.role == MessageRole.USER:
-                out.append({"role": "user", "content": msg.content or ""})
-            elif msg.role == MessageRole.ASSISTANT:
-                item: Dict[str, Any] = {"role": "assistant", "content": msg.content or ""}
-                if msg.tool_calls:
-                    item["tool_calls"] = [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.name,
-                                "arguments": json.dumps(tc.arguments or {}, ensure_ascii=False),
-                            },
-                        }
-                        for tc in msg.tool_calls
-                    ]
-                out.append(item)
-            elif msg.role == MessageRole.TOOL:
-                out.append({
-                    "role": "tool",
-                    "tool_call_id": msg.tool_call_id or "",
-                    "name": msg.name or "tool",
-                    "content": msg.content or "",
-                })
-        return out
+        from .openai_compat import to_openai_messages
+
+        return to_openai_messages(messages)
 
     def _to_openai_tools(self, tools: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
         if not tools:
@@ -618,6 +624,12 @@ class LMStudioProvider(ModelProvider):
         }
         if request.options and request.options.max_tokens is not None:
             payload["max_tokens"] = request.options.max_tokens
+        if request.options and request.options.extra_params:
+            payload.update(request.options.extra_params)
+        if (request.metadata or {}).get("kerniq_internal"):
+            payload["enable_thinking"] = False
+            payload["thinking"] = {"type": "disabled"}
+            payload["reasoning_effort"] = "none"
         oai_tools = self._to_openai_tools(request.tools)
         if oai_tools:
             payload["tools"] = oai_tools

@@ -1,4 +1,4 @@
-# Kerniq 0.1.3 — Modular Open Source AI Agent Platform
+# Kerniq 0.1.4 — Modular Open Source AI Agent Platform
 
 Local-first agent runtime with discovered tool packs, plugins, MCP, CLI, and
 pluggable model providers (LM Studio, Ollama, DeepSeek, OpenRouter, OpenAI,
@@ -6,7 +6,7 @@ Claude API, Claude Code CLI, Gemini, Groq, Mistral, Mock).
 
 ## What this build actually does
 
-Kerniq 0.1.3 runs a tool loop locally:
+Kerniq 0.1.4 runs a tool loop locally:
 
 1. `kerniq run --provider mock` answers from `MockProvider` and can call the
    built-in file and shell tools. The reply is marked `outcome=unverified`
@@ -25,9 +25,18 @@ Context trimming keeps the system prompt, the original user goal, and the newest
 complete tool-call groups. Token counts are an estimate (`len/4`) unless the
 provider returns usage or a context length.
 
-## Install (no PYTHONPATH needed)
+## Install
 
-From the repository root:
+Ready-made scripts live in `scripts/` and do the editable install for you:
+
+| Platform | Command |
+|----------|---------|
+| Windows | `scripts\install.bat` |
+| Linux, macOS | `bash scripts/install.sh` |
+
+Uninstall without deleting the source tree resets settings, `sessions/`, `logs/`, and `state/` back to a fresh install. `scripts\uninstall.bat` and `bash scripts/uninstall.sh` do that. Deleting the project files as well is a separate, explicit wipe (`kerniq uninstall --wipe-project`) and is not what those scripts do.
+
+From the repository root you can also install by hand:
 
 ```bash
 cd Kerniq
@@ -56,6 +65,28 @@ You do **not** need `export PYTHONPATH=src` when the package is installed this w
 |-------|---------|
 | `dev` | pytest, ruff, mypy |
 | `mcp` | official MCP SDK (`mcp` package) |
+
+### Platforms and Python
+
+Kerniq requires **Python 3.11 or newer** (`requires-python` in `pyproject.toml`).
+
+| System | Support |
+|--------|---------|
+| Windows 10 and 11 | Yes |
+| Windows 7 and 8 | No. CPython 3.11 does not support them. The last CPython for Windows 7 is 3.8, and this tree is not tested or packaged for 3.8. |
+| Linux | Yes, on distributions that can install CPython 3.11 (glibc new enough for that build). |
+| macOS | Yes, with Python 3.11+. |
+
+The same settings file (`state/ui_settings.json`) is used by the CLI (`kerniq settings show`) and the Web UI. The UI does not own a private copy of agent settings. Stopping the UI does not stop a task that already started; the runtime keeps the session log.
+
+### What changed in 0.1.4
+
+- Context compaction keeps the last N messages and puts one compacted memory note above them. The note is preserved when the window is trimmed. The trigger is always a percent of the model window. The shrink target is a percent (strictly below the trigger) or a token count.
+- Plan and Act each keep their own TODO. Items cannot be deleted, only marked done or skipped. With automatic handoff, Act starts from a cleared transcript plus the plan draft. Without handoff, Plan answers the user directly.
+- A refused approval is reported as `USER_DENIED` for those exact arguments. Repeating the same call does not prompt again.
+- The footer uses red (unavailable), yellow (idle), orange (the model is generating), and green (the task is still running and the model is waiting). Tokens per second are hidden when streaming is off.
+- Chat titles look for LM Studio and an embedding model even if another provider is selected. If LM Studio or that model is missing, the title is the first three words.
+- Plan and Act can use different models. On a local provider the Plan model is unloaded and the Act model is loaded at handoff.
 
 ## Quick start
 

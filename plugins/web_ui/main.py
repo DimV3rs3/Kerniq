@@ -21,6 +21,14 @@ logger = logging.getLogger("plugin.web_ui")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
+_BLOCKED_ATTACH = {
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "heic", "heif", "tif", "tiff",
+    "mp4", "mov", "mkv", "webm", "avi", "wmv", "m4v", "mpg", "mpeg",
+    "mp3", "wav", "ogg", "flac", "aac", "m4a", "wma", "opus",
+    "exe", "dll", "bin", "iso", "dmg", "msi",
+    "zip", "7z", "rar", "gz", "tar", "bz2", "xz",
+}
+
 
 def _is_junk_model(model: Dict[str, Any]) -> bool:
     """Embeddings and rerankers are not chat models."""
@@ -32,17 +40,105 @@ def _is_junk_model(model: Dict[str, Any]) -> bool:
 
 
 def _heuristic_title(text: str) -> str:
-    words = [w for w in (text or "").split() if w]
-    out: list[str] = []
-    chars = 0
-    for word in words:
-        if len(out) >= 4:
-            break
-        if len(out) >= 2 and chars + len(word) > 28:
-            break
-        out.append(word)
-        chars += len(word) + 1
-    return " ".join(out) or "Chat"
+    words = [w for w in (text or "").replace("\n", " ").split() if w][:3]
+    return " ".join(words) or "Chat"
+
+
+def _model_ids_match(a: str, b: str) -> bool:
+    if not a or not b:
+        return False
+    if a == b or a in b or b in a:
+        return True
+    ta, tb = a.split("/")[-1], b.split("/")[-1]
+    return bool(ta and tb and (ta == tb or ta in tb or tb in ta))
+
+
+def _clean_title(raw: str) -> str:
+    line = (raw or "").strip().splitlines()[0].strip().strip("\"'").strip() if raw else ""
+    if not line or len(line) > 80:
+        return ""
+    noisy = sum(ch.isdigit() or ch in ".,-eE" for ch in line)
+    if noisy > len(line) * 0.5:
+        return ""
+    words = line.split()
+    if len(words) > 6:
+        line = " ".join(words[:4])
+    return line
+
+
+async def _title_from_loaded_model(provider, model_id: str, text: str) -> str:
+    """Ask one already-loaded model for a short title. Restores provider.model."""
+    from uuid import uuid4
+
+    from Kerniq.interfaces.models import GenerationOptions, Message, MessageRole, ModelRequest
+
+    saved = getattr(provider, "model", None)
+    provider.model = model_id
+    try:
+        request = ModelRequest(
+            messages=[
+                Message(
+                    role=MessageRole.SYSTEM,
+                    content="Reply with a chat title of at most four words. No quotes.",
+                ),
+                Message(role=MessageRole.USER, content=(text or "")[:500]),
+            ],
+            session_id=uuid4(),
+            tools=None,
+            options=GenerationOptions(
+                temperature=0.2,
+                max_tokens=16,
+                streaming=False,
+                extra_params={"enable_thinking": False, "thinking": {"type": "disabled"}},
+            ),
+            metadata={"kerniq_internal": "title", "model": model_id},
+        )
+        response = await provider.generate(request)
+    except Exception as exc:
+        logger.info("embedding model did not return a title: %s", exc)
+        return ""
+    finally:
+        provider.model = saved
+    raw = ""
+    if response and response.messages:
+        raw = response.messages[0].content or ""
+    return _clean_title(raw)
+
+
+def _public_error(exc: BaseException) -> tuple[str, str]:
+    raw = str(exc or "").strip() or exc.__class__.__name__
+    low = raw.lower()
+    if "timeout" in low or "timed out" in low:
+        title = "The model did not answer in time."
+    elif any(tok in low for tok in ("unreachable", "connection", "connect", "name or service", "network")):
+        title = "The provider is unreachable. Check the address and the network."
+    elif any(tok in low for tok in ("401", "403", "api key", "unauthorized", "authentication")):
+        title = "The provider rejected the credentials."
+    elif "loop" in low:
+        title = "Stopped: the model was repeating itself."
+    elif "unload" in low or "not loaded" in low or "no model" in low:
+        title = "The model is not loaded."
+    else:
+        title = "The task stopped."
+    return title, raw
+
+
+def _extract_draft(text: str) -> str:
+    raw = text or ""
+    start = raw.find("===ACT_DRAFT===")
+    end = raw.find("===END_DRAFT===")
+    if start >= 0 and end > start:
+        return raw[start + len("===ACT_DRAFT==="):end].strip()
+    prose = raw.split("===ACT_DRAFT===")[0].strip()
+    return prose[:4000]
+
+
+def _strip_draft(text: str) -> str:
+    raw = text or ""
+    start = raw.find("===ACT_DRAFT===")
+    if start < 0:
+        return raw.strip()
+    return raw[:start].strip()
 
 
 
@@ -269,6 +365,8 @@ class UIHandler(BaseHTTPRequestHandler):
             return _json(self, 200, self._reveal(data))
         if path == "/api/fs/pick_folder":
             return _json(self, 200, self._pick_folder())
+        if path == "/api/fs/pick_files":
+            return _json(self, 200, self._pick_files())
         if path == "/api/lms/load":
             return _json(self, 200, self._lms_load(data))
         if path == "/api/shutdown":
@@ -367,7 +465,7 @@ class UIHandler(BaseHTTPRequestHandler):
         if not hasattr(provider, "list_models"):
             return {"models": [], "reachable": True, "provider": provider_id}
         try:
-            models = asyncio.run(provider.list_models())
+            models = asyncio.run(asyncio.wait_for(provider.list_models(), 8))
             chat = [m for m in models if not _is_junk_model(m)]
             embeds = [m for m in models if _is_junk_model(m)]
             return {
@@ -499,6 +597,86 @@ class UIHandler(BaseHTTPRequestHandler):
             return {"error": str(e)}
 
 
+    def _plugins_dir(self) -> Path:
+        here = Path(__file__).resolve()
+        for parent in [Path.cwd(), *here.parents]:
+            cand = parent / "plugins"
+            if (cand / "web_ui" / "manifest.toml").exists():
+                return cand
+        return Path("plugins")
+
+    def _discover_plugins(self, store) -> list:
+        import importlib.util
+        import tomllib
+
+        from Kerniq.plugins.manager import normalize_manifest_data
+
+        root = self._plugins_dir()
+        rows = []
+        if not root.is_dir():
+            return rows
+        for folder in sorted(p for p in root.iterdir() if p.is_dir() and (p / "manifest.toml").exists()):
+            mid = folder.name
+            mname = folder.name
+            status = "discovered"
+            err = ""
+            sch = None
+            try:
+                with open(folder / "manifest.toml", "rb") as fh:
+                    data = normalize_manifest_data(tomllib.load(fh))
+                mid = str(data.get("plugin_id") or folder.name)
+                mname = str(data.get("name") or mid)
+            except Exception as ex:
+                err = str(ex)
+                status = "error"
+            main_py = folder / "main.py"
+            if main_py.exists():
+                try:
+                    spec = importlib.util.spec_from_file_location(
+                        "kerniq_ui_scan_" + folder.name, main_py
+                    )
+                    if spec is not None and spec.loader is not None:
+                        mod = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(mod)
+                        cls = getattr(mod, "PluginImpl", None)
+                        if cls is not None:
+                            inst = cls()
+                            getter = getattr(inst, "settings_schema", None)
+                            sch = getter() if callable(getter) else None
+                            from Kerniq.plugins.fields import with_manager_fields
+
+                            sch = with_manager_fields(sch, mid, mname)
+                            status = "available"
+                            try:
+                                mid = inst.manifest.plugin_id or mid
+                                mname = inst.manifest.name or mname
+                            except Exception:
+                                pass
+                except Exception as ex:
+                    err = str(ex)
+                    if status != "available":
+                        status = "error"
+            if sch is None:
+                from Kerniq.plugins.fields import with_manager_fields
+
+                sch = with_manager_fields(None, mid, mname)
+            item = {
+                "id": (getattr(sch, "component_id", None) or mid),
+                "name": (getattr(sch, "title", None) or mname),
+                "status": status,
+                "schema": sch.to_public() if sch else None,
+                "values": {},
+            }
+            if sch is not None:
+                try:
+                    item["values"] = store.load("plugin", sch.component_id, sch)
+                except Exception:
+                    item["values"] = {}
+            if err:
+                item["error"] = err
+            rows.append(item)
+        return rows
+
     def _component_store(self):
         from Kerniq.settings.component_store import ComponentSettingsStore
         from Kerniq.settings.loader import SettingsProvider
@@ -535,7 +713,7 @@ class UIHandler(BaseHTTPRequestHandler):
                         "description": tool.description or "",
                         "category": getattr(tool, "category", "other") or "other",
                         "pack_id": getattr(tool, "pack_id", None) or getattr(tool, "category", "other"),
-                        "ui_icon": getattr(tool, "ui_icon", "⚙"),
+                        "ui_icon": getattr(tool, "ui_icon", "tool"),
                         "collapsible": bool(getattr(tool, "collapsible", False)),
                         "risk_level": getattr(tool, "risk_level", "medium"),
                         "auto_accept": bool(getattr(tool, "cfg_auto_accept", False)),
@@ -556,69 +734,19 @@ class UIHandler(BaseHTTPRequestHandler):
                         "values": {},
                     })
 
-            # Prefer each plugin's own settings_schema() — single source of truth for UI + CLI
-            plugin_instances = []
+            # Prefer each plugin folder under plugins/. One failure must not hide the rest.
             try:
-                plugin_instances.append(PluginImpl())
-            except Exception:
-                pass
-            try:
-                import importlib.util
-                cc_path = Path(__file__).resolve().parents[2] / "plugins" / "context_compact" / "main.py"
-                # repo layout: examples/plugins/web_ui -> project root is parents[2]
-                root = Path(__file__).resolve()
-                for _ in range(6):
-                    if (root / "plugins" / "context_compact" / "main.py").exists():
-                        cc_path = root / "plugins" / "context_compact" / "main.py"
-                        break
-                    root = root.parent
-                if cc_path.exists():
-                    spec = importlib.util.spec_from_file_location("context_compact_plugin", cc_path)
-                    mod = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(mod)
-                    plugin_instances.append(mod.PluginImpl())
+                plugins.extend(self._discover_plugins(store))
             except Exception as ex:
-                logger.warning("context_compact schema load: %s", ex)
-
-            for inst in plugin_instances:
-                try:
-                    sch = inst.settings_schema() if hasattr(inst, "settings_schema") else None
-                    mid = None
-                    try:
-                        mid = inst.manifest.plugin_id
-                        mname = inst.manifest.name
-                    except Exception:
-                        mid = getattr(sch, "component_id", None) if sch else "unknown"
-                        mname = mid
-                    if sch:
-                        plugins.append({
-                            "id": sch.component_id or mid,
-                            "name": sch.title or mname,
-                            "status": "available",
-                            "schema": sch.to_public(),
-                            "values": store.load("plugin", sch.component_id, sch),
-                        })
-                    else:
-                        plugins.append({
-                            "id": mid,
-                            "name": mname,
-                            "status": "available",
-                            "schema": None,
-                            "values": {},
-                        })
-                except Exception as ex:
-                    logger.exception("plugin schema: %s", ex)
-                    try:
-                        plugins.append({
-                            "id": inst.manifest.plugin_id,
-                            "name": inst.manifest.name,
-                            "status": "error",
-                            "schema": None,
-                            "values": {},
-                            "error": str(ex),
-                        })
-                    except Exception:
-                        pass
+                logger.exception("plugin discovery")
+                plugins.append({
+                    "id": "discovery",
+                    "name": "Plugin discovery",
+                    "status": "error",
+                    "schema": None,
+                    "values": {},
+                    "error": str(ex),
+                })
         except Exception as e:
             logger.exception("list components")
             return {"tools": tools, "plugins": plugins, "error": str(e)}
@@ -707,10 +835,13 @@ class UIHandler(BaseHTTPRequestHandler):
 
     def _import_attachment(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Copy an external file into workspace/attachments (sandbox)."""
-        import shutil
+        import re
         src = (data.get("source") or "").strip()
         name = (data.get("name") or "").strip()
         content_b64 = data.get("content_base64")
+        suffix = Path(name or src).suffix.lower().lstrip(".")
+        if suffix in _BLOCKED_ATTACH:
+            return {"error": "This file type cannot be attached."}
         ws = _workspace()
         att = ws / "attachments"
         att.mkdir(parents=True, exist_ok=True)
@@ -732,6 +863,7 @@ class UIHandler(BaseHTTPRequestHandler):
                 return {"ok": True, "path": rel, "workspace_relative": True}
             if not src:
                 return {"error": "source or content required"}
+            import shutil
             sp = Path(src)
             if not sp.is_file():
                 return {"error": "source not a file"}
@@ -791,6 +923,36 @@ class UIHandler(BaseHTTPRequestHandler):
             logger.exception("pick_folder")
             return {"error": f"Folder dialog unavailable: {e}"}
 
+    def _pick_files(self) -> Dict[str, Any]:
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            paths = filedialog.askopenfilenames(
+                title="Attach files",
+                filetypes=[
+                    ("Documents and code", "*.md *.txt *.docx *.py *.js *.ts *.tsx *.jsx *.json *.toml *.yml *.yaml *.html *.css *.rs *.go *.java *.c *.cpp *.h *.cs *.rb *.php *.sh *.sql *.xml *.csv *.vue *.svelte"),
+                    ("All files", "*.*"),
+                ],
+            )
+            root.destroy()
+            if not paths:
+                return {"cancelled": True}
+            allowed = []
+            blocked = []
+            for raw in paths:
+                suffix = Path(raw).suffix.lower().lstrip(".")
+                if suffix in _BLOCKED_ATTACH:
+                    blocked.append(Path(raw).name)
+                    continue
+                allowed.append(raw)
+            return {"paths": allowed, "blocked": blocked}
+        except Exception as e:
+            logger.exception("pick_files")
+            return {"error": f"File dialog unavailable: {e}"}
+
 
     def _lms_provider(self):
         from Kerniq.models.providers.lm_studio import LMStudioProvider
@@ -845,55 +1007,85 @@ class UIHandler(BaseHTTPRequestHandler):
             return {"loaded": [], "error": str(e), "selected_model": "", "conflict": False, "selected_loaded": False}
 
     def _chat_title(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Prefer a loaded embedding model for the title. Otherwise the usual short title."""
+        """Title a chat with the local embedding model, then unload only that model.
+
+        The chat model is loaded first (LM Studio only) and is left loaded.
+        The embedding model is loaded after it, asked to name the chat, then unloaded.
+        If it cannot produce words, the first three words of the prompt are used.
+        """
         text = str((data or {}).get("text") or "").strip()
         fallback = _heuristic_title(text)
-        ui = _settings_store().load()
-        if (ui.api.provider or "lm_studio") != "lm_studio":
-            return {"title": fallback, "source": "heuristic"}
         try:
-            provider = self._lms_provider()
-            models = asyncio.run(provider.list_models())
+            return asyncio.run(self._chat_title_async(text, fallback))
+        except Exception as exc:
+            logger.info("chat title failed: %s", exc)
+            return {"title": fallback, "source": "heuristic", "error": str(exc)}
+
+    async def _chat_title_async(self, text: str, fallback: str) -> Dict[str, Any]:
+        from Kerniq.models.providers.lm_studio import LMStudioProvider
+
+        provider = LMStudioProvider(base_url="http://127.0.0.1:1234")
+        try:
+            models = await provider.list_models()
         except Exception as exc:
             return {"title": fallback, "source": "heuristic", "error": str(exc)}
         embed = next((m for m in models if _is_junk_model(m) and m.get("id")), None)
         if not embed:
             return {"title": fallback, "source": "heuristic"}
+
+        ui = _settings_store().load()
+        if str(getattr(ui.api, "provider", "") or "") == "lm_studio":
+            selected = str(getattr(ui.api, "model", "") or "").strip()
+            chat = None
+            if selected:
+                chat = next(
+                    (
+                        m for m in models
+                        if m.get("id") and not _is_junk_model(m) and _model_ids_match(str(m.get("id")), selected)
+                    ),
+                    None,
+                )
+            if chat is None:
+                chat = next(
+                    (m for m in models if m.get("id") and not _is_junk_model(m) and (m.get("loaded_instances") or [])),
+                    None,
+                )
+            if chat and not (chat.get("loaded_instances") or []):
+                try:
+                    await provider.load_model(str(chat["id"]))
+                except Exception as exc:
+                    logger.info("chat model load before title skipped: %s", exc)
+
+        embed_id = str(embed["id"])
         try:
-            asyncio.run(provider.load_model(str(embed["id"])))
+            await provider.load_model(embed_id)
         except Exception as exc:
             logger.info("embedding load for title skipped: %s", exc)
             return {"title": fallback, "source": "heuristic"}
+
+        title = ""
+        processed = False
         try:
-            from uuid import uuid4
-
-            from Kerniq.interfaces.models import GenerationOptions, Message, MessageRole, ModelRequest
-
-            previous = provider.model
-            provider.model = str(embed["id"])
-            request = ModelRequest(
-                messages=[
-                    Message(
-                        role=MessageRole.SYSTEM,
-                        content="Reply with a chat title of at most four words. No quotes.",
-                    ),
-                    Message(role=MessageRole.USER, content=text[:500]),
-                ],
-                session_id=uuid4(),
-                tools=None,
-                options=GenerationOptions(temperature=0.2, max_tokens=16, streaming=False),
-                metadata={"kerniq_internal": "title"},
-            )
-            response = asyncio.run(provider.generate(request))
-            provider.model = previous
-            raw = ""
-            if response and response.messages:
-                raw = (response.messages[0].content or "").strip().splitlines()[0][:80]
-            if raw:
-                return {"title": raw, "source": "embedding"}
-        except Exception as exc:
-            logger.info("embedding title failed, using heuristic: %s", exc)
-        return {"title": fallback, "source": "heuristic"}
+            try:
+                vector = await provider.embed_text(embed_id, text[:500])
+                processed = bool(vector)
+            except Exception as exc:
+                logger.info("embedding request failed: %s", exc)
+            title = await _title_from_loaded_model(provider, embed_id, text)
+        finally:
+            try:
+                await provider.unload_model_instances(embed_id)
+            except Exception:
+                logger.info("embedding unload failed", exc_info=True)
+        if title:
+            return {"title": title, "source": "embedding", "embedding": embed_id, "unloaded": True}
+        return {
+            "title": fallback,
+            "source": "heuristic",
+            "embedding": embed_id,
+            "processed": processed,
+            "unloaded": True,
+        }
 
     def _lms_load(self, data):
         try:
@@ -1011,7 +1203,7 @@ class UIHandler(BaseHTTPRequestHandler):
 
 
 def _chat_log():
-    from Kerniq.sessions.chat_log import ChatLog
+    from Kerniq.persistence.chat_log import ChatLog
     from Kerniq.settings.loader import SettingsProvider
 
     if STATE.chat_log is None:
@@ -1124,7 +1316,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
 
     def _checkpoint(ctx):
         try:
-            from Kerniq.sessions.manager import SessionManager
+            from Kerniq.persistence.manager import SessionManager
             from Kerniq.storage.json_store import JsonStorage
 
             transcript = (ctx.metadata or {}).get("transcript") or [
@@ -1146,14 +1338,13 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     agent.orchestrator.on_progress = _checkpoint
 
     def _on_plan(items, archive=None):
-        open_items = [
-            item for item in (items or [])
-            if isinstance(item, dict) and item.get("status") != "done"
-        ]
+        rows = [item for item in (items or []) if isinstance(item, dict)]
+        open_items = [item for item in rows if item.get("status") not in ("done", "skipped")]
         _emit(run_id, {
             "type": "plan",
-            "items": open_items,
+            "items": rows,
             "archive": list(archive or []),
+            "complete": not open_items and bool(rows),
         })
 
     agent.orchestrator.on_plan = _on_plan
@@ -1401,8 +1592,8 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                     "success": status == "success",
                     "stop_reason": getattr(result, "stop_reason", status),
                     "summary": (
-                        (result.error or "")[:200]
-                        if (getattr(result, "success", True) is False or result.status == "error")
+                        ((getattr(result, "human_readable", None) or result.error or "")[:400])
+                        if (getattr(result, "success", True) is False or getattr(result, "status", "") == "error")
                         else ""
                     ),
                     "args": arguments,
@@ -1475,6 +1666,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     file_link_hint = (
         "When referring to project files, write links as [[file:relative/path]] "
         "(workspace-relative). The UI will open them in the editor. "
+        "An @path token in the user message is a workspace file mention. Read that relative path. "
         "Do not invent paths."
     )
     if system:
@@ -1502,7 +1694,13 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     lang = getattr(getattr(ui, "chat", None), "response_language", None) or "auto"
     agent.response_language = lang
     allowed_files = []
+    external_files = []
     for item in data.get("attachments") or []:
+        if isinstance(item, dict) and item.get("external"):
+            raw = str(item.get("path") or "").strip()
+            if raw:
+                external_files.append(raw)
+            continue
         path = item.get("path") if isinstance(item, dict) else str(item)
         path = str(path or "").replace("\\", "/").lstrip("./")
         if path:
@@ -1512,7 +1710,13 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         system = (system or "") + (
             "\n\nStrict attachment mode is on. You may only read or write these workspace paths: "
             + ", ".join(allowed_files)
-            + ". Other paths will be denied."
+            + ". Other workspace paths will be denied."
+        )
+    if external_files:
+        system = (system or "") + (
+            "\n\nThese files are outside the workspace. You may read them. "
+            "Writing, editing, or deleting them requires user approval:\n"
+            + "\n".join(external_files)
         )
     mode = str(data.get("mode") or getattr(ui.chat, "agent_mode", None) or "act").lower()
     if mode not in ("plan", "act"):
@@ -1529,6 +1733,38 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     agent.orchestrator.finish_open_plan = True
     initial_plan = data.get("plan") if isinstance(data.get("plan"), list) else None
 
+    async def _activate_act_model() -> None:
+        if not getattr(ui.api, "split_models", False):
+            return
+        act_model = str(getattr(ui.api, "act_model", "") or "").strip()
+        plan_model = str(getattr(ui.api, "model", "") or "").strip()
+        if not act_model or act_model == plan_model:
+            return
+        provider_id = str(getattr(ui.api, "provider", "") or "")
+        try:
+            if provider_id == "lm_studio" and hasattr(provider, "unload_all"):
+                await provider.unload_all()
+                await provider.load_model(act_model)
+            elif provider_id == "ollama":
+                import httpx
+                base = str(getattr(provider, "base_url", "") or ui.api.base_url or "http://127.0.0.1:11434").rstrip("/")
+                async with httpx.AsyncClient(timeout=30) as client:
+                    if plan_model:
+                        await client.post(base + "/api/generate", json={"model": plan_model, "keep_alive": 0})
+                    await client.post(base + "/api/generate", json={"model": act_model, "keep_alive": "10m"})
+            if hasattr(provider, "model"):
+                provider.model = act_model
+            _emit(run_id, {"type": "status", "status": "loading_model", "text": act_model})
+        except Exception:
+            logger.exception("act model switch failed")
+            _emit(run_id, {
+                "type": "assistant",
+                "content": "Could not switch to the Act model. Continuing with the current one.",
+                "error": True,
+                "detail": f"{plan_model} -> {act_model}",
+                "completed": False,
+            })
+
     async def _verdict(task_text: str) -> str:
         from uuid import uuid4
 
@@ -1540,18 +1776,23 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                     role=MessageRole.SYSTEM,
                     content=(
                         "You route one user request by complexity. Reply with a single word: PLAN or ACT. "
-                        "PLAN if the work is large, unfamiliar, or spans several files or steps. "
-                        "Plan mode only writes a detailed TODO. It does not edit anything. "
+                        "PLAN if the work is large, unfamiliar, or spans several files. "
+                        "Plan only studies the project and closes its own research TODO. "
                         "ACT if the work is small: one script, one obvious edit, or a direct question. "
-                        "Act still keeps a short TODO and then does the work. "
-                        "A TODO exists in both modes. The word you return only chooses the mode."
+                        "Act still writes its own short TODO and then does the work. "
+                        "Do not explain."
                     ),
                 ),
                 Message(role=MessageRole.USER, content=(task_text or "")[:4000]),
             ],
             session_id=uuid4(),
             tools=None,
-            options=GenerationOptions(temperature=0, max_tokens=8, streaming=False),
+            options=GenerationOptions(
+                temperature=0,
+                max_tokens=8,
+                streaming=False,
+                extra_params={"enable_thinking": False, "thinking": {"type": "disabled"}, "reasoning_effort": "none"},
+            ),
             metadata={"kerniq_internal": "route"},
         )
         try:
@@ -1582,6 +1823,8 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             agent_mode=run_mode,
             initial_plan=plan0,
             plan_archive=archive0,
+            plan_handoff=bool(run_mode == "plan" and auto_act),
+            external_files=external_files or None,
         )
 
     try:
@@ -1591,9 +1834,15 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
             _emit(run_id, {"type": "assistant", "content": "", "completed": False})
         else:
-            msg = str(e)
-            _emit(run_id, {"type": "status", "status": "error", "text": "Error"})
-            _emit(run_id, {"type": "assistant", "content": f"Error: {msg}", "completed": False})
+            title, detail = _public_error(e)
+            _emit(run_id, {"type": "status", "status": "error", "text": title})
+            _emit(run_id, {
+                "type": "assistant",
+                "content": title,
+                "error": True,
+                "detail": detail,
+                "completed": False,
+            })
         _finish_run(run_id, None if _is_cancelled() else str(e))
         return
 
@@ -1614,17 +1863,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         raw = (agent.last_context.metadata or {}).get("plan") or []
         return list(raw) if isinstance(raw, list) else []
 
-    def _visible(items):
-        return [
-            item for item in (items or [])
-            if isinstance(item, dict) and item.get("status") != "done"
-        ]
-
     plan_items = _plan_items()
     if plan_items or (agent.last_context and (agent.last_context.metadata or {}).get("plan_archive")):
         _emit(run_id, {
             "type": "plan",
-            "items": _visible(plan_items),
+            "items": plan_items,
             "archive": list((agent.last_context.metadata or {}).get("plan_archive") or []) if agent.last_context else [],
         })
     outcome = _outcome()
@@ -1639,55 +1882,66 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         "max_iterations",
     }
     failed = outcome in fail_outcomes
-    open_items = [item for item in plan_items if isinstance(item, dict) and item.get("status") != "done"]
+    open_items = [
+        item for item in plan_items
+        if isinstance(item, dict) and item.get("status") not in ("done", "skipped")
+    ]
     handoff = (
         mode == "plan"
-        and (mode_auto or compose_plan or auto_act)
+        and auto_act
         and not failed
+        and not open_items
         and not _is_cancelled()
     )
+    if mode == "plan" and not auto_act and isinstance(result, str):
+        result = _strip_draft(result)
     if handoff:
+        _emit(run_id, {"type": "plan", "items": [], "archive": [], "reset": True})
         _emit(run_id, {"type": "mode", "mode": "act"})
-        _emit(run_id, {"type": "status", "status": "processing", "text": "Act"})
-        import json as _json
-        archive = []
-        if agent.last_context is not None:
-            archive = list((agent.last_context.metadata or {}).get("plan_archive") or [])
+        _emit(run_id, {"type": "status", "status": "processing", "text": "Act", "iterations_reset": True})
+        draft = _extract_draft(result if isinstance(result, str) else "")
+        await _activate_act_model()
+        logger.info(
+            "Act starts with a fresh iteration budget (%s). Plan iterations are not carried over.",
+            agent.orchestrator.max_iterations,
+        )
         act_task = (
-            "Plan mode is finished. You are now in ACT. Execute the TODO. Do not spend this turn rewriting a plan instead of working. "
-            "Keep the TODO with update_plan. Exactly one item is active. "
-            "Mark an item done only after that step is really finished. "
-            "Do not repeat archived done items. "
-            "Do not stop while any item is pending or active.\n"
-            "Open TODO:\n"
-            + _json.dumps(_visible(plan_items), ensure_ascii=False)
-            + "\nArchived done:\n"
-            + _json.dumps(archive, ensure_ascii=False)
+            "You are in ACT. Plan mode is finished and its iteration budget does not carry over. "
+            "Yours starts at zero. Context compaction does not spend iterations.\n"
+            "The plan-mode transcript was cleared on purpose. "
+            "First write YOUR OWN action TODO with update_plan, from the original request and then from the draft. "
+            "You may search more. Insert new items only among the current item and the items after it. "
+            "Do not delete items or rename existing ones. "
+            "Statuses: pending, active, done, frozen, failed. "
+            "Frozen and failed items stay open: you may return to a frozen item at any time, "
+            "but you cannot finish, refuse, or abandon the task while any item is pending, active, frozen, or failed.\n\n"
+            "Draft from plan mode:\n"
+            + (draft or "(no draft)")
             + "\n\nOriginal request:\n"
             + user_task
         )
-        hist2 = list(history_msgs)
-        hist2.append(Message(role=MessageRole.USER, content=user_task))
         try:
-            act_result = await _one(act_task, hist2, "act", _visible(plan_items), archive)
+            act_result = await _one(act_task, None, "act", None, None)
         except Exception as e:
             if _is_cancelled():
                 _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
                 _finish_run(run_id, None)
                 return
-            _emit(run_id, {"type": "assistant", "content": f"Error: {e}", "completed": False})
+            title, detail = _public_error(e)
+            _emit(run_id, {"type": "assistant", "content": title, "error": True, "detail": detail, "completed": False})
             _finish_run(run_id, str(e))
             return
         if _is_cancelled():
             _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
             _finish_run(run_id, None)
             return
-        plan_items = _plan_items() or plan_items
-        if plan_items or archive:
+        plan_items = _plan_items() or []
+        archive_now = list((agent.last_context.metadata or {}).get("plan_archive") or []) if agent.last_context else []
+        if plan_items or archive_now:
             _emit(run_id, {
                 "type": "plan",
-                "items": _visible(plan_items),
-                "archive": list((agent.last_context.metadata or {}).get("plan_archive") or archive) if agent.last_context else archive,
+                "items": plan_items,
+                "archive": archive_now,
             })
         outcome = _outcome()
         if isinstance(act_result, str) and "TASK_COMPLETED" in act_result:
@@ -1704,10 +1958,16 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     final_status = "error" if failed else "done"
     still_open = [
         item for item in (_plan_items() or plan_items)
-        if isinstance(item, dict) and item.get("status") != "done"
+        if isinstance(item, dict) and item.get("status") not in ("done", "skipped")
     ]
     completed = (not failed) and not still_open
-    _emit(run_id, {"type": "assistant", "content": result or "", "completed": completed})
+    _emit(run_id, {
+        "type": "assistant",
+        "content": result or "",
+        "completed": completed,
+        "error": bool(failed),
+        "detail": outcome if failed else "",
+    })
     _emit(
         run_id,
         {

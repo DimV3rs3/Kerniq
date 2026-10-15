@@ -128,12 +128,24 @@ def _purge_project_state(project_root: Path) -> List[str]:
         ".ruff_cache",
     ):
         p = project_root / name
-        if p.is_dir():
-            try:
-                shutil.rmtree(p, ignore_errors=True)
-                cleaned.append(str(p))
-            except Exception as e:
-                cleaned.append(f"{p} (failed: {e})")
+        if not p.is_dir():
+            continue
+        # Never delete a Python package. User data dirs have no __init__.py.
+        if (p / "__init__.py").is_file():
+            cleaned.append(f"{p} (kept: python package)")
+            continue
+        try:
+            rel = p.resolve().relative_to(project_root.resolve())
+        except Exception:
+            rel = None
+        if rel is not None and "src" in rel.parts:
+            cleaned.append(f"{p} (kept: inside src)")
+            continue
+        try:
+            shutil.rmtree(p, ignore_errors=True)
+            cleaned.append(str(p))
+        except Exception as e:
+            cleaned.append(f"{p} (failed: {e})")
     for p in project_root.rglob("__pycache__"):
         if p.is_dir():
             shutil.rmtree(p, ignore_errors=True)
@@ -202,9 +214,13 @@ def _spawn_deferred(purge: bool, wipe_project: bool = False) -> int:
 def _do_uninstall(*, purge: bool = False, wipe_project: bool = False) -> int:
     """Actual uninstall body (must not hold a lock on kerniq.exe)."""
     print(f"Python: {sys.executable}")
-    # Brief wait so parent kerniq.exe fully exits when deferred
     if "--deferred" in sys.argv or os.environ.get("KERNIQ_UNINSTALL_DEFERRED") == "1":
         time.sleep(1.2)
+
+    # Settings and runtime dirs go first, while this package can still be imported.
+    # The source tree is left in place unless --wipe-project is set.
+    if not wipe_project:
+        _reset_user_state()
 
     print("Running: python -m pip uninstall Kerniq -y")
     code, out = _run([sys.executable, "-m", "pip", "uninstall", "Kerniq", "-y"])
@@ -283,6 +299,34 @@ def _do_uninstall(*, purge: bool = False, wipe_project: bool = False) -> int:
         print(f'  "{sys.executable}" -m Kerniq uninstall -y')
         return 1
     return 0 if code == 0 else 0  # package often already gone after partial uninstall
+
+
+def _project_root() -> Optional[Path]:
+    try:
+        from Kerniq.devtools.paths import find_project_root
+        root = find_project_root()
+    except Exception:
+        root = None
+    if root is None:
+        cwd = Path.cwd()
+        if (cwd / "pyproject.toml").is_file():
+            root = cwd
+    return root
+
+
+def _reset_user_state() -> None:
+    """Drop settings and runtime directories. Leave the installed source tree."""
+    root = _project_root()
+    if root is None:
+        print("Could not detect project root; user settings were not reset.")
+        return
+    print(f"Resetting user settings and runtime data under {root}")
+    for line in _purge_project_state(root):
+        print(f"  - {line}")
+    home = Path.home() / ".kerniq"
+    if home.is_dir():
+        shutil.rmtree(home, ignore_errors=True)
+        print(f"  - {home}")
 
 
 def _find_install_roots() -> List[Path]:
@@ -375,8 +419,9 @@ def uninstall(
     """
     Uninstall Kerniq from the current Python environment.
 
-    Does NOT delete the source tree; --purge only clears sessions/logs/state
-    under the detected project root.
+    Does NOT delete the source tree. User settings, sessions, logs, and state
+    are removed so the next install starts from defaults. --wipe-project deletes
+    the source tree as well.
     """
     if not yes and not deferred:
         print(

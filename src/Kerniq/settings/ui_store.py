@@ -76,6 +76,9 @@ class ApiModelSettings(BaseModel):
     provider: str = "lm_studio"  # id from Kerniq.models.catalog
     base_url: str = "http://localhost:1234"
     model: str = ""  # empty → first available / loaded
+    # When false, Plan and Act share `model`. When true, Act uses `act_model`.
+    split_models: bool = False
+    act_model: str = ""
     api_token: str = ""  # not written to logs
     binary_path: str = ""  # Claude Code CLI path
     temperature: Optional[float] = 0.7
@@ -103,7 +106,7 @@ class ChatSettings(BaseModel):
     file_ops_only: bool = False  # UI: only show file create/edit/delete names
     aggregate_tools: bool = True  # merge consecutive identical tool names in UI
     response_language: str = "en"  # key from RESPONSE_LANGUAGES
-    # read_only | low | medium | high. Critical always requires a human.
+    # read_only | low | medium | high | all. "all" is the developer bypass.
     auto_approve_up_to: str = "low"
     # plan studies the project and writes a TODO list. act edits files.
     agent_mode: str = "act"

@@ -1,6 +1,6 @@
 [application]
 name = "AI Agent Platform"
-version = "0.1.3"
+version = "0.1.4"
 workspace_root = "./workspace"
 auto_install_deps = true
 

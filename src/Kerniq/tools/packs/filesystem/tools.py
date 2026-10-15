@@ -91,13 +91,25 @@ class FileSystemToolBase(Tool):
             target = candidate.resolve()
         else:
             target = (base / candidate).resolve()
+        task = current_task()
+        external = []
+        if task is not None:
+            for item in ((getattr(task, "metadata", None) or {}).get("external_files") or []):
+                try:
+                    external.append(pathlib.Path(item).resolve())
+                except Exception:
+                    continue
+        if target in external:
+            if must_exist and not target.exists():
+                raise FileNotFoundError(f"File not found: {path_str}")
+            return target
         if not target.is_relative_to(base):
             raise PermissionError(f"Access denied: {path_str} is outside workspace")
         blocked = strict_allows(target.relative_to(base).as_posix(), current_task())
         if blocked:
             raise PermissionError(blocked)
         if must_exist and not target.exists():
-            raise FileNotFoundError(f"Path does not exist: {path_str}")
+            raise FileNotFoundError(f"File not found: {path_str}")
         return target
 
     def _create_error_result(self, call_id: str, msg: str, error_code: str) -> ToolResult:
@@ -452,7 +464,7 @@ class EditFileTool(FileSystemToolBase):
             text = path.read_text(encoding="utf-8")
             if old not in text:
                 return self._create_error_result(
-                    call_id, f"old_string not found in {arguments['path']}", "FS_NOT_FOUND"
+                    call_id, f"The text to replace was not found in {arguments['path']}.", "FS_NOT_FOUND"
                 )
             if arguments.get("replace_all"):
                 updated = text.replace(old, new)

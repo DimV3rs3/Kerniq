@@ -4,7 +4,7 @@ import importlib.util
 from pathlib import Path
 
 from Kerniq.interfaces.models import Message, MessageRole
-from Kerniq.sessions.transcript import fold_transcript
+from Kerniq.persistence.transcript import fold_transcript
 
 
 def _compactor():

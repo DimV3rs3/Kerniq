@@ -109,11 +109,14 @@ class Orchestrator:
             raw = []
         open_items = [
             item for item in raw
-            if isinstance(item, dict) and str(item.get("status") or "") != "done"
+            if isinstance(item, dict) and str(item.get("status") or "") not in ("done", "skipped")
         ]
         if mode == "plan":
-            # Plan mode ends once a breakdown exists. It does not implement it.
-            return not raw and continuations < 2
+            # Plan mode's own TODO is the research checklist. It must be closed
+            # before that mode may stop. The implementation TODO belongs to Act.
+            if not raw:
+                return continuations < 2
+            return bool(open_items)
         if open_items:
             return True
         if not raw and not archive:
@@ -142,9 +145,9 @@ class Orchestrator:
                 continue
             title = str(item.get("title") or "").strip()
             status = str(item.get("status") or "pending")
-            if status == "done":
+            if status in ("done", "skipped"):
                 if str(item.get("id") or "") not in done_ids and title:
-                    done_lines.append(f"- {title}")
+                    done_lines.append(f"- [{status}] {title}")
                 continue
             if title:
                 open_lines.append(f"- [{status}] {title}")
@@ -152,8 +155,9 @@ class Orchestrator:
             return ""
         return (
             "[Pinned TODO. This survives compaction. Do not drop it and do not redo archived items.]\n"
-            "Open:\n" + ("\n".join(open_lines) or "- (none)")
-            + "\nArchived done (memory only, hidden in the UI):\n"
+            "Open (pending, active, frozen, and failed all block the end):\n"
+            + ("\n".join(open_lines) or "- (none)")
+            + "\nDone items stay on the list. Do not delete them and do not redo them:\n"
             + ("\n".join(done_lines) or "- (none)")
         )
 
@@ -230,7 +234,11 @@ class Orchestrator:
             return messages
 
         systems = [m for m in messages if m.role == MessageRole.SYSTEM]
-        primary_system = systems[:1] if systems else []
+        kept_systems = []
+        for m in systems:
+            text = m.content or ""
+            if not kept_systems or text.startswith("[Compacted context.") or text.startswith("[Pinned TODO."):
+                kept_systems.append(m)
         rest = [m for m in messages if m.role != MessageRole.SYSTEM]
         groups = self._message_groups(rest)
 
@@ -240,7 +248,7 @@ class Orchestrator:
             groups = groups[1:]
 
         kept_rev = []
-        used = self._estimate_tokens(primary_system) + self._estimate_tokens(pinned)
+        used = self._estimate_tokens(kept_systems) + self._estimate_tokens(pinned)
         for g in reversed(groups):
             cost = self._estimate_tokens(g)
             if used + cost > budget_tokens and kept_rev:
@@ -257,15 +265,7 @@ class Orchestrator:
             if m.role == MessageRole.TOOL and m.content and len(m.content) > 12000:
                 m.content = m.content[:12000] + "\n…[tool output truncated]"
 
-        note = Message(
-            role=MessageRole.SYSTEM,
-            content=(
-                self._TRUNC_MARK
-                + " Older turns were dropped as complete groups; "
-                "the original goal and recent tool results were kept.]"
-            ),
-        )
-        return primary_system + [note] + pinned + kept
+        return kept_systems + pinned + kept
 
     def _sanitize_for_provider(self, messages):
         """Make history valid for strict chat templates (Mistral/Gemma/etc.).
@@ -480,15 +480,23 @@ class Orchestrator:
         # 32768 is an estimate when the provider does not report a window.
         context.metadata.setdefault("context_limit_estimate", ctx_limit)
         input_budget = max(4096, int(ctx_limit * 0.85))
+        mode_name = str((context.metadata or {}).get("agent_mode") or "act")
+        context.metadata["iterations_used"] = 0
+        logger.info(
+            "Iteration budget reset for %s mode (limit %s). Context compaction is not counted.",
+            mode_name,
+            self.max_iterations,
+        )
 
         while iteration < self.max_iterations:
             if getattr(context, "cancelled", False):
                 logger.info("Orchestration cancelled")
                 return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
-            iteration += 1
-            logger.info(f"Orchestration iteration {iteration}/{self.max_iterations}")
-
+            # Compaction may call the model, but it is bookkeeping and must not spend an iteration.
             await self._maybe_compact(context)
+            iteration += 1
+            context.metadata["iterations_used"] = iteration
+            logger.info(f"Orchestration iteration {iteration}/{self.max_iterations}")
             context.messages = self._strip_truncation_notices(context.messages)
             est = self._estimate_tokens(context.messages)
             if est > input_budget:
@@ -612,8 +620,8 @@ class Orchestrator:
                     mode = str((context.metadata or {}).get("agent_mode") or "act")
                     if mode == "plan":
                         note = (
-                            "Plan mode is not done: publish the detailed TODO with update_plan. "
-                            "Do not implement it. Do not stop with an empty plan."
+                            "Plan mode is not done. Keep researching and publish the TODO with update_plan. "
+                            "Do not implement. Do not stop while any item is pending, active, frozen, or failed."
                         )
                     elif not (context.metadata or {}).get("plan"):
                         note = (
@@ -622,10 +630,11 @@ class Orchestrator:
                         )
                     else:
                         note = (
-                            "The TODO still has unfinished items. Continue the next pending item. "
-                            "Call update_plan so exactly one item is active, and mark an item done "
-                            "only after that step is actually finished. Do not stop yet. "
-                            "Do not repeat archived done items."
+                            "The TODO is still open. Work strictly in order. "
+                            "Only the first unfinished item is current, and you may change only that one. "
+                            "Finish it, or mark that one item failed if you cannot. "
+                            "Do not activate or complete a later item in the same call. "
+                            "Completed items stay on the list. You cannot delete items. "
                         )
                     self._user_note(context, note)
                     continue
@@ -728,6 +737,21 @@ class Orchestrator:
                     ))
                     continue
 
+                import json as _json
+                denied_sig = call.name + "\n" + _json.dumps(call.arguments or {}, sort_keys=True, ensure_ascii=False)
+                if denied_sig in set((context.metadata or {}).get("user_denied") or []):
+                    context.add_message(Message(
+                        role=MessageRole.TOOL,
+                        content=(
+                            "USER_DENIED: The user already refused this exact call. "
+                            f"Tool `{call.name}` was not run again. "
+                            "Do not retry it. Choose a different approach."
+                        ),
+                        tool_call_id=call.id,
+                        name=call.name,
+                    ))
+                    continue
+
                 if tool is not None and self.plan_blocks_tool(context, tool):
                     context.add_message(Message(
                         role=MessageRole.TOOL,
@@ -786,7 +810,20 @@ class Orchestrator:
                             )
                             app_res = await self.approval_provider.request_approval(app_req)
                             if app_res.decision != "allow":
-                                error_msg = f"Security Error: Tool {call.name} was denied by user: {app_res.comment}"
+                                import json as _json
+                                sig = call.name + "\n" + _json.dumps(call.arguments or {}, sort_keys=True, ensure_ascii=False)
+                                denied = list((context.metadata or {}).get("user_denied") or [])
+                                if sig not in denied:
+                                    denied.append(sig)
+                                context.metadata["user_denied"] = denied
+                                shown = _json.dumps(call.arguments or {}, ensure_ascii=False)
+                                error_msg = (
+                                    "USER_DENIED: The user refused this call. "
+                                    f"Tool `{call.name}` with arguments {shown} was not executed. "
+                                    "This is not a tool error and not a transient failure. "
+                                    "Do not call this tool again with the same arguments. "
+                                    "Pick a different approach or ask the user."
+                                )
                                 context.add_message(Message(
                                     role=MessageRole.TOOL,
                                     content=error_msg,
@@ -821,12 +858,19 @@ class Orchestrator:
                         result = await tool.execute(call.arguments, context)
                 except Exception as exc:
                     logger.exception("Tool %s raised", call.name)
+                    text = str(exc)
+                    low = text.lower()
+                    if "timed out" in low or "timeout" in low:
+                        note = "External error: the tool timed out. " + text
+                    elif isinstance(exc, FileNotFoundError):
+                        note = "File not found. " + text
+                    elif isinstance(exc, PermissionError):
+                        note = "Execution error: permission denied. " + text
+                    else:
+                        note = "Execution error: the tool failed. " + text
                     context.add_message(Message(
                         role=MessageRole.TOOL,
-                        content=json.dumps(
-                            {"success": False, "stop_reason": "error", "error": str(exc)},
-                            ensure_ascii=False,
-                        ),
+                        content=note,
                         tool_call_id=call.id,
                         name=call.name,
                     ))

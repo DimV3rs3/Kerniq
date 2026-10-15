@@ -3,7 +3,7 @@ const UI_I18N = {
   en: {
     explorer: 'Explorer', chat: 'Chat', newChat: 'New', settings: 'Settings',
     save: 'Save', saved: 'Saved', cancel: 'Cancel', send: 'Send', stop: 'Stop',
-    openFile: 'Open a file…', ready: 'Готово', done: 'Done', error: 'Error',
+    openFile: 'Open a file…', ready: 'Ready', done: 'Done', error: 'Error',
     stopping: 'Stopping…', stopped: 'Stopped',
     processing: 'Processing prompt…', thinking: 'Thinking…', generating: 'Generating…',
     aggHint: 'Merge consecutive collapsible tool calls into one chat block',
@@ -43,15 +43,38 @@ const UI_I18N = {
     modeAct: 'Act',
     autoAct: 'After Plan, run Act automatically',
     modeAuto: 'Auto Plan / Act',
+    planCompleted: 'Completed',
+    splitModels: 'Different model for Act',
+    actModel: 'Act model',
     composePlan: 'Build a plan',
     loopRetries: 'Loop retries',
     providerDesc: 'Description',
     packAuto: 'Auto-accept every tool in this pack',
     packMerge: 'Merge calls for every tool in this pack',
+    fromProject: 'From the project',
+    fromOutside: 'From outside',
+    scrollDown: 'Scroll to bottom',
+    tempTip: 'Higher temperature makes replies more varied and less predictable. Lower keeps them closer to the most likely wording. 0.7 is the default.',
+    providersEmpty: 'Provider list did not load.',
+    toolsEmpty: 'No tools discovered.',
+    pluginsEmpty: 'No plugins discovered.',
+    attachBlocked: 'Photos, video, audio, and archives cannot be attached.',
+    fileDialogFailed: 'File dialog failed.',
+    settingsFailed: 'Settings did not load.',
 
     selectTool: 'Select a tool', selectPlugin: 'Select a plugin',
     noMatches: 'No matches', typeToSearch: 'Type to search project files',
     seconds: 'seconds', minutes: 'minutes', hours: 'hours',
+    groupOutput: 'Reply',
+    groupSend: 'Sending',
+    groupChatTools: 'Chat tools',
+    groupPlan: 'Plan and Act',
+    groupSafety: 'Safety and language',
+    approveAll: 'all — no prompts',
+    pluginOn: 'on',
+    pluginOff: 'off',
+    pluginHidden: 'hidden',
+    showHiddenPlugins: 'Show hidden plugins',
   },
   ru: {
     explorer: 'Проводник', chat: 'Чат', newChat: 'Новый', settings: 'Настройки',
@@ -96,15 +119,38 @@ const UI_I18N = {
     modeAct: 'Действие',
     autoAct: 'После плана сразу выполнять',
     modeAuto: 'Авто план / действие',
+    planCompleted: 'Завершено',
+    splitModels: 'Другая модель для действия',
+    actModel: 'Модель действия',
     composePlan: 'Составлять план',
     loopRetries: 'Повторы перед защитой от цикла',
     providerDesc: 'Описание',
     packAuto: 'Автоподтверждение всех инструментов пака',
     packMerge: 'Объединять вызовы всех инструментов пака',
+    fromProject: 'Из проекта',
+    fromOutside: 'Извне',
+    scrollDown: 'Вниз чата',
+    tempTip: 'Выше температура — ответы разнообразнее и менее предсказуемы. Ниже — ближе к самому вероятному тексту. По умолчанию 0.7.',
+    providersEmpty: 'Список провайдеров не загрузился.',
+    toolsEmpty: 'Инструменты не найдены.',
+    pluginsEmpty: 'Плагины не найдены.',
+    attachBlocked: 'Фото, видео, аудио и архивы прикрепить нельзя.',
+    fileDialogFailed: 'Диалог выбора файла не открылся.',
+    settingsFailed: 'Настройки не загрузились.',
 
     selectTool: 'Выберите инструмент', selectPlugin: 'Выберите плагин',
     noMatches: 'Нет совпадений', typeToSearch: 'Введите запрос для поиска файлов',
     seconds: 'сек', minutes: 'мин', hours: 'ч',
+    groupOutput: 'Ответ',
+    groupSend: 'Отправка',
+    groupChatTools: 'Инструменты в чате',
+    groupPlan: 'План и действие',
+    groupSafety: 'Безопасность и язык',
+    approveAll: 'все уровни — без запроса',
+    pluginOn: 'вкл',
+    pluginOff: 'выкл',
+    pluginHidden: 'скрыт',
+    showHiddenPlugins: 'Показывать скрытые плагины',
   },
 };
 let uiLocale = 'en';
@@ -130,6 +176,10 @@ function applyUiLocale(locale) {
     const k = el.getAttribute('data-i18n-placeholder');
     if (k) el.placeholder = t(k);
   });
+  document.querySelectorAll('[data-i18n-tip]').forEach(el => {
+    const k = el.getAttribute('data-i18n-tip');
+    if (k) el.setAttribute('data-tip', t(k));
+  });
   // settings tabs
   const tabMap = {
     agent: 'tabAgent', api: 'tabApi', prompt: 'tabPrompt', chat: 'tabChat',
@@ -154,13 +204,13 @@ function applyUiLocale(locale) {
   const cancel = document.getElementById('btn-settings-cancel');
   if (cancel) cancel.textContent = t('cancel');
   const und = document.getElementById('btn-undo');
-  if (und) und.textContent = t('undo');
+  if (und) { und.title = t('undo'); und.setAttribute('aria-label', t('undo')); }
   const red = document.getElementById('btn-redo');
-  if (red) red.textContent = t('redo');
+  if (red) { red.title = t('redo'); red.setAttribute('aria-label', t('redo')); }
   const clo = document.getElementById('btn-close-tab');
   if (clo) clo.textContent = t('close');
   const sav = document.getElementById('btn-save');
-  if (sav) sav.textContent = t('save');
+  if (sav) { sav.title = t('save'); sav.setAttribute('aria-label', t('save')); }
   const br = document.getElementById('btn-pick-ws');
   if (br) br.textContent = t('browse');
   const rm = document.getElementById('btn-refresh-models');
@@ -219,12 +269,32 @@ let chats = [];
 let activeChatId = null;
 const MAX_CHATS = 3;
 let running = false;
+function setRunLock(on) {
+  document.body.classList.toggle('run-locked', !!on);
+  const ids = [
+    's-workspace','s-max-iter','s-timeout','s-timeout-unit','s-loop-retries',
+    's-provider','s-base-url','s-api-token','s-api-temp','s-api-max-tokens',
+    's-model','s-act-model','s-split-models','s-system','s-include-tools',
+    's-chat-streaming','s-chat-reasoning','s-chat-empty','s-chat-debug',
+    's-chat-fileops','s-chat-agg','s-mode-auto','s-compose-plan','s-auto-act',
+    's-auto-approve','s-chat-lang','provider-blurb','btn-stop-ui','btn-settings-reset'
+  ];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !!on;
+  });
+  document.querySelectorAll('#tab-tools input, #tab-tools button, #tab-plugins input, #tab-plugins select, #tab-plugins button').forEach(el => {
+    if (el.id === 'btn-settings-save' || el.id === 'btn-settings-cancel') return;
+    el.disabled = !!on;
+  });
+}
 let currentRunId = null;
 let streamingEnabled = true;
 let generatingTokens = false;
 let treeData = [];
 let expanded = new Set(['']);
 let settingsDirty = false;
+let settingsHydrating = false;
 let settingsBaseline = "";
 function snapshotSettingsForm() {
   const ids = ['s-workspace','s-timeout','s-timeout-unit','s-undo-size','s-provider','s-base-url','s-api-token','s-api-temp','s-system','s-max-iter','s-api-max-tokens','s-model','s-include-tools','s-chat-streaming','s-chat-reasoning','s-chat-empty','s-chat-debug'];
@@ -257,7 +327,9 @@ let selectedPluginId = null;
 let draftTools = {};
 let draftPlugins = {};
 let footerEnabled = true;
-let chatAttachments = []; // {path, exists, external}
+let chatAttachments = [];
+let mentionOpen = false;
+let mentionStart = -1;
 
 
 async function api(path, opts = {}) {
@@ -526,6 +598,7 @@ function setFooterActivity(mode) {
   if (!dot) return;
   const cls = footerActivity === 'err' ? 'err'
     : footerActivity === 'work' ? 'work'
+    : footerActivity === 'wait' ? 'wait'
     : footerActivity === 'loading' ? 'loading'
     : 'idle';
   dot.className = 'dot ' + cls;
@@ -536,8 +609,9 @@ function setFooterState(mode) {
 function setFooterProvider(name, ok) {
   const el = document.getElementById('footer-provider');
   if (el) el.textContent = t('provider') + ': ' + (name || '—');
+  if (running) return;
   if (ok === false) setFooterActivity('err');
-  else if (footerActivity === 'err') setFooterActivity(running ? 'work' : 'idle');
+  else if (footerActivity === 'err' || footerActivity === 'loading') setFooterActivity('idle');
 }
 
 function setFooterContext(used, limit) {
@@ -580,6 +654,11 @@ function _estimateTokens(text) {
 function _tpsTick() {
   const el = document.getElementById('footer-tps');
   if (!el) return;
+  if (!streamingEnabled) {
+    el.style.display = 'none';
+    el.textContent = '';
+    return;
+  }
   el.style.display = '';
   const sec = Math.floor(Date.now() / 1000);
   if (sec !== currentSec) {
@@ -615,6 +694,11 @@ function resetTps(hide) {
   tpsBuckets = [];
   const el = document.getElementById('footer-tps');
   if (!el) return;
+  if (!streamingEnabled || hide) {
+    el.style.display = 'none';
+    el.textContent = '';
+    return;
+  }
   el.style.display = '';
   el.textContent = '0.0 tok/s';
 }
@@ -668,7 +752,10 @@ function showView(n) {
     btn.textContent = '⚙';
     btn.title = 'Settings';
   }
-  if (n === 'main') startTreePoll(); else stopTreePoll();
+  if (n === 'main') {
+    window._renderPaused = false;
+    renderMessages();
+  }
 }
 
 /* panels */
@@ -735,7 +822,7 @@ function bindResizer(id, side) {
     }
     if (side === 'left' && explorerCollapsed) setExplorerCollapsed(false, true);
     if (side === 'right' && chatCollapsed) setChatCollapsed(false, true);
-    const min = window.innerWidth > 900 ? 350 : 200;
+    const min = side === 'left' ? 250 : 280;
     w = Math.max(min, Math.min(max, w));
     panel.style.width = w + 'px';
     panel.style.minWidth = w + 'px';
@@ -974,7 +1061,11 @@ function showCtx(ev, path, isDir, isRoot) {
     };
   });
 }
-function hideCtx() { document.getElementById('ctx').style.display = 'none'; }
+function hideCtx() {
+  mentionOpen = false;
+  const ctx = document.getElementById('ctx');
+  if (ctx) ctx.style.display = 'none';
+}
 document.addEventListener('click', hideCtx);
 
 /* editor */
@@ -1184,10 +1275,11 @@ function isToolCollapsible(name) {
   if (t && t.collapsible != null) return !!t.collapsible;
   return MERGEABLE.has(name);
 }
+const HAMMER_SVG = '<svg class="ico" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M14.2 2.4l1.6 1.6-2.2 2.2 2.5 2.5 2.2-2.2 1.6 1.6-4.7 4.7-6.3-6.3 4.7-4.1zM3 17.2l3.6-3.6 2.8 2.8-3.6 3.6H3v-2.8z"/></svg>';
 function toolIcon(name) {
   const t = (componentsCache.tools || []).find(x => x.name === name || x.id === name);
-  if (t && t.ui_icon) return t.ui_icon;
-  return TOOL_ICON[name] || '⚙';
+  if (t && t.ui_icon && t.ui_icon !== '⚙' && t.ui_icon !== 'tool') return t.ui_icon;
+  return HAMMER_SVG;
 }
 function toolAggLabel(name, count) {
   const t = (componentsCache.tools || []).find(x => x.name === name || x.id === name);
@@ -1246,7 +1338,8 @@ function aggregateMessages(msgs) {
     }
     if (fileOnly && m.kind === 'tool') continue;
     if (m.kind === 'tool' && !debug) {
-      out.push({ ...m, summary: '', args: undefined });
+      const summary = (m.success === false || m.status === 'error') ? (m.summary || '') : '';
+      out.push({ ...m, summary, args: undefined });
       continue;
     }
     out.push(m);
@@ -1258,18 +1351,39 @@ let _renderTimer = null;
 let _streamChars = 0;
 let _streamStarted = 0;
 function scheduleRender() {
+  if (document.body.classList.contains('settings-mode')) {
+    window._renderPaused = true;
+    saveChats();
+    return;
+  }
   if (_renderTimer) return;
   _renderTimer = setTimeout(() => {
     _renderTimer = null;
     renderMessages();
     saveChats();
-  }, 80); // ~12 fps max during stream
+  }, 80);
+}
+let stickToBottom = true;
+let programmaticScroll = false;
+function nearBottom(node) {
+  if (!node) return true;
+  return (node.scrollHeight - node.scrollTop - node.clientHeight) < 64;
+}
+function updateScrollBtn() {
+  const btn = document.getElementById('btn-scroll-bottom');
+  if (!btn) return;
+  btn.hidden = !!stickToBottom;
+  btn.title = t('scrollDown');
 }
 function renderMessages() {
-
+  if (document.body.classList.contains('settings-mode')) {
+    window._renderPaused = true;
+    return;
+  }
   const el = document.getElementById('msgs');
-  el.innerHTML = '';
+  if (!el) return;
   const c = currentChat(); if (!c) return;
+  el.innerHTML = '';
   aggregateMessages(c.messages).filter(m => !(m.kind === 'think_collapsed' && !(m.text || '').trim())).forEach(m => {
     const d = document.createElement('div');
     if (m.kind === 'think_collapsed') {
@@ -1280,6 +1394,18 @@ function renderMessages() {
       d.className = 'msg bot assistant'; d.innerHTML = renderMarkdown(m.content || '');
     } else if (m.role === 'user') {
       d.className = 'msg user'; d.textContent = m.content || '';
+    } else if (m.role === 'assistant' && (m.kind === 'error' || m.error)) {
+      d.className = 'msg error-card';
+      const debug = !!(settings && settings.chat && settings.chat.developer_mode);
+      let html = '<div class="err-title"></div>';
+      d.innerHTML = html;
+      d.querySelector('.err-title').textContent = m.content || 'Error';
+      if (debug && m.detail) {
+        const pre = document.createElement('pre');
+        pre.className = 'err-detail';
+        pre.textContent = m.detail;
+        d.appendChild(pre);
+      }
     } else if (m.role === 'assistant') {
       d.className = 'msg bot assistant' + (m.completed ? ' completed' : '');
       d.innerHTML = renderMarkdown(m.content || '');
@@ -1295,14 +1421,14 @@ function renderMessages() {
       };
       const label = labels[m.name] || m.name;
       d.className = 'msg tool ' + (m.errors ? 'err' : 'ok');
-      d.innerHTML = '<b>⚙ ' + esc(m.name) + '</b> — ' + m.count + ' ' + label
+      d.innerHTML = '<b>' + HAMMER_SVG + ' ' + esc(m.name) + '</b> — ' + m.count + ' ' + label
         + (m.errors ? ' <span class="muted">(' + m.errors + ' failed)</span>' : '');
     } else if (m.kind === 'tool') {
       const ok = m.success !== false && m.status !== 'error';
       const pending = m.status === 'pending';
       d.className = 'msg tool ' + (pending ? '' : (ok ? 'ok' : 'err'));
       const debug = !!(settings && settings.chat && settings.chat.developer_mode);
-      let body = '<b>⚙ ' + esc(m.name) + '</b> — ' + (pending ? '…' : (ok ? 'ok' : 'error'));
+      let body = '<b>' + HAMMER_SVG + ' ' + esc(m.name) + '</b> — ' + (pending ? '…' : (ok ? 'ok' : 'error'));
       if (!pending && m.stop_reason && m.stop_reason !== 'completed') body += ' <span class="muted">(' + esc(m.stop_reason) + ')</span>';
       if (debug && m.args && !pending) body += '<br/><span class="muted">' + esc(typeof m.args === 'string' ? m.args : JSON.stringify(m.args)) + '</span>';
       if (!pending && m.summary) body += '<br/><span class="muted">' + esc(m.summary) + '</span>';
@@ -1314,7 +1440,12 @@ function renderMessages() {
     } else { d.className = 'msg system'; d.textContent = m.content || ''; }
     el.appendChild(d);
   });
-  el.scrollTop = el.scrollHeight;
+  if (stickToBottom) {
+    programmaticScroll = true;
+    el.scrollTop = el.scrollHeight;
+    setTimeout(() => { programmaticScroll = false; }, 40);
+  }
+  updateScrollBtn();
   renderPlan();
 }
 
@@ -1327,6 +1458,15 @@ function getSendKeyMode() {
   return sendKeyMode || 'enter';
 }
 promptEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && mentionOpen) {
+    e.preventDefault();
+    hideCtx();
+    return;
+  }
+  if (e.key === 'Enter' && mentionOpen) {
+    const first = document.querySelector('#ctx #attach-hits button');
+    if (first) { e.preventDefault(); first.click(); return; }
+  }
   if (e.key !== 'Enter') return;
   const mode = getSendKeyMode();
   const sendNow = mode === 'enter' ? !e.shiftKey : e.shiftKey;
@@ -1334,7 +1474,6 @@ promptEl.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (!actionBtn.disabled && !running) actionBtn.click();
   }
-  // else: allow newline
 });
 const actionBtn = document.getElementById('btn-action');
 function hasMeaningfulText(s) { return /[^\s\u200b]/.test(s || ''); }
@@ -1364,7 +1503,7 @@ function updateActionBtn() {
     if (pr && !(pr.value || '').trim()) btn.disabled = true;
   }
 }
-promptEl.addEventListener('input', () => { autoGrow(); updateActionBtn(); });
+promptEl.addEventListener('input', () => { autoGrow(); updateActionBtn(); trackMention(); });
 function _modelMatch(a, b) {
   if (!a || !b) return false;
   a = String(a); b = String(b);
@@ -1488,12 +1627,14 @@ actionBtn.onclick = async () => {
     console.error('send failed', err);
     toast('Send failed: ' + (err && err.message ? err.message : err), true);
     running = false;
+    setRunLock(false);
     setStatus(t('error') || 'Error', false);
     updateActionBtn();
   }
 };
 async function runAgent(task) {
   running = true;
+  setRunLock(true);
   setFooterActivity('work');
   currentRunId = null;
   updateActionBtn();
@@ -1540,7 +1681,7 @@ async function runAgent(task) {
     }
   } catch (e) {
     const msg = (e && e.message) ? e.message : String(e);
-    currentChat().messages.push({ role: 'assistant', content: 'Error: ' + msg });
+    currentChat().messages.push({ role: 'assistant', kind: 'error', error: true, content: 'The request failed.', detail: msg });
     saveChats(); renderMessages(); setStatus('Error', false);
   }
   finalizeLiveMessages();
@@ -1549,6 +1690,7 @@ async function runAgent(task) {
   resetTps(!streamingEnabled);
   currentRunId = null;
   running = false;
+  setRunLock(false);
   setFooterActivity('idle');
   updateActionBtn();
   try { await refreshModelFooter(); } catch (_) {}
@@ -1729,19 +1871,15 @@ function handleEvent(e) {
   if (e.type === 'plan') {
     const chat = currentChat();
     if (chat) {
-      const incoming = Array.isArray(e.items) ? e.items : [];
-      const archived = Array.isArray(e.archive) ? e.archive : [];
-      const fromItems = incoming.filter(raw => normPlanStatus(raw && raw.status) === 'done');
-      const prev = Array.isArray(chat.planArchive) ? chat.planArchive : [];
-      const seen = new Set();
-      chat.planArchive = [];
-      [...prev, ...archived, ...fromItems].forEach(raw => {
-        const id = String((raw && raw.id) || (raw && raw.title) || '');
-        if (!id || seen.has(id)) return;
-        seen.add(id);
-        chat.planArchive.push(raw);
-      });
-      chat.plan = incoming.filter(raw => normPlanStatus(raw && raw.status) !== 'done');
+      if (e.reset) {
+        chat.plan = [];
+        chat.planArchive = [];
+        saveChats();
+        renderPlan();
+        return;
+      }
+      chat.plan = Array.isArray(e.items) ? e.items : [];
+      if (Array.isArray(e.archive)) chat.planArchive = e.archive;
       saveChats();
     }
     renderPlan();
@@ -1777,18 +1915,19 @@ function handleEvent(e) {
       }
     } else if (st === 'done' || st === 'cancelled') {
       generatingTokens = false;
+      setFooterActivity('idle');
       setStatus(statusLabel(st, e.text), false);
     } else if (st === 'error') {
       generatingTokens = false;
+      setFooterActivity('err');
       setStatus(statusLabel(st, e.text || 'Error'), false);
-    } else if (st === 'generating') {
-      generatingTokens = true;
-      setStatus(statusLabel(st, e.text), true);
-    } else if (st === 'thinking' || st === 'processing' || st === 'loading_model') {
-      generatingTokens = false;
+    } else if (st === 'generating' || st === 'thinking' || st === 'processing' || st === 'loading_model') {
+      setFooterActivity('work');
+      generatingTokens = st === 'generating';
       setStatus(statusLabel(st, e.text), true);
     } else if (st === 'tool' || st === 'waiting_tool') {
       generatingTokens = false;
+      setFooterActivity('wait');
       setStatus(statusLabel(st, e.text), true);
     } else {
       setStatus(e.text || statusLabel(st), true);
@@ -1796,6 +1935,7 @@ function handleEvent(e) {
   } else if (e.type === 'reasoning_delta') {
     // Reasoning streams tokens too — count for tok/s while thinking
     noteGeneratedText(e.text || '');
+    setFooterActivity('work');
     setStatus(statusLabel('thinking'), true);
     c.messages = c.messages.filter(m => m.kind !== 'think_collapsed');
     let live = c.messages.find(m => m.kind === 'think_live');
@@ -1803,6 +1943,7 @@ function handleEvent(e) {
     live.text = (live.text || '') + (e.text || '');
     scheduleRender();
   } else if (e.type === 'content_delta') {
+    setFooterActivity('work');
     setStatus(statusLabel('generating'), true);
     noteGeneratedText(e.text || '');
     // New live block only after the last tool (or at end). Never reuse pre-tool text.
@@ -1837,6 +1978,18 @@ function handleEvent(e) {
       const m = c.messages[i];
       if (m.kind === 'tool' || m.kind === 'tool_agg' || m.kind === 'file_op') break;
       if (m.kind === 'assistant_live') { liveIdx = i; break; }
+    }
+    if (e.error) {
+      c.messages.push({
+        role: 'assistant',
+        kind: 'error',
+        error: true,
+        content: content || 'Error',
+        detail: e.detail || '',
+        completed: false,
+      });
+      renderMessages();
+      return;
     }
     if (liveIdx >= 0) {
       const live = c.messages[liveIdx];
@@ -1913,13 +2066,30 @@ function handleEvent(e) {
 
 
 function normPlanStatus(s) {
-  const v = String(s || 'pending').toLowerCase();
+  const v = String(s || 'pending').toLowerCase().replace(/ /g, '_');
   if (['done', 'complete', 'completed', 'x', 'finished'].includes(v)) return 'done';
+  if (['skipped', 'skip', 'cancelled', 'canceled', 'wont_do'].includes(v)) return 'skipped';
+  if (['frozen', 'freeze', 'paused', 'pause', 'hold', 'on_hold'].includes(v)) return 'frozen';
+  if (['failed', 'fail', 'failure'].includes(v)) return 'failed';
   if (['active', 'doing', 'in_progress', 'current', 'progress', 'wip'].includes(v)) return 'active';
   return 'pending';
 }
 function planCollapsed() {
   try { return localStorage.getItem('kerniq_plan_collapsed') === '1'; } catch (e) { return false; }
+}
+function coercePlan(items) {
+  const list = (items || []).map(raw => ({
+    id: raw && raw.id,
+    title: (raw && (raw.title || raw.text)) || '',
+    status: normPlanStatus(raw && raw.status),
+  }));
+  let seenActive = false;
+  list.forEach(item => {
+    if (item.status !== 'active') return;
+    if (seenActive) item.status = 'pending';
+    else seenActive = true;
+  });
+  return list;
 }
 function renderPlan() {
   const box = document.getElementById('plan-float');
@@ -1927,26 +2097,27 @@ function renderPlan() {
   const chev = document.getElementById('plan-chevron');
   if (!box || !body) return;
   const chat = typeof currentChat === 'function' ? currentChat() : null;
-  const items = ((chat && Array.isArray(chat.plan)) ? chat.plan : [])
-    .filter(raw => normPlanStatus(raw && raw.status) !== 'done');
-  if (!items.length) {
+  const shown = coercePlan((chat && Array.isArray(chat.plan)) ? chat.plan : []);
+  const open = shown.filter(item => item.status !== 'done' && item.status !== 'skipped');
+  const finished = shown.length > 0 && open.length === 0;
+  if (!shown.length) {
     box.hidden = true;
     box.classList.remove('all-done');
     return;
   }
   box.hidden = false;
-  box.classList.remove('all-done');
+  box.classList.toggle('all-done', finished);
+  const title = document.getElementById('plan-title');
+  if (title) title.textContent = finished ? t('planCompleted') : t('planTitle');
   const collapsed = planCollapsed();
   box.classList.toggle('collapsed', collapsed);
   if (chev) chev.textContent = collapsed ? '⌄' : '⌃';
   body.innerHTML = '';
-  items.forEach(raw => {
-    const status = normPlanStatus(raw && raw.status);
+  shown.forEach(raw => {
     const row = document.createElement('div');
-    row.className = 'plan-item ' + status;
-    const title = (raw && (raw.title || raw.text)) || '';
+    row.className = 'plan-item ' + raw.status;
     row.innerHTML = '<span class="plan-dot"></span><span class="plan-title"></span>';
-    row.querySelector('.plan-title').textContent = title;
+    row.querySelector('.plan-title').textContent = raw.title;
     body.appendChild(row);
   });
 }
@@ -2003,14 +2174,8 @@ function renderProviderFields(draft) {
   if (!sel || !box) return;
   const spec = providerCatalog.find(p => p.id === sel.value) || null;
   if (blurb) {
-    const savedMap = (settings && settings.api && settings.api.provider_descriptions) || {};
-    const hasSaved = Object.prototype.hasOwnProperty.call(savedMap, sel.value);
     const fallback = spec ? (uiLocale === 'ru' ? (spec.blurb_ru || spec.blurb) : (spec.blurb || '')) : '';
-    blurb.value = hasSaved ? (savedMap[sel.value] || '') : fallback;
-    if (!blurb.dataset.bound) {
-      blurb.dataset.bound = '1';
-      blurb.addEventListener('input', () => { if (typeof markSettingsDirty === 'function') markSettingsDirty(); });
-    }
+    blurb.textContent = fallback || '';
   }
   const values = draft || collectProviderDraft();
   box.innerHTML = '';
@@ -2095,6 +2260,12 @@ async function loadProviderCatalog(selectedId) {
   if (!sel) return;
   const current = selectedId || sel.value || 'lm_studio';
   sel.innerHTML = '';
+  if (!providerCatalog.length) {
+    const why = (data && data.error) ? String(data.error).slice(0, 180) : t('providersEmpty');
+    const note = document.getElementById('provider-blurb');
+    if (note) note.textContent = why;
+    toast(why, true);
+  }
   providerCatalog.forEach(p => {
     const o = document.createElement('option');
     o.value = p.id;
@@ -2128,78 +2299,105 @@ async function refreshModelFooter() {
   try {
     const s = settings || {};
     const prov = (s.api && s.api.provider) || 'lm_studio';
-    setFooterProvider(prov);
-    streamingEnabled = !(s.chat && s.chat.streaming === false);
-    if (prov === 'mock' || prov !== 'lm_studio') {
-      const modelsData = await fetchModels().catch(() => ({}));
-      const selected = (s.api && s.api.model) || '';
-      const label = prov === 'mock' ? 'mock' : (selected || t('model'));
-      const reachable = !(modelsData && modelsData.error) && modelsData.reachable !== false;
-      setFooterProvider(prov, prov === 'mock' ? true : reachable);
-      setFooterModelStatus(t('model') + ': ' + label, prov === 'mock' ? true : (selected ? reachable : null));
-      setFooterContext(_lastPromptTokens, null);
-      const fe = document.getElementById('footer-extra');
-      if (fe) {
-        const n = (modelsData.models || []).length;
-        fe.textContent = n ? (n + ' ' + t('available')) : '';
-      }
-      return;
-    }
     const selected = (s.api && s.api.model) || '';
+    streamingEnabled = !(s.chat && s.chat.streaming === false);
+    resetTps(!streamingEnabled);
     const modelsData = await fetchModels().catch(() => ({}));
-    const info = { error: modelsData && modelsData.error, loaded: [] };
-    _modelContextLimit = null;
-    for (const m of (modelsData.models || [])) {
-      const inst = m.loaded_instances || [];
-      if (inst && inst.length) info.loaded.push({ model: m.id || m.name });
-      // Prefer actual loaded window, then max capability
-      const lim = m.loaded_context_length || m.context_length || m.max_context_length || m.context || null;
-      if (!lim) continue;
-      const mid = m.id || m.name || '';
-      if (selected && (mid === selected || String(mid).includes(selected) || selected.includes(String(mid)))) {
-        _modelContextLimit = Number(lim);
-        break;
-      }
-      if (_modelContextLimit == null) _modelContextLimit = Number(lim);
-    }
-    if (info && info.error) {
-      setFooterModelStatus(t('model') + ': ' + t('offline'), false);
-      setFooterContext(_lastPromptTokens, _modelContextLimit);
-      return;
-    }
-    const loaded = (info && (info.loaded || info.models || info.instances)) || [];
-    const names = Array.isArray(loaded)
-      ? loaded.map(x => (typeof x === 'string' ? x : (x.model || x.id || x.key || ''))).filter(Boolean)
-      : [];
-    const selectedFromApi = (info && info.selected_model) || selected;
-    const sel = selectedFromApi || selected || (names[0] || '');
-    const match = !sel || names.some(n => n === sel || n.includes(sel) || sel.includes(n));
-    if (!sel) {
-      setFooterModelStatus(t('model') + ': —', false);
-    } else if (!names.length) {
-      setFooterModelStatus(t('model') + ': ' + sel + ' (' + t('notLoaded') + ')', false);
+    const reachable = !(modelsData && modelsData.error) && modelsData.reachable !== false;
+    setFooterProvider(prov, prov === 'mock' ? true : reachable);
+    const label = selected || (prov === 'mock' ? 'mock' : 'auto');
+    if (!reachable && prov !== 'mock') {
+      setFooterModelStatus(t('model') + ': ' + label, false);
     } else {
-      setFooterModelStatus(t('model') + ': ' + sel + ' (' + (match ? t('loaded') : t('notLoaded')) + ')', !!match);
+      setFooterModelStatus(t('model') + ': ' + label, prov === 'mock' ? true : null);
     }
-    const fe = document.getElementById('footer-extra');
-    if (fe) {
-      const n = (modelsData.models || []).length;
-      fe.textContent = n ? (n + ' ' + t('available')) : '';
+    let limit = null;
+    for (const m of (modelsData.models || [])) {
+      const mid = String(m.id || m.name || '');
+      if (!selected || mid === selected) {
+        const lim = m.loaded_context_length || m.context_length || m.max_context_length || m.context || null;
+        if (lim) { limit = Number(lim); break; }
+      }
     }
+    if (limit) _modelContextLimit = limit;
     setFooterContext(_lastPromptTokens, _modelContextLimit);
   } catch (e) {
-    setFooterModelStatus(t('model') + ': ?', false);
+    if (!running) setFooterModelStatus(t('model') + ': ' + t('offline'), false);
   }
 }
 
 /* settings */
 function markSettingsDirty() {
+  if (settingsHydrating) return;
   settingsDirty = true;
   const save = document.getElementById('btn-settings-save');
   const cancel = document.getElementById('btn-settings-cancel');
+  if (!save || !cancel) return;
   save.disabled = false; cancel.disabled = false;
   save.className = 'save-active';
   cancel.className = 'cancel-active';
+}
+function syncSettingLocks() {
+  const streaming = document.getElementById('s-chat-streaming');
+  const reasoning = document.getElementById('s-chat-reasoning');
+  const streamOn = !streaming || streaming.checked;
+  const runLocked = document.body.classList.contains('run-locked');
+  if (reasoning) {
+    const line = reasoning.closest('.check-line');
+    if (!streamOn) {
+      reasoning.checked = false;
+      reasoning.disabled = true;
+      if (line) line.classList.add('locked');
+    } else if (!runLocked) {
+      reasoning.disabled = false;
+      if (line) line.classList.remove('locked');
+    }
+  }
+  streamingEnabled = streamOn;
+  if (typeof resetTps === 'function') resetTps(!streamOn);
+  const modeAutoEl = document.getElementById('s-mode-auto');
+  const autoAct = document.getElementById('s-auto-act');
+  const autoOn = !!(modeAutoEl && modeAutoEl.checked);
+  modeAuto = modeAutoEl ? autoOn : modeAuto;
+  if (autoAct) {
+    const line = autoAct.closest('.check-line');
+    if (autoOn) {
+      autoAct.checked = true;
+      autoAct.disabled = true;
+      if (line) line.classList.add('locked');
+    } else if (!runLocked) {
+      autoAct.disabled = false;
+      if (line) line.classList.remove('locked');
+    }
+  }
+  const debugEl = document.getElementById('s-chat-debug');
+  const approve = document.getElementById('s-auto-approve');
+  if (approve) {
+    const allOpt = approve.querySelector('option[value="all"]');
+    const devOn = !!(debugEl && debugEl.checked);
+    if (allOpt) {
+      allOpt.hidden = !devOn;
+      allOpt.disabled = !devOn;
+    }
+    if (!devOn && approve.value === 'all') approve.value = 'high';
+  }
+  if (typeof applyModeSwitch === 'function') applyModeSwitch();
+}
+function bindSettingsDirty() {
+  const root = document.getElementById('view-settings');
+  if (!root || root.dataset.dirtyDelegated) return;
+  root.dataset.dirtyDelegated = '1';
+  const onEdit = (ev) => {
+    if (settingsHydrating) return;
+    const node = ev.target;
+    if (!node || !node.closest) return;
+    if (node.id === 's-show-hidden-plugins') return;
+    if (node.closest('.settings-actions') || node.closest('#tab-reset')) return;
+    syncSettingLocks();
+    markSettingsDirty();
+  };
+  root.addEventListener('input', onEdit);
+  root.addEventListener('change', onEdit);
 }
 function bindLangDirty() {
   const langSel = document.getElementById('s-chat-lang');
@@ -2229,10 +2427,15 @@ function readNullMax(numId, chkId) {
 }
 
 async function loadSettings() {
-  settings = await api('/api/settings');
-  if (settings.error) return;
+  settingsHydrating = true;
+  try {
+  const loaded = await api('/api/settings');
+  if (!loaded || loaded.error || !loaded.agent) {
+    toast((loaded && loaded.error) || t('settingsFailed'), true);
+  }
+  settings = (loaded && loaded.agent) ? loaded : (settings || {});
   settingsSnapshot = JSON.stringify(settings);
-  const a = settings.agent, apiS = settings.api, p = settings.prompt;
+  const a = settings.agent || {}, apiS = settings.api || {}, p = settings.prompt || {};
   document.getElementById('s-workspace').value = a.workspace || './workspace';
   document.getElementById('top-workspace').textContent = a.workspace || './workspace';
   document.getElementById('s-max-iter').value = a.max_iterations != null ? a.max_iterations : '';
@@ -2277,6 +2480,13 @@ async function loadSettings() {
   const composeEl = document.getElementById('s-compose-plan');
   if (composeEl) composeEl.checked = ch.compose_plan !== false;
   applyModeSwitch();
+  const splitEl = document.getElementById('s-split-models');
+  const actField = document.getElementById('act-model-field');
+  const actInput = document.getElementById('s-act-model');
+  const apiCfg = settings.api || {};
+  if (splitEl) splitEl.checked = !!apiCfg.split_models;
+  if (actField) actField.hidden = !(apiCfg.split_models);
+  if (actInput && !actInput.value) actInput.value = apiCfg.act_model || apiCfg.model || '';
   const langSel = document.getElementById('s-chat-lang');
   if (langSel) {
     const langs = window.__RESPONSE_LANGS || {};
@@ -2300,25 +2510,23 @@ async function loadSettings() {
     ss.checked = sk === 'shift_enter';
   }
   setFooterProvider(apiS.provider || 'lm_studio');
-  await refreshModelsSelect(apiS.model);
   draftTools = {}; draftPlugins = {};
-  await loadComponents();
+  await Promise.all([
+    loadProviderCatalog(apiS.provider || 'lm_studio').catch((e) => toast(String(e), true)),
+    loadComponents().catch((e) => toast(String(e), true)),
+  ]);
+  syncSettingLocks();
   clearSettingsDirty();
-  // dirty listeners
-  ['s-workspace','s-timeout','s-timeout-unit','s-undo-size','s-loop-retries','s-api-temp','s-system','s-max-iter','s-api-max-tokens','s-chat-streaming','s-chat-reasoning','s-chat-empty','s-chat-debug','s-send-enter','s-send-shift-enter','s-chat-fileops','s-chat-agg','s-chat-lang','s-auto-approve','s-auto-act','s-mode-auto','s-compose-plan'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.oninput = () => markSettingsDirty();
-    if (el && el.tagName === 'SELECT') el.onchange = () => markSettingsDirty();
-  });
-  document.getElementById('s-include-tools').onchange = () => markSettingsDirty();
-  const mae = document.getElementById('s-mode-auto');
-  if (mae && !mae.dataset.lockBound) {
-    mae.dataset.lockBound = '1';
-    mae.addEventListener('change', () => {
-      modeAuto = mae.checked;
-      applyModeSwitch();
-      markSettingsDirty();
-    });
+  bindSettingsDirty();
+  refreshModelsSelect(apiS.model).catch(() => {});
+  } catch (e) {
+    toast(t('settingsFailed') + ' ' + (e && e.message ? e.message : e), true);
+    loadProviderCatalog('lm_studio').catch(() => {});
+    loadComponents().catch(() => {});
+  } finally {
+    settingsHydrating = false;
+    bindSettingsDirty();
+    syncSettingLocks();
   }
 }
 
@@ -2330,11 +2538,17 @@ async function fetchModels() {
   const now = Date.now();
   if (modelsCache && now - modelsCacheAt < 1500) return modelsCache;
   if (modelsInflight) return modelsInflight;
-  modelsInflight = api('/api/models').then(data => {
-    modelsCache = data;
-    modelsCacheAt = Date.now();
-    return data;
-  }).finally(() => { modelsInflight = null; });
+  modelsInflight = fetch('/api/models', { signal: AbortSignal.timeout(8000) })
+    .then(r => r.text())
+    .then(text => {
+      try { return JSON.parse(text); } catch { return { models: [], reachable: false, error: text }; }
+    })
+    .catch(() => ({ models: [], reachable: false, error: 'timed out' }))
+    .then(data => {
+      modelsCache = data;
+      modelsCacheAt = Date.now();
+      return data;
+    }).finally(() => { modelsInflight = null; });
   return modelsInflight;
 }
 function fillModelMenu(filter) {
@@ -2365,6 +2579,46 @@ function fillModelMenu(filter) {
     menu.appendChild(b);
   });
 }
+function fillActMenu(filter) {
+  const menu = document.getElementById('act-model-menu');
+  const input = document.getElementById('s-act-model');
+  if (!menu) return;
+  const q = String(filter || '').trim().toLowerCase();
+  menu.innerHTML = '';
+  modelChoices.filter(m => !q || String(m.id || '').toLowerCase().includes(q)).forEach(m => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = m.id || '';
+    b.onclick = (ev) => {
+      ev.preventDefault();
+      if (input) input.value = m.id || '';
+      menu.hidden = true;
+      markSettingsDirty();
+    };
+    menu.appendChild(b);
+  });
+}
+document.getElementById('s-split-models')?.addEventListener('change', (ev) => {
+  const on = !!ev.target.checked;
+  const field = document.getElementById('act-model-field');
+  if (field) field.hidden = !on;
+  const act = document.getElementById('s-act-model');
+  const plan = document.getElementById('s-model');
+  if (on && act && !act.value && plan) act.value = plan.value || '';
+  markSettingsDirty();
+});
+document.getElementById('act-model-arrow')?.addEventListener('click', (ev) => {
+  ev.preventDefault();
+  const menu = document.getElementById('act-model-menu');
+  if (!menu) return;
+  menu.hidden = !menu.hidden;
+  if (!menu.hidden) fillActMenu(document.getElementById('s-act-model')?.value || '');
+});
+document.getElementById('s-act-model')?.addEventListener('input', () => {
+  const menu = document.getElementById('act-model-menu');
+  if (menu) { menu.hidden = false; fillActMenu(document.getElementById('s-act-model').value); }
+  markSettingsDirty();
+});
 async function refreshModelsSelect(selected) {
   const sel = document.getElementById('s-model');
   if (!sel) return;
@@ -2379,11 +2633,6 @@ async function refreshModelsSelect(selected) {
   const modelLabel = sel.value || '(auto)';
   if (data.error || data.reachable === false) setFooterModelStatus(t('model') + ': ' + (data.error || t('offline')), false);
   else if (modelLabel && modelLabel !== '(auto)') setFooterModelStatus(t('model') + ': ' + modelLabel, null);
-  const extra = document.getElementById('footer-extra');
-  if (extra) {
-    const n = (data.models || []).length;
-    extra.textContent = (data.reachable !== false && n) ? (n + ' ' + t('available')) : '';
-  }
   const selM = sel.value || '';
   for (const m of (data.models || [])) {
     const lim = m.loaded_context_length || m.context_length || m.max_context_length || m.context;
@@ -2394,8 +2643,6 @@ async function refreshModelsSelect(selected) {
   setFooterContext(_lastPromptTokens, _modelContextLimit);
   sel.oninput = () => {
     markSettingsDirty();
-    const fe = document.getElementById('footer-extra');
-    if (fe) fe.textContent = 'model: ' + (sel.value || '(auto)');
   };
 }
 
@@ -2437,6 +2684,11 @@ function renderToolsList() {
   const el = document.getElementById('s-tools-list');
   if (!el) return;
   el.innerHTML = '';
+  if (!(componentsCache.tools || []).length) {
+    el.innerHTML = '<div class="empty"></div>';
+    el.querySelector('.empty').textContent = t('toolsEmpty');
+    return;
+  }
   order.forEach(k => {
     if (!by[k]?.length) return;
     const pack = document.createElement('div');
@@ -2541,14 +2793,50 @@ function renderToolDetail(id) {
     });
   });
 }
+let showHiddenPlugins = false;
 function renderPluginsList() {
   const el = document.getElementById('s-plugins-list');
   if (!el) return;
   el.innerHTML = '';
-  (componentsCache.plugins || []).forEach(p => {
+  const rows = (componentsCache.plugins || []).filter(p => {
+    const vals = (draftPlugins[p.id] && draftPlugins[p.id].values) || p.values || {};
+    const listed = vals.listed !== false;
+    return showHiddenPlugins || listed;
+  });
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty"></div>';
+    el.querySelector('.empty').textContent = t('pluginsEmpty');
+    return;
+  }
+  rows.forEach(p => {
+    const vals = (draftPlugins[p.id] && draftPlugins[p.id].values) || p.values || {};
+    const enabled = vals.enabled !== false;
+    const listed = vals.listed !== false;
     const row = document.createElement('div');
     row.className = 'tool-row' + (selectedPluginId === p.id ? ' selected' : '');
-    row.innerHTML = `<span class="tname">${esc(p.name || p.id)}</span><span class="tdesc">${esc(p.status || '')}</span>`;
+    const badges = document.createElement('span');
+    badges.className = 'plugin-badges';
+    const on = document.createElement('span');
+    on.className = 'plugin-badge ' + (enabled ? 'on' : 'off');
+    on.textContent = enabled ? t('pluginOn') : t('pluginOff');
+    badges.appendChild(on);
+    if (!listed) {
+      const hid = document.createElement('span');
+      hid.className = 'plugin-badge hide';
+      hid.textContent = t('pluginHidden');
+      badges.appendChild(hid);
+    }
+    if (p.status && p.status !== 'available') {
+      const st = document.createElement('span');
+      st.className = 'plugin-badge err';
+      st.textContent = p.status;
+      badges.appendChild(st);
+    }
+    const name = document.createElement('span');
+    name.className = 'tname';
+    name.textContent = p.name || p.id;
+    row.appendChild(name);
+    row.appendChild(badges);
     row.onclick = () => { selectedPluginId = p.id; renderPluginsList(); renderPluginDetail(p.id); };
     el.appendChild(row);
   });
@@ -2596,35 +2884,27 @@ function renderPluginDetail(id) {
       else if (inp.type === 'number') v = Number(inp.value);
       else v = inp.value;
       draftPlugins[id].values[inp.dataset.fk] = v;
-      if (inp.dataset.fk === 'limit_mode') syncCompactLimit(panel, true);
+      if (inp.dataset.fk === 'target_mode' || inp.dataset.fk === 'trigger_percent' || inp.dataset.fk === 'target_percent') syncCompactLimit(panel);
+      if (inp.dataset.fk === 'enabled' || inp.dataset.fk === 'listed') renderPluginsList();
       markSettingsDirty();
     });
   });
 }
-function syncCompactLimit(panel, convert) {
+function syncCompactLimit(panel) {
   if (!panel) return;
-  const mode = panel.querySelector('[data-fk="limit_mode"]');
-  if (!mode) return;
-  const tokenInput = panel.querySelector('[data-fk="max_tokens"]');
-  const pctInput = panel.querySelector('[data-fk="trigger_percent"]');
-  const tokenField = tokenInput && tokenInput.closest('.field');
+  const mode = panel.querySelector('[data-fk="target_mode"]');
+  const trigger = panel.querySelector('[data-fk="trigger_percent"]');
+  const pctInput = panel.querySelector('[data-fk="target_percent"]');
+  const tokenInput = panel.querySelector('[data-fk="target_tokens"]');
   const pctField = pctInput && pctInput.closest('.field');
-  const percent = mode.value === 'percent';
-  if (tokenField) tokenField.style.display = percent ? 'none' : '';
-  if (pctField) pctField.style.display = percent ? '' : 'none';
-  if (!convert) return;
-  const windowTokens = Number(_modelContextLimit) || Number(tokenInput && tokenInput.value) || 8000;
-  const draft = selectedPluginId && draftPlugins[selectedPluginId];
-  if (percent && tokenInput && pctInput) {
-    const tokens = Number(tokenInput.value) || windowTokens;
-    const next = Math.max(10, Math.min(100, Math.round(tokens * 100 / windowTokens)));
-    pctInput.value = String(next);
-    if (draft) draft.values.trigger_percent = next;
-  } else if (!percent && tokenInput && pctInput) {
-    const pct = Number(pctInput.value) || 75;
-    const next = Math.max(512, Math.round(windowTokens * pct / 100));
-    tokenInput.value = String(next);
-    if (draft) draft.values.max_tokens = next;
+  const tokenField = tokenInput && tokenInput.closest('.field');
+  const tokens = !mode || mode.value === 'tokens';
+  if (pctField) pctField.style.display = tokens ? 'none' : '';
+  if (tokenField) tokenField.style.display = tokens ? '' : 'none';
+  if (trigger && pctInput) {
+    const cap = Math.max(5, Number(trigger.value || 75) - 1);
+    if (Number(pctInput.value) >= Number(trigger.value || 75)) pctInput.value = String(cap);
+    pctInput.max = String(cap);
   }
 }
 function renderResetLists() {
@@ -2697,13 +2977,11 @@ async function saveAllSettings() {
       ? document.getElementById('s-binary-path').value
       : ((settings && settings.api && settings.api.binary_path) || ''),
     model: document.getElementById('s-model')?.value || '',
+    split_models: !!document.getElementById('s-split-models')?.checked,
+    act_model: document.getElementById('s-act-model')?.value || document.getElementById('s-model')?.value || '',
     temperature: Number(document.getElementById('s-api-temp').value),
     max_tokens: emptyNum('s-api-max-tokens'),
-    provider_descriptions: Object.assign(
-      {},
-      (settings && settings.api && settings.api.provider_descriptions) || {},
-      { [document.getElementById('s-provider').value]: (document.getElementById('provider-blurb')?.value || '') }
-    ),
+    provider_descriptions: (settings && settings.api && settings.api.provider_descriptions) || {},
   };
   const prompt = {
     system_prompt: document.getElementById('s-system').value,
@@ -2738,10 +3016,14 @@ async function saveAllSettings() {
     await api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'plugin', id: p.id, values: d.values }) });
   }
   document.getElementById('top-workspace').textContent = agent.workspace;
-  setFooterProvider(apiBody.provider);
-  const modelName = apiBody.model || '(auto)';
-  setFooterModelStatus(t('model') + ': ' + modelName, null); const _fe=document.getElementById('footer-extra'); if(_fe && !(_fe.textContent||'').includes('available')) {/* keep available count from refresh */} 
-  // apply plugin footer visibility immediately
+  settings = settings || {};
+  settings.agent = Object.assign({}, settings.agent || {}, agent);
+  settings.api = Object.assign({}, settings.api || {}, apiBody);
+  settings.prompt = Object.assign({}, settings.prompt || {}, prompt);
+  settings.chat = Object.assign({}, settings.chat || {}, chat);
+  streamingEnabled = chat.streaming !== false;
+  resetTps(!streamingEnabled);
+  syncSettingLocks();
   const uiDraft = draftPlugins['plugin_web_ui'];
   if (uiDraft && uiDraft.values && uiDraft.values.show_footer === false) {
     document.getElementById('app-footer').classList.add('hidden');
@@ -2753,7 +3035,7 @@ async function saveAllSettings() {
   applyUiLocale(loc);
   toast(t('saved'));
   await refreshTree();
-  await refreshModelsSelect(apiBody.model);
+  await refreshModelFooter();
 }
 
 document.getElementById('btn-settings-save').onclick = saveAllSettings;
@@ -2864,6 +3146,48 @@ document.getElementById('btn-pick-ws').onclick = async () => {
   }
 };
 
+function flashSetting(el) {
+  if (!el) return;
+  const target = el.closest('.field, .field-row-check, .model-combo') || el;
+  target.classList.remove('settings-flash');
+  void target.offsetWidth;
+  try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {}
+  target.classList.add('settings-flash');
+  window.setTimeout(() => target.classList.remove('settings-flash'), 1600);
+}
+async function openSettingsAt(tab, focusId) {
+  const view = document.getElementById('view-settings');
+  const btn = document.getElementById('nav-settings');
+  const already = view && view.style.display === 'block';
+  showView('settings');
+  if (btn) {
+    btn.classList.add('active-settings');
+    btn.textContent = '✕';
+    btn.title = 'Close settings';
+  }
+  const prov = document.getElementById('s-provider');
+  if (!already && (!prov || !prov.options.length)) {
+    try { await loadSettings(); } catch (_) {}
+  }
+  const stab = document.querySelector('.stab[data-tab="' + tab + '"]');
+  if (stab) stab.click();
+  if (focusId) window.setTimeout(() => flashSetting(document.getElementById(focusId)), 40);
+}
+async function openContextSettings() {
+  await openSettingsAt('plugins', null);
+  if (!(componentsCache.plugins || []).length) {
+    try { await loadComponents(); } catch (_) {}
+  }
+  const plugins = componentsCache.plugins || [];
+  const plug = plugins.find(p => p.id === 'plugin_context_compact')
+    || plugins.find(p => /compact|context/i.test(String(p.id || '') + String(p.name || '')));
+  if (!plug) return;
+  selectedPluginId = plug.id;
+  renderPluginsList();
+  renderPluginDetail(plug.id);
+  flashSetting(document.querySelector('#s-plugin-detail [data-fk="trigger_percent"]') || document.getElementById('s-plugin-detail'));
+}
+
 /* nav */
 document.getElementById('nav-logo').onclick = () => {
   if (settingsDirty && !confirm('Settings are not saved. Leave anyway?')) return;
@@ -2877,61 +3201,31 @@ document.getElementById('nav-settings').onclick = () => {
     btn.classList.remove('active-settings');
     btn.textContent = '⚙';
     btn.title = 'Settings';
+    renderMessages();
   } else {
     showView('settings');
     btn.classList.add('active-settings');
     btn.textContent = '✕';
     btn.title = 'Close settings';
     loadSettings();
-(async () => {
-  try {
-    const d = await api('/api/languages');
-    if (d && d.languages) {
-      window.__RESPONSE_LANGS = d.languages;
-      const langSel = document.getElementById('s-chat-lang');
-      if (langSel && langSel.options.length < 5) {
-        const cur = langSel.value || 'en';
-        langSel.innerHTML = '';
-        Object.keys(d.languages).forEach(k => {
-          const o = document.createElement('option');
-          o.value = k; o.textContent = d.languages[k];
-          langSel.appendChild(o);
-        });
-        langSel.value = cur;
-      }
-    }
-  } catch (e) {}
-})();
-
-(async () => {
-  try {
-    const info = await api('/api/server/info');
-    window.__SERVER_INFO = info;
-    if (info && info.server_mode) {
-      const top = document.getElementById('top-workspace');
-      if (top && !document.getElementById('server-badge')) {
-        const b = document.createElement('span');
-        b.id = 'server-badge';
-        b.className = 'server-badge';
-        b.textContent = 'SERVER · ' + (info.lan_ip || '');
-        top.parentElement && top.parentElement.appendChild(b);
-      }
-      const pick = document.getElementById('btn-pick-ws');
-      if (pick) {
-        pick.title = 'In server mode, enter the host path manually';
-      }
-    }
-  } catch (e) {}
-})();
   }
 };
+document.getElementById('footer-provider').onclick = () => { openSettingsAt('api', 's-provider'); };
+document.getElementById('footer-model').onclick = () => { openSettingsAt('api', 's-model'); };
+document.getElementById('footer-ctx').onclick = () => { openContextSettings(); };
+document.getElementById('top-workspace').onclick = () => { openSettingsAt('agent', 's-workspace'); };
 document.getElementById('btn-toggle-explorer').onclick = () => setExplorerCollapsed(!explorerCollapsed);
 document.getElementById('btn-toggle-chat').onclick = () => setChatCollapsed(!chatCollapsed);
-document.getElementById('btn-refresh-tree').onclick = () => refreshTree();
+const refreshTreeBtn = document.getElementById('btn-refresh-tree');
+if (refreshTreeBtn) refreshTreeBtn.onclick = () => refreshTree();
 document.getElementById('btn-new-chat').onclick = () => newChat(false);
 const _refreshModelsBtn = document.getElementById('btn-refresh-models');
 if (_refreshModelsBtn) _refreshModelsBtn.onclick = () => refreshModelsSelect(document.getElementById('s-model').value);
 
+document.getElementById('s-show-hidden-plugins')?.addEventListener('change', (ev) => {
+  showHiddenPlugins = !!ev.target.checked;
+  renderPluginsList();
+});
 document.querySelectorAll('.stab').forEach(s => {
   s.onclick = () => {
     document.querySelectorAll('.stab').forEach(x => x.classList.remove('active'));
@@ -2967,12 +3261,14 @@ async function resumeServerChat() {
   (snap.pending_approvals || []).forEach(showApproval);
   if (snap.active && snap.run_id) {
     running = true;
+    setRunLock(true);
     currentRunId = snap.run_id;
     updateActionBtn();
     setStatus(statusLabel('processing'), true);
     await pollRun(snap.run_id, snap.cursor || 0);
     finalizeLiveMessages();
     running = false;
+    setRunLock(false);
     currentRunId = null;
     updateActionBtn();
     saveChats();
@@ -2991,6 +3287,7 @@ else { activeChatId = chats[chats.length - 1].id; renderChatList(); renderMessag
 resumeServerChat();
 clearEditor();
 refreshTree();
+bindSettingsDirty();
 loadSettings();
 (async () => {
   try {
@@ -3070,14 +3367,64 @@ document.getElementById('msgs')?.addEventListener('click', (e) => {
   openFile(path);
 });
 
+const BLOCKED_ATTACH = new Set(['png','jpg','jpeg','gif','webp','bmp','svg','ico','heic','heif','tif','tiff','mp4','mov','mkv','webm','avi','wmv','m4v','mpg','mpeg','mp3','wav','ogg','flac','aac','m4a','wma','opus','exe','dll','bin','iso','dmg','msi','zip','7z','rar','gz','tar','bz2','xz']);
+function attachBlocked(name) {
+  const raw = String(name || '');
+  const dot = raw.lastIndexOf('.');
+  if (dot < 0) return false;
+  return BLOCKED_ATTACH.has(raw.slice(dot + 1).toLowerCase());
+}
+function placeCtx(anchor, opts) {
+  const ctx = document.getElementById('ctx');
+  if (!ctx || !anchor) return ctx;
+  const above = !!(opts && opts.above);
+  const r = anchor.getBoundingClientRect();
+  ctx.style.display = 'block';
+  ctx.style.visibility = 'hidden';
+  ctx.style.maxHeight = 'none';
+  ctx.style.overflow = 'auto';
+  ctx.style.top = '0px';
+  ctx.style.left = '0px';
+  const gap = 6;
+  const height = ctx.offsetHeight || ctx.scrollHeight || 0;
+  const width = Math.min(420, Math.max(220, ctx.offsetWidth || 280));
+  let left = r.left;
+  if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+  let top = r.bottom + gap;
+  if (above) {
+    const bottom = r.top - gap;
+    top = bottom - height;
+    if (top < 8) {
+      top = 8;
+      ctx.style.maxHeight = Math.max(72, bottom - 8) + 'px';
+    }
+  } else if (top + height > window.innerHeight - 8) {
+    const bottom = r.top - gap;
+    top = Math.max(8, bottom - height);
+    if (top < 8) {
+      top = 8;
+      ctx.style.maxHeight = Math.max(72, bottom - 8) + 'px';
+    }
+  }
+  ctx.style.left = left + 'px';
+  ctx.style.top = top + 'px';
+  ctx.style.minWidth = '220px';
+  ctx.style.maxWidth = '420px';
+  ctx.style.visibility = '';
+  return ctx;
+}
+function bindCtxHide(anchor) {
+  const ctx = document.getElementById('ctx');
+  const hide = (ev) => {
+    if (ctx.contains(ev.target) || (anchor && anchor.contains && anchor.contains(ev.target))) return;
+    hideCtx();
+    document.removeEventListener('click', hide);
+  };
+  setTimeout(() => document.addEventListener('click', hide), 0);
+}
 (function setupAttach() {
   const btn = document.getElementById('btn-attach');
-  const chips = document.getElementById('attach-chips');
   if (!btn) return;
-  // remove any duplicate inject near New chat
-  document.querySelectorAll('#chat-panel h3 #btn-attach').forEach(el => {
-    if (el !== btn) el.remove();
-  });
   btn.onclick = (e) => {
     e.stopPropagation();
     showAttachMenu(btn);
@@ -3092,6 +3439,7 @@ document.getElementById('msgs')?.addEventListener('click', (e) => {
       panel.classList.remove('drag-over');
       const files = [...(ev.dataTransfer.files || [])];
       for (const f of files) {
+        if (attachBlocked(f.name)) { toast(t('attachBlocked'), true); continue; }
         const dataUrl = await new Promise((res) => {
           const r = new FileReader();
           r.onload = () => res(r.result);
@@ -3102,15 +3450,37 @@ document.getElementById('msgs')?.addEventListener('click', (e) => {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: f.name, content_base64: raw }),
         });
-        if (r.path) addAttachment(r.path, true);
+        if (r.path) addAttachment(r.path, true, false);
+        else if (r.error) toast(r.error, true);
+      }
+    });
+  }
+  const outside = document.getElementById('outside-picker');
+  if (outside) {
+    outside.addEventListener('change', async () => {
+      const files = [...(outside.files || [])];
+      outside.value = '';
+      for (const f of files) {
+        if (attachBlocked(f.name)) { toast(t('attachBlocked'), true); continue; }
+        const dataUrl = await new Promise((res) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.readAsDataURL(f);
+        });
+        const raw = (dataUrl || '').split(',')[1] || '';
+        const r = await api('/api/attachments/import', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: f.name, content_base64: raw }),
+        });
+        if (r.path) addAttachment(r.path, true, false);
         else if (r.error) toast(r.error, true);
       }
     });
   }
 })();
-function addAttachment(path, exists) {
+function addAttachment(path, exists, external) {
   if (chatAttachments.some(a => a.path === path)) return;
-  chatAttachments.push({ path, exists: exists !== false });
+  chatAttachments.push({ path, exists: exists !== false, external: !!external });
   renderAttachChips();
 }
 function renderAttachChips() {
@@ -3120,64 +3490,140 @@ function renderAttachChips() {
   chatAttachments.forEach((a, i) => {
     const d = document.createElement('span');
     d.className = 'attach-chip ' + (a.exists ? 'ok' : 'bad');
-    d.innerHTML = esc(a.path) + ' <b data-i="'+i+'">×</b>';
-    d.querySelector('b').onclick = () => { chatAttachments.splice(i, 1); renderAttachChips(); };
+    d.appendChild(document.createTextNode((a.external ? '↗ ' : '') + a.path + ' '));
+    const x = document.createElement('b');
+    x.textContent = '×';
+    x.onclick = () => { chatAttachments.splice(i, 1); renderAttachChips(); };
+    d.appendChild(x);
     el.appendChild(d);
   });
+}
+function fillFileHits(hits, onPick) {
+  hits.innerHTML = '';
+  return async (query) => {
+    const data = await api('/api/fs/search?q=' + encodeURIComponent(query || ''));
+    hits.innerHTML = '';
+    (data.hits || []).forEach(h => {
+      if (attachBlocked(h.path)) return;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = h.path;
+      b.title = h.path;
+      b.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); onPick(h.path); };
+      hits.appendChild(b);
+    });
+    if (!hits.children.length) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding:8px 12px;color:var(--muted);font-size:12px';
+      empty.textContent = (query || '').trim() ? t('noMatches') : t('typeToSearch');
+      hits.appendChild(empty);
+    }
+  };
 }
 function showAttachMenu(anchor) {
   const ctx = document.getElementById('ctx');
   if (!ctx) return;
-  const r = anchor.getBoundingClientRect();
-  ctx.style.display = 'block';
-  ctx.style.minWidth = Math.max(280, r.width + 120) + 'px';
-  ctx.style.maxWidth = Math.min(420, window.innerWidth - 16) + 'px';
-  ctx.innerHTML = '<input id="attach-q" placeholder="'+t('attachSearch')+'" style="width:100%;margin-bottom:4px;box-sizing:border-box"/><div id="attach-hits" class="attach-hits"></div>';
-  // position after content so we can open upward if near bottom
-  const menuH = Math.min(320, window.innerHeight * 0.45);
-  let left = r.left;
-  let top = r.bottom + 4;
-  // prefer open upward from composer
-  if (r.bottom + menuH + 8 > window.innerHeight) {
-    top = Math.max(8, r.top - menuH - 4);
-  }
-  if (left + 300 > window.innerWidth) left = Math.max(8, window.innerWidth - 308);
-  ctx.style.left = left + 'px';
-  ctx.style.top = top + 'px';
-  ctx.style.maxHeight = menuH + 'px';
-  ctx.style.overflow = 'hidden';
+  mentionOpen = false;
+  ctx.innerHTML = '<div class="attach-sections"><button type="button" class="section" id="attach-project"></button><button type="button" class="section" id="attach-outside"></button></div><div id="attach-project-box" hidden><input id="attach-q" style="width:100%;margin:4px 0;box-sizing:border-box"/><div id="attach-hits" class="attach-hits"></div></div>';
+  document.getElementById('attach-project').textContent = t('fromProject');
+  document.getElementById('attach-outside').textContent = t('fromOutside');
+  document.getElementById('attach-q').placeholder = t('attachSearch');
+  const box = document.getElementById('attach-project-box');
   const q = document.getElementById('attach-q');
   const hits = document.getElementById('attach-hits');
-  hits.style.maxHeight = (menuH - 40) + 'px';
-  hits.style.overflowY = 'auto';
-  const search = async () => {
-    const data = await api('/api/fs/search?q=' + encodeURIComponent(q.value || ''));
-    hits.innerHTML = '';
-    (data.hits || []).forEach(h => {
-      const b = document.createElement('button');
-      b.textContent = h.path;
-      b.title = h.path;
-      b.onclick = () => { addAttachment(h.path, true); ctx.style.display = 'none'; };
-      hits.appendChild(b);
-    });
-    if (!(data.hits || []).length) {
-      const empty = document.createElement('div');
-      empty.style.cssText = 'padding:8px 12px;color:var(--muted);font-size:12px';
-      empty.textContent = (q.value || '').trim() ? t('noMatches') : t('typeToSearch');
-      hits.appendChild(empty);
+  const search = fillFileHits(hits, (path) => { addAttachment(path, true, false); hideCtx(); });
+  const reposition = () => placeCtx(anchor, { above: true });
+  document.getElementById('attach-project').onclick = (ev) => {
+    ev.stopPropagation();
+    box.hidden = !box.hidden;
+    reposition();
+    if (!box.hidden) { q.focus(); search(q.value || ''); }
+  };
+  document.getElementById('attach-outside').onclick = async (ev) => {
+    ev.stopPropagation();
+    hideCtx();
+    const r = await api('/api/fs/pick_files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (r && r.error) {
+      toast(t('fileDialogFailed'), true);
+      const input = document.getElementById('outside-picker');
+      if (input) input.click();
+      return;
     }
+    (r.paths || []).forEach(p => addAttachment(p, true, true));
+    if (r && r.blocked && r.blocked.length) toast(t('attachBlocked'), true);
   };
-  q.oninput = () => { clearTimeout(q._t); q._t = setTimeout(search, 200); };
+  q.oninput = () => { clearTimeout(q._t); q._t = setTimeout(() => search(q.value || ''), 200); };
   q.onclick = (ev) => ev.stopPropagation();
-  hits.onclick = (ev) => ev.stopPropagation();
-  q.focus();
-  search();
-  const hide = (ev) => {
-    if (ctx.contains(ev.target) || anchor.contains(ev.target)) return;
-    ctx.style.display = 'none';
-    document.removeEventListener('click', hide);
+  reposition();
+  bindCtxHide(anchor);
+}
+function trackMention() {
+  const pos = promptEl.selectionStart || 0;
+  const before = promptEl.value.slice(0, pos);
+  const m = before.match(/(^|\s)@([^\s@]*)$/);
+  if (!m) {
+    if (mentionOpen) hideCtx();
+    return;
+  }
+  mentionStart = pos - m[2].length - 1;
+  showMentionMenu(m[2] || '');
+}
+function insertMention(path) {
+  const pos = promptEl.selectionStart || 0;
+  const start = mentionStart >= 0 ? mentionStart : pos;
+  const token = '@' + path + ' ';
+  promptEl.value = promptEl.value.slice(0, start) + token + promptEl.value.slice(pos);
+  const caret = start + token.length;
+  hideCtx();
+  promptEl.focus();
+  promptEl.setSelectionRange(caret, caret);
+  autoGrow();
+  updateActionBtn();
+}
+function showMentionMenu(query) {
+  const fresh = !mentionOpen;
+  const ctx = placeCtx(promptEl);
+  if (!ctx) return;
+  mentionOpen = true;
+  if (!document.getElementById('attach-hits') || !fresh) {
+    ctx.innerHTML = '<input id="attach-q" style="width:100%;margin-bottom:4px;box-sizing:border-box"/><div id="attach-hits" class="attach-hits"></div>';
+  }
+  const q = document.getElementById('attach-q');
+  q.placeholder = t('attachSearch');
+  if (document.activeElement !== q) q.value = query || '';
+  const hits = document.getElementById('attach-hits');
+  const search = fillFileHits(hits, insertMention);
+  q.oninput = () => { clearTimeout(q._t); q._t = setTimeout(() => search(q.value || ''), 200); };
+  q.onclick = (ev) => ev.stopPropagation();
+  search(query || '');
+  if (fresh) bindCtxHide(promptEl);
+}
+
+const msgsBox = document.getElementById('msgs');
+if (msgsBox) {
+  msgsBox.addEventListener('scroll', () => {
+    if (programmaticScroll) return;
+    stickToBottom = nearBottom(msgsBox);
+    updateScrollBtn();
+  });
+}
+const scrollBtn = document.getElementById('btn-scroll-bottom');
+if (scrollBtn) {
+  scrollBtn.onclick = () => {
+    const el = document.getElementById('msgs');
+    if (!el) return;
+    stickToBottom = true;
+    updateScrollBtn();
+    programmaticScroll = true;
+    try { el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }
+    catch (_) { el.scrollTop = el.scrollHeight; }
+    setTimeout(() => {
+      programmaticScroll = false;
+      stickToBottom = true;
+      el.scrollTop = el.scrollHeight;
+      updateScrollBtn();
+    }, 450);
   };
-  setTimeout(() => document.addEventListener('click', hide), 0);
 }
 
 // Model loaded indicator in footer

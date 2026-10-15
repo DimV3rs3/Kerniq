@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import logging
 import sys
 import tomllib
@@ -40,6 +41,23 @@ def normalize_manifest_data(data: Dict[str, Any]) -> Dict[str, Any]:
         data["capabilities"] = [caps]
 
     return data
+
+
+def _plugin_disabled(context, plugin_id: str) -> bool:
+    """True when state/plugins/<id>.json sets enabled to false. Missing means on."""
+    try:
+        storage = getattr(getattr(context, "config", None), "storage", None)
+        state = getattr(storage, "state_dir", None)
+        if not state:
+            return False
+        safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in plugin_id)
+        path = Path(state) / "plugins" / f"{safe}.json"
+        if not path.is_file():
+            return False
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return isinstance(data, dict) and data.get("enabled") is False
+    except Exception:
+        return False
 
 
 class PluginManager:
@@ -112,6 +130,10 @@ class PluginManager:
 
             plugin_instance = plugin_class()
             context = self.context_factory()
+            if _plugin_disabled(context, pid):
+                self.statuses[pid] = PluginStatus.STOPPED
+                logger.info("Plugin %s is disabled.", pid)
+                return
             if await plugin_instance.initialize(context):
                 self.plugins[pid] = plugin_instance
                 self.statuses[pid] = PluginStatus.AVAILABLE

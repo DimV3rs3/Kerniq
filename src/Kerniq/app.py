@@ -68,7 +68,9 @@ class Application:
         )
 
     def _setup_storage(self) -> Storage:
-        return JsonStorage(self.config.storage.sessions_dir)
+        from Kerniq.devtools.paths import anchored_dir
+
+        return JsonStorage(anchored_dir(self.config.storage.sessions_dir))
 
     def _setup_tools(self) -> None:
         workspace = Path(self.config.application.workspace_root)

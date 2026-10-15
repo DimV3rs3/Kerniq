@@ -22,10 +22,10 @@ from Kerniq.assembly import build_tool_registry
 from Kerniq.settings.loader import SettingsProvider
 from Kerniq.core.verifier import BasicVerifier
 from Kerniq.storage.json_store import JsonStorage
-from Kerniq.sessions.manager import SessionManager
+from Kerniq.persistence.manager import SessionManager
 from Kerniq.mcp.server import MCPServerAdapter
 from Kerniq.plugins.manager import PluginManager
-from Kerniq.devtools.paths import find_plugins_dirs, find_project_root
+from Kerniq.devtools.paths import anchored_dir, find_plugins_dirs, find_project_root
 from Kerniq.plugins.base import PluginContext
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -74,6 +74,22 @@ def maybe_auto_update(argv: Optional[list] = None) -> Optional[int]:
         return None
     return None
 
+
+
+def _plugin_list_flags(config, plugin_id: str) -> dict:
+    try:
+        from Kerniq.settings.component_store import ComponentSettingsStore
+
+        store = ComponentSettingsStore(config.storage.state_dir)
+        data = store.load("plugin", plugin_id)
+        if not isinstance(data, dict):
+            return {"enabled": True, "listed": True}
+        return {
+            "enabled": data.get("enabled", True) is not False,
+            "listed": data.get("listed", True) is not False,
+        }
+    except Exception:
+        return {"enabled": True, "listed": True}
 
 
 def _apply_ui_log_level():
@@ -161,7 +177,7 @@ async def run_agent(args: argparse.Namespace, config) -> int:
     from Kerniq.interfaces.approvals import ConsoleApprovalProvider
     agent.orchestrator.approval_provider = ConsoleApprovalProvider()
 
-    storage = JsonStorage(Path(config.storage.sessions_dir))
+    storage = JsonStorage(anchored_dir(config.storage.sessions_dir))
     sessions = SessionManager(storage)
 
     def _checkpoint(ctx):
@@ -405,14 +421,14 @@ async def async_main(argv: Optional[list] = None) -> int:
 
             write_local_mcp_config(
                 Path(config.application.workspace_root),
-                Path(config.storage.state_dir),
+                anchored_dir(config.storage.state_dir),
             )
         except Exception as exc:
             logger.debug("mcp config not written: %s", exc)
 
-    storage = JsonStorage(Path(config.storage.sessions_dir))
+    storage = JsonStorage(anchored_dir(config.storage.sessions_dir))
     sm = SessionManager(storage)
-    tool_store = ToolSettingsStore(config.storage.state_dir)
+    tool_store = ToolSettingsStore(anchored_dir(config.storage.state_dir))
 
     def plugin_ctx_factory():
         return PluginContext(
@@ -549,9 +565,22 @@ async def async_main(argv: Optional[list] = None) -> int:
                     print("Searched:", ", ".join(str(d) for d in plugin_dirs))
                 else:
                     print("Hint: run from the Kerniq repo, or set KERNIQ_ROOT to the project folder.")
+                return 0
+            shown = 0
             for p in plugins:
                 name = p["manifest"].name if p["manifest"] else "Unknown"
-                print(f"ID: {p['id']} | Status: {p['status']} | Name: {name}")
+                flags = _plugin_list_flags(config, p["id"])
+                if flags.get("listed") is False:
+                    continue
+                shown += 1
+                state = "on" if flags.get("enabled", True) else "off"
+                status = p["status"]
+                status_bit = "" if str(status) in ("available", "PluginStatus.AVAILABLE") else f" | {status}"
+                err = p.get("error")
+                err_bit = f" | {err}" if err else ""
+                print(f"ID: {p['id']} | {state}{status_bit}{err_bit} | {name}")
+            if not shown:
+                print("No plugins to list. Hidden plugins stay out of this list until Show in plugin list is on.")
             return 0
         if args.action == "validate":
             print("Use: plugins list")
@@ -674,6 +703,16 @@ async def async_main(argv: Optional[list] = None) -> int:
             print(f"Reset {n} component setting file(s) under {config.storage.state_dir}")
             return 0
         if args.action == "show":
+            ui = ui_store.load()
+            print(f"[ui] {ui_store.path}")
+            data = ui.model_dump()
+            for section, values in data.items():
+                print(f"  [{section}]")
+                if isinstance(values, dict):
+                    for key, value in values.items():
+                        if key in ("api_token",) and value:
+                            value = "***"
+                        print(f"    {key} = {value}")
             for kind, d in (("tools", store.tools_dir), ("plugins", store.plugins_dir)):
                 print(f"[{kind}] {d}")
                 for f in sorted(d.glob("*.json")):

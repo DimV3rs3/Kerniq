@@ -24,39 +24,82 @@ KERNIQ_IDENTITY = (
     "You work at a professional level on whatever the task requires: "
     "software engineering, systems design, debugging, security review, auditing, research, and adjacent technical work. "
     "When several project files matter, read them in one turn (multiple tool calls) instead of one file per step. "
+    "Before you trust training memory about a library, API, CLI, protocol, or current fact, look it up. "
+    "Search the web or read the project's own docs and source first. Interfaces get rewritten, and a remembered signature is often wrong. "
+    "Do not invent a current API from memory when a lookup or a local file can answer it. "
     "The operator's system prompt follows this identity. Follow it unless it conflicts with workspace safety rules."
 )
 
 PLAN_MODE_TEXT = (
-    "MODE: PLAN. This mode is a detailed work breakdown, not implementation and not a second copy of Act. "
-    "Use it when the task is large, unfamiliar, or touches many files: study the project, then publish the TODO the Act phase will execute. "
-    "Do not create, edit, delete, or move files, and do not run the shell. "
-    "Read several relevant files in one turn. "
-    "Call update_plan with the full TODO. Each item has id, title, and status: "
-    "pending (not started), active (the single step you are inspecting), or done (a research step you already finished). "
-    "Implementation steps stay pending. Mark a research step done only after you actually learned it. "
-    "The TODO is the contract. Done items stay in your memory so you do not repeat them; the UI hides them. "
-    "Stop this mode when the breakdown is specific enough to execute. Do not implement it here."
+    "MODE: PLAN. This is a study pass, not implementation. "
+    "Read the project, search, and look up every fact the original request needs, "
+    "plus anything you still think you must find before the work can be done. "
+    "Keep that research. Do not create, edit, delete, or move files, and do not run the shell. "
+    "Keep your own research TODO with update_plan. That TODO is not the Act checklist. "
+    "You cannot delete an item or rename an existing one. "
+    "You may insert new items only among the item you are on and the items after it. "
+    "Example: 1, 2 and 3 are done, you are on 4, and 5, 6, 7 already exist. "
+    "New items may go between 4, 5, 6 and 7, or after 7. Never before 4. "
+    "Statuses: pending, active, done, frozen, failed. "
+    "Work the list in order. Exactly one item is in progress, and you may change only that item per update_plan call. "
+    "If you cannot finish it, mark it failed. Do not open, finish, or fail the next item in the same call. "
+    "The next item becomes current only after the current one is done. "
+    "Completed items stay on the list. You cannot delete them. "
+    "Do not stop while any item is pending, active, frozen, or failed. "
+    "Write every TODO title in the response language from the instruction above."
+)
+
+PLAN_HANDOFF_TEXT = (
+    "Auto handoff is on. When every research item is done and nothing is pending, active, frozen, or failed, "
+    "write a short note for the operator and then this machine block. "
+    "Act will not see your transcript. The block must be long enough for Act to build its own TODO "
+    "from the original request and from your reasoning:\n"
+    "===ACT_DRAFT===\n"
+    "project: <what the project is>\n"
+    "task: <the original request, restated precisely>\n"
+    "findings: <what you read, searched, and learned>\n"
+    "reasoning: <why this approach, and what you rejected>\n"
+    "files: <paths, classes, methods>\n"
+    "risks: <constraints>\n"
+    "suggested_steps: <ordered steps Act should turn into its own TODO>\n"
+    "===END_DRAFT===\n"
+    "Do not implement the task in this mode."
+)
+
+PLAN_HUMAN_TEXT = (
+    "Auto handoff is off. Answer the user in normal language in the response language. "
+    "Do not write an ACT_DRAFT and do not write a private note for another model. "
+    "Still close your own research TODO before the final answer. "
+    "Frozen and failed items block that answer."
 )
 
 ACT_MODE_TEXT = (
-    "MODE: ACT. Do the work. This is not a planning pass. "
-    "A small task (one script, one obvious edit, one direct answer) belongs here. "
-    "You still always keep a real TODO with update_plan, even for a short task. "
-    "If the TODO is empty, write a short one first, then execute it. "
-    "Exactly one item is active. Mark it done only after that step is actually finished, then activate the next. "
-    "Done items are archived in your memory and are not shown to the user. Do not redo them. "
-    "You may not end the task, and you may not emit a final answer, while any item is still pending or active."
+    "MODE: ACT. Do the work. "
+    "First write YOUR OWN action TODO with update_plan. "
+    "Base it on the original request, then on any plan-mode draft. Do not reuse a research checklist as yours. "
+    "You may search again and add items. Insert them only among the current item and the items after it. "
+    "You cannot delete an item. "
+    "Statuses: pending, active, done, frozen, failed. "
+    "Work the list in order. Exactly one item is in progress. Each update_plan call may change only that item. "
+    "Mark it done only after the step is really finished. If you cannot finish it, mark it failed. "
+    "Do not start the next item until the current one is done. Completed items stay on the list. "
+    "frozen pauses the current item. failed marks it failed. Both still block the end. "
+    "You may not refuse, skip, or end the task while any item is pending, active, frozen, or failed. "
+    "Write TODO titles in the response language."
 )
 
 TODO_CONTRACT = (
-    "TODO contract, both modes: the model always has a TODO, including after context is compacted. "
-    "update_plan is the only way to publish it. "
-    "Complexity chooses the mode, not whether a TODO exists. "
-    "Large or multi-file work starts in Plan (detailed breakdown, no edits) and then moves to Act. "
-    "A small change starts in Act and still uses a short TODO. "
-    "Only the model may close an item, and only when the step is really done. "
-    "The task is not finished until every current item is done."
+    "TODO contract: both Plan and Act always keep a TODO, including after context is compacted. "
+    "update_plan is the only editor. Items cannot be removed or renamed. "
+    "Work sequentially: one current item, one status change per call. "
+    "If that item is not finished, keep working on it or mark it failed. Do not skip ahead. "
+    "Completed items stay visible. New items are inserted only from the current item downward. "
+    "Plan studies, gathers what the request needs, and closes its own research TODO, then hands Act a detailed draft. "
+    "Act writes a separate action TODO from the original request and that draft, then does the work. "
+    "A large task starts in Plan. A small task can start in Act and still writes a short TODO. "
+    "The task is not finished while any item is pending, active, frozen, or failed. "
+    "Plan and Act are separate tasks: each starts with a fresh iteration budget. "
+    "Context compaction does not consume that budget."
 )
 
 
@@ -65,6 +108,7 @@ def compose_system_prompt(
     *,
     lang: str,
     mode: str = "act",
+    plan_handoff: bool = False,
 ) -> str:
     """Identity first, then the operator prompt, then operational rules."""
     parts = [KERNIQ_IDENTITY]
@@ -94,6 +138,7 @@ def compose_system_prompt(
     parts.append(TODO_CONTRACT)
     if mode == "plan":
         parts.append(PLAN_MODE_TEXT)
+        parts.append(PLAN_HANDOFF_TEXT if plan_handoff else PLAN_HUMAN_TEXT)
     else:
         parts.append(ACT_MODE_TEXT)
     return "\n\n".join(part for part in parts if part)
@@ -157,6 +202,8 @@ class Agent:
         agent_mode: Optional[str] = None,
         initial_plan: Optional[list] = None,
         plan_archive: Optional[list] = None,
+        plan_handoff: bool = False,
+        external_files: Optional[list] = None,
     ) -> str:
         sys_from_task = None
         user_task = task or ""
@@ -198,6 +245,8 @@ class Agent:
             context.metadata["plan_archive"] = [
                 dict(item) for item in plan_archive if isinstance(item, dict)
             ]
+        if external_files:
+            context.metadata["external_files"] = [str(item) for item in external_files if item]
         self.last_context = context
 
         sys_text = (system_prompt if system_prompt is not None else self.system_prompt) or ""
@@ -205,7 +254,7 @@ class Agent:
             sys_text = sys_from_task
 
         lang = response_language if response_language is not None else self.response_language
-        sys_text = compose_system_prompt(sys_text, lang=lang, mode=mode)
+        sys_text = compose_system_prompt(sys_text, lang=lang, mode=mode, plan_handoff=bool(plan_handoff))
 
         if sys_text:
             context.add_message(Message(role=MessageRole.SYSTEM, content=sys_text))

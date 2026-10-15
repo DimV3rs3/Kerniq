@@ -31,12 +31,8 @@ class MCPServerAdapter:
         allowed_tools: Optional[Sequence[str]] = None,
         workspace: Optional[Path] = None,
         server_name: str = "kerniq-mcp",
-<<<<<<< HEAD
         version: str = "0.1.3",
         security_policy: Any = None,
-=======
-        version: str = "0.1.1",
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     ) -> None:
         self.tool_registry = tool_registry
         # Safe default: empty allowlist publishes nothing
@@ -44,10 +40,7 @@ class MCPServerAdapter:
         self.workspace = Path(workspace or ".").resolve()
         self.server_name = server_name
         self.version = version
-<<<<<<< HEAD
         self.security_policy = security_policy
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 
     def _is_allowed(self, tool_id: str, name: str) -> bool:
         if not self.allowed_tools:
@@ -110,7 +103,6 @@ class MCPServerAdapter:
             exec_ctx = _MCPExecContext(workspace)
             args = dict(arguments)
             args.setdefault("tool_call_id", f"mcp-{name}")
-<<<<<<< HEAD
             policy = self.security_policy
             if policy is not None:
                 from Kerniq.security.policy import PolicyDecision
@@ -137,15 +129,6 @@ class MCPServerAdapter:
                     if not text and result.output is not None:
                         import json
 
-=======
-            try:
-                result = await internal.execute(args, exec_ctx)
-                if result.success:
-                    text = result.human_readable
-                    if not text and result.output is not None:
-                        import json
-
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
                         text = json.dumps(result.output, ensure_ascii=False, default=str)
                     if not text:
                         text = "OK"
@@ -215,18 +198,12 @@ async def run_mcp_server(
     tool_registry: ToolRegistry,
     allowed_tools: Optional[Sequence[str]] = None,
     workspace: Optional[Path] = None,
-<<<<<<< HEAD
     security_policy: Any = None,
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 ) -> None:
     adapter = MCPServerAdapter(
         tool_registry=tool_registry,
         allowed_tools=allowed_tools,
         workspace=workspace,
-<<<<<<< HEAD
         security_policy=security_policy,
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     )
     await adapter.run_stdio()

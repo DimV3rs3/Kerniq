@@ -2,11 +2,7 @@
 const UI_I18N = {
   en: {
     explorer: 'Explorer', chat: 'Chat', newChat: 'New', settings: 'Settings',
-<<<<<<< HEAD
     save: 'Save', saved: 'Saved', cancel: 'Cancel', send: 'Send', stop: 'Stop',
-=======
-    save: 'Save', cancel: 'Cancel', send: 'Send', stop: 'Stop',
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     openFile: 'Open a file…', ready: 'Готово', done: 'Done', error: 'Error',
     stopping: 'Stopping…', stopped: 'Stopped',
     processing: 'Processing prompt…', thinking: 'Thinking…', generating: 'Generating…',
@@ -28,11 +24,7 @@ const UI_I18N = {
     fileOpsOnly: 'File ops: names only', responseLang: 'Response language',
     baseUrl: 'Base URL', workspace: 'Workspace', undo: 'Undo', redo: 'Redo',
     close: 'Close', refresh: 'Refresh', provider: 'provider', model: 'model',
-<<<<<<< HEAD
     notLoaded: 'not loaded', loaded: 'loaded', loading: 'loading…', offline: 'offline',
-=======
-    notLoaded: 'not loaded', loaded: 'loaded', offline: 'offline',
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     available: 'available', ctx: 'ctx',
     tabAgent: 'Agent', tabApi: 'API & model', tabPrompt: 'System prompt',
     tabChat: 'Chat', tabTools: 'Tools', tabPlugins: 'Plugins', tabReset: 'Reset settings',
@@ -46,7 +38,6 @@ const UI_I18N = {
     toolsHeading: 'Tools',
     pluginsHeading: 'Plugins',
     stopUi: 'Stop UI',
-<<<<<<< HEAD
     planTitle: 'Plan',
     modePlan: 'Plan',
     modeAct: 'Act',
@@ -57,8 +48,6 @@ const UI_I18N = {
     providerDesc: 'Description',
     packAuto: 'Auto-accept every tool in this pack',
     packMerge: 'Merge calls for every tool in this pack',
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 
     selectTool: 'Select a tool', selectPlugin: 'Select a plugin',
     noMatches: 'No matches', typeToSearch: 'Type to search project files',
@@ -66,20 +55,13 @@ const UI_I18N = {
   },
   ru: {
     explorer: 'Проводник', chat: 'Чат', newChat: 'Новый', settings: 'Настройки',
-<<<<<<< HEAD
     save: 'Сохранить', saved: 'Сохранено', cancel: 'Отмена', send: 'Отправить', stop: 'Стоп',
-=======
-    save: 'Сохранить', cancel: 'Отмена', send: 'Отправить', stop: 'Стоп',
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     openFile: 'Откройте файл…', ready: 'Готово', done: 'Готово', error: 'Ошибка',
     stopping: 'Остановка…', stopped: 'Остановлено',
     processing: 'Обработка промпта…', thinking: 'Обдумывание…', generating: 'Генерация…',
     aggHint: 'Объединять подряд идущие вызовы tools в один блок',
     aggLabel: 'Объединять вызовы инструментов',
-<<<<<<< HEAD
     autoApprove: 'Автоподтверждение до уровня риска',
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     attach: 'Вложение', attachSearch: 'Поиск файлов проекта…',
     createFile: 'Новый файл', createDir: 'Новая папка', reveal: 'Показать в проводнике',
     delete: 'Удалить', rename: 'Переименовать', promptPh: 'Сообщение агенту…',
@@ -95,11 +77,7 @@ const UI_I18N = {
     fileOpsOnly: 'Только имена файловых операций', responseLang: 'Язык ответа',
     baseUrl: 'Base URL', workspace: 'Workspace', undo: 'Отменить', redo: 'Повторить',
     close: 'Закрыть', refresh: 'Обновить', provider: 'Провайдер', model: 'модель',
-<<<<<<< HEAD
     notLoaded: 'не загружена', loaded: 'загружена', loading: 'загрузка…', offline: 'офлайн',
-=======
-    notLoaded: 'не загружена', loaded: 'загружена', offline: 'офлайн',
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     available: 'доступно', ctx: 'контекст',
     tabAgent: 'Агент', tabApi: 'API и модель', tabPrompt: 'Системный промпт',
     tabChat: 'Чат', tabTools: 'Инструменты', tabPlugins: 'Плагины', tabReset: 'Сброс',
@@ -113,7 +91,6 @@ const UI_I18N = {
     toolsHeading: 'Инструменты',
     pluginsHeading: 'Плагины',
     stopUi: 'Выключить UI',
-<<<<<<< HEAD
     planTitle: 'План',
     modePlan: 'План',
     modeAct: 'Действие',
@@ -124,8 +101,6 @@ const UI_I18N = {
     providerDesc: 'Описание',
     packAuto: 'Автоподтверждение всех инструментов пака',
     packMerge: 'Объединять вызовы всех инструментов пака',
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 
     selectTool: 'Выберите инструмент', selectPlugin: 'Выберите плагин',
     noMatches: 'Нет совпадений', typeToSearch: 'Введите запрос для поиска файлов',
@@ -194,7 +169,6 @@ function applyUiLocale(locale) {
   if (fr) fr.textContent = t('factoryReset');
   const su = document.getElementById('btn-stop-ui');
   if (su) su.textContent = '⏹ ' + t('stopUi');
-<<<<<<< HEAD
   const mp = document.getElementById('mode-plan');
   if (mp) mp.textContent = t('modePlan');
   const ma = document.getElementById('mode-act');
@@ -203,8 +177,6 @@ function applyUiLocale(locale) {
     renderProviderFields(collectProviderDraft());
   }
   if (typeof renderPlan === 'function') renderPlan();
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   const mmc = document.getElementById('mm-cancel');
   if (mmc) mmc.textContent = t('cancel');
   const st = document.getElementById('agent-status');
@@ -459,39 +431,6 @@ function setStatus(text, spinning) {
     else if (String(text || '').toLowerCase().includes('error')) setFooterState('err');
     else setFooterState('idle');
   } catch (_) {}
-<<<<<<< HEAD
-}
-function loadChats() {
-  try {
-    let raw = localStorage.getItem(LS_CHATS);
-    // migrate from older keys that saveChats accidentally used
-    if (!raw) raw = localStorage.getItem('kerniq_chats');
-    chats = JSON.parse(raw || '[]');
-    if (!Array.isArray(chats)) chats = [];
-    // normalize per-chat context fields
-    chats.forEach(c => {
-      if (c.prompt_tokens == null) c.prompt_tokens = null;
-      if (c.context_limit == null) c.context_limit = null;
-    });
-    if (chats.length > MAX_CHATS) chats = chats.slice(-MAX_CHATS);
-  } catch {
-    chats = [];
-  }
-}
-function saveChats() {
-  if (chats.length > MAX_CHATS) {
-    chats = chats.slice(-MAX_CHATS);
-    if (!chats.find(c => c.id === activeChatId)) {
-      activeChatId = chats.length ? chats[chats.length - 1].id : null;
-    }
-  }
-  try {
-    localStorage.setItem(LS_CHATS, JSON.stringify(chats));
-    // remove legacy key so deleted chats cannot resurrect
-    localStorage.removeItem('kerniq_chats');
-  } catch (_) {}
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 }
 function loadChats() {
   try {
@@ -523,62 +462,6 @@ function saveChats() {
     localStorage.removeItem('kerniq_chats');
   } catch (_) {}
 }
-
-
-function fmtTokens(n) {
-  if (n == null || isNaN(n)) return '—';
-  n = Number(n);
-  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
-  if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, '') + 'K';
-  return String(Math.round(n));
-}
-
-function estimateChatTokens() {
-  // Heuristic only when server usage is unknown.
-  // ~4 chars/token is the common Latin estimate (OpenAI tokenizer ≈ 4 chars/token on English).
-  // For Cyrillic/CJK use ~2 chars/token. Mixed: per-message.
-  const c = currentChat();
-  let charsLat = 0, charsCjk = 0;
-  const add = (s) => {
-    s = String(s || '');
-    for (const ch of s) {
-      const code = ch.codePointAt(0);
-      // CJK + Cyrillic denser tokens
-      if ((code >= 0x0400 && code <= 0x04FF) || (code >= 0x3040 && code <= 0x30FF) ||
-          (code >= 0x3400 && code <= 0x9FFF) || (code >= 0xAC00 && code <= 0xD7AF)) {
-        charsCjk += 1;
-      } else {
-        charsLat += 1;
-      }
-    }
-  };
-  if (c) {
-    for (const m of (c.messages || [])) {
-      add(m.content); add(m.text); add(m.summary);
-      if (m.args) add(JSON.stringify(m.args));
-      if (m.name) add(m.name);
-      // tool results stored in content for role tool
-    }
-  }
-  // System prompt + tool schemas also go into the real model request
-  try {
-    if (settings && settings.prompt && settings.prompt.system_prompt) add(settings.prompt.system_prompt);
-  } catch (_) {}
-  try {
-    // Approximate tool catalog: ~400 tokens base + names
-    if (settings && settings.prompt && settings.prompt.include_tool_catalog !== false) {
-      charsLat += 1600; // ~400 tokens of tool JSON schemas
-    }
-  } catch (_) {}
-  const est = Math.round(charsLat / 4 + charsCjk / 2);
-  return Math.max(0, est);
-}
-
-let _modelContextLimit = null; // tokens — loaded window when known
-let _lastPromptTokens = null; // from provider usage (real)
-let _lastCompletionTokens = null;
-let _toolsSchemaTokens = 400; // approx when tool catalog enabled
-
 
 
 function fmtTokens(n) {
@@ -653,13 +536,8 @@ function setFooterState(mode) {
 function setFooterProvider(name, ok) {
   const el = document.getElementById('footer-provider');
   if (el) el.textContent = t('provider') + ': ' + (name || '—');
-<<<<<<< HEAD
   if (ok === false) setFooterActivity('err');
   else if (footerActivity === 'err') setFooterActivity(running ? 'work' : 'idle');
-=======
-  if (ok === false) setFooterState('err');
-  else if (!running) setFooterState('idle');
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 }
 
 function setFooterContext(used, limit) {
@@ -770,13 +648,10 @@ function setFooterTps(n) {
 function setFooterModelStatus(text, ok) {
   const el = document.getElementById('footer-model');
   if (!el) return;
-<<<<<<< HEAD
   if (footerActivity === 'loading') {
     text = t('model') + ': ' + t('loading');
     ok = null;
   }
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   el.textContent = text || '';
   el.classList.toggle('bad', ok === false);
   el.classList.toggle('ok', ok === true);
@@ -1171,11 +1046,7 @@ async function saveActive() {
     body: JSON.stringify({ path: t.path, content: t.content }),
   });
   if (r.error) toast(r.error, true);
-<<<<<<< HEAD
   else { t.dirty = false; document.getElementById('btn-save').disabled = true; renderTabs(); toast(t('saved')); await refreshTree(); }
-=======
-  else { t.dirty = false; document.getElementById('btn-save').disabled = true; renderTabs(); toast(t('save')); await refreshTree(); }
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 }
 
 let editTimer = null;
@@ -1506,11 +1377,8 @@ function _modelMatch(a, b) {
 
 /** Ensure a usable model is loaded. Never hangs on a modal. */
 async function ensureModelReady() {
-<<<<<<< HEAD
   const prov = (settings && settings.api && settings.api.provider) || 'lm_studio';
   if (prov !== 'lm_studio') return true;
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   let info;
   try {
     info = await api('/api/lms/loaded');
@@ -1530,13 +1398,9 @@ async function ensureModelReady() {
   // auto or already loaded
   if (!selected || selectedLoaded) return true;
 
-<<<<<<< HEAD
   setFooterActivity('loading');
   setFooterModelStatus('', null);
   setStatus(t('loading'), true);
-=======
-  setStatus('Loading model…', true);
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   try {
     if (loadedIds.length) {
       const u = await api('/api/lms/unload_all', {
@@ -1551,10 +1415,7 @@ async function ensureModelReady() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: selected, alongside: false }),
     });
-<<<<<<< HEAD
     setFooterActivity('idle');
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     setStatus(t('ready'), false);
     if (l && l.error) {
       toast('Load failed: ' + l.error, true);
@@ -1563,10 +1424,7 @@ async function ensureModelReady() {
     await refreshModelFooter().catch(() => {});
     return true;
   } catch (e) {
-<<<<<<< HEAD
     setFooterActivity('idle');
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     setStatus(t('ready'), false);
     toast('Model load error: ' + e, true);
     return false;
@@ -1610,7 +1468,6 @@ actionBtn.onclick = async () => {
       taskToSend = text.trim() + '\n\nAttached files (use these paths):\n' + chatAttachments.map(a => a.path).join('\n');
     }
     c.messages.push({ role: 'user', content: text.trim(), attachments: chatAttachments.slice() });
-<<<<<<< HEAD
     if (c.title === 'New chat' || c.title === 'Chat') {
       c.title = chatTitleFromPrompt(text);
       api('/api/chat/title', {
@@ -1621,9 +1478,6 @@ actionBtn.onclick = async () => {
         if (r && r.title) { c.title = r.title; saveChats(); renderChatList(); }
       }).catch(() => {});
     }
-=======
-    if (c.title === 'New chat') c.title = chatTitleFromPrompt(text);
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     chatAttachments = [];
     renderAttachChips();
     promptEl.value = ''; autoGrow(); updateActionBtn();
@@ -1640,10 +1494,7 @@ actionBtn.onclick = async () => {
 };
 async function runAgent(task) {
   running = true;
-<<<<<<< HEAD
   setFooterActivity('work');
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   currentRunId = null;
   updateActionBtn();
   streamingEnabled = !(settings && settings.chat && settings.chat.streaming === false);
@@ -1664,7 +1515,6 @@ async function runAgent(task) {
     const r = await api('/api/chat/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-<<<<<<< HEAD
       body: JSON.stringify({
         task,
         chat_id: activeChatId,
@@ -1680,9 +1530,6 @@ async function runAgent(task) {
         plan: (chat && chat.plan) || [],
         attachments: (chat && chat.messages || []).slice().reverse().find(m => m.role === 'user')?.attachments || chatAttachments,
       }),
-=======
-      body: JSON.stringify({ task, chat_id: activeChatId, history: hist }),
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     });
     if (r.error) {
       currentChat().messages.push({ role: 'assistant', content: 'Error: ' + r.error });
@@ -1695,7 +1542,6 @@ async function runAgent(task) {
     const msg = (e && e.message) ? e.message : String(e);
     currentChat().messages.push({ role: 'assistant', content: 'Error: ' + msg });
     saveChats(); renderMessages(); setStatus('Error', false);
-<<<<<<< HEAD
   }
   finalizeLiveMessages();
   generatingTokens = false;
@@ -1780,88 +1626,6 @@ async function pollRun(runId, startCursor) {
   renderMessages();
   try { await refreshTree(); } catch (_) {}
 }
-=======
-  }
-  finalizeLiveMessages();
-  generatingTokens = false;
-  stopTpsTimer();
-  resetTps(!streamingEnabled);
-  currentRunId = null;
-  running = false;
-  updateActionBtn();
-  try { await refreshModelFooter(); } catch (_) {}
-}
-async function pollRun(runId) {
-  let done = false;
-  let idleTicks = 0;
-  let networkFails = 0;
-  // Match agent timeout (seconds) — long prompt prefill must not kill the UI
-  const timeoutSec = Math.max(
-    120,
-    Number((settings && settings.agent && settings.agent.timeout_seconds) || 600)
-  );
-  // idle ticks of 350ms; allow full timeout + 2 min slack with no events
-  const maxIdleTicks = Math.ceil((timeoutSec + 120) / 0.35);
-  while (!done) {
-    await new Promise(r => setTimeout(r, 350));
-    let ev;
-    try {
-      ev = await api('/api/chat/events?run_id=' + encodeURIComponent(runId));
-      networkFails = 0;
-    } catch (e) {
-      networkFails++;
-      if (networkFails > 60) { // ~21s of pure network failure
-        setStatus('Error', false);
-        const c = currentChat();
-        if (c) {
-          c.messages.push({ role: 'assistant', content: 'Error: lost connection to Kerniq UI server while waiting for the model.' });
-          saveChats(); renderMessages();
-        }
-        break;
-      }
-      continue;
-    }
-    if (ev.error) {
-      const msg = ev.error === 'unknown run' ? 'Error: run not found on server' : String(ev.error);
-      setStatus(msg, false);
-      const c = currentChat();
-      if (c && !c.messages.some(m => m.role === 'assistant' && String(m.content||'').startsWith('Error'))) {
-        c.messages.push({ role: 'assistant', content: msg });
-        saveChats(); renderMessages();
-      }
-      break;
-    }
-    const events = ev.events || [];
-    if (events.length) idleTicks = 0;
-    else idleTicks++;
-    for (const e of events) handleEvent(e);
-    if (ev.done) {
-      done = true;
-      const lastStatus = (events.filter(x => x.type === 'status').pop() || {}).status;
-      const lastText = (events.filter(x => x.type === 'status').pop() || {}).text;
-      if (lastStatus === 'cancelled') setStatus('Stopped', false);
-      else if (lastStatus === 'error') setStatus(lastText || 'Error', false);
-      else setStatus('Done', false);
-      generatingTokens = false;
-    }
-    // Only bail on idle after agent timeout window (not ~2 min)
-    if (!done && idleTicks > maxIdleTicks) {
-      const msg = 'Error: no events from agent for ' + timeoutSec + 's+ (timeout). Model may still be running in LM Studio.';
-      setStatus(msg, false);
-      const c = currentChat();
-      if (c) {
-        c.messages.push({ role: 'assistant', content: msg });
-        saveChats(); renderMessages();
-      }
-      break;
-    }
-  }
-  finalizeLiveMessages();
-  saveChats();
-  renderMessages();
-  try { await refreshTree(); } catch (_) {}
-}
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 
 const STATUS_KEYS = {
   loading_model: 'processing',
@@ -1875,7 +1639,6 @@ const STATUS_KEYS = {
   error: 'error',
   empty_done: 'done',
 };
-<<<<<<< HEAD
 function quietThinking() {
   const ch = settings && settings.chat;
   const stream = !ch || ch.streaming !== false;
@@ -1886,9 +1649,6 @@ function statusLabel(st, fallback) {
   if (quietThinking() && ['processing', 'thinking', 'loading_model', 'generating', 'tool', 'waiting_tool'].includes(st)) {
     return t('thinking');
   }
-=======
-function statusLabel(st, fallback) {
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   const k = STATUS_KEYS[st];
   if (k) return t(k);
   return fallback || st || '…';
@@ -1911,7 +1671,6 @@ function finalizeLiveMessages() {
   renderMessages();
 }
 
-<<<<<<< HEAD
 let approvalQueue = [];
 function showApproval(req) {
   if (!req || !req.request_id) return;
@@ -1957,8 +1716,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (deny) deny.addEventListener('click', () => decideApproval('deny'));
 });
 
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 function handleEvent(e) {
   if (e.type === 'approval' && e.request) {
     showApproval(e.request);
@@ -2006,11 +1763,7 @@ function handleEvent(e) {
   const c = currentChat(); if (!c) return;
   if (e.type === 'heartbeat') {
     // keep poll alive during long prefill / thinking with no tokens yet
-<<<<<<< HEAD
     setStatus(quietThinking() ? t('thinking') : (e.text || statusLabel('processing')), true);
-=======
-    setStatus(e.text || statusLabel('processing'), true);
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     return;
   }
   if (e.type === 'status') {
@@ -2044,10 +1797,7 @@ function handleEvent(e) {
     // Reasoning streams tokens too — count for tok/s while thinking
     noteGeneratedText(e.text || '');
     setStatus(statusLabel('thinking'), true);
-<<<<<<< HEAD
     c.messages = c.messages.filter(m => m.kind !== 'think_collapsed');
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     let live = c.messages.find(m => m.kind === 'think_live');
     if (!live) { live = { kind: 'think_live', text: '' }; c.messages.push(live); }
     live.text = (live.text || '') + (e.text || '');
@@ -2162,7 +1912,6 @@ function handleEvent(e) {
 }
 
 
-<<<<<<< HEAD
 function normPlanStatus(s) {
   const v = String(s || 'pending').toLowerCase();
   if (['done', 'complete', 'completed', 'x', 'finished'].includes(v)) return 'done';
@@ -2375,15 +2124,12 @@ async function loadProviderCatalog(selectedId) {
   renderProviderFields();
 }
 
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 async function refreshModelFooter() {
   try {
     const s = settings || {};
     const prov = (s.api && s.api.provider) || 'lm_studio';
     setFooterProvider(prov);
     streamingEnabled = !(s.chat && s.chat.streaming === false);
-<<<<<<< HEAD
     if (prov === 'mock' || prov !== 'lm_studio') {
       const modelsData = await fetchModels().catch(() => ({}));
       const selected = (s.api && s.api.model) || '';
@@ -2406,21 +2152,6 @@ async function refreshModelFooter() {
     for (const m of (modelsData.models || [])) {
       const inst = m.loaded_instances || [];
       if (inst && inst.length) info.loaded.push({ model: m.id || m.name });
-=======
-    if (prov === 'mock') {
-      setFooterModelStatus(t('model') + ': mock', true);
-      setFooterContext(_lastPromptTokens, null);
-      const fe = document.getElementById('footer-extra');
-      if (fe) fe.textContent = '';
-      return;
-    }
-    const selected = (s.api && s.api.model) || '';
-    const info = await api('/api/lms/loaded');
-    const modelsData = await api('/api/models').catch(() => ({}));
-    // context limit from first matching model if available
-    _modelContextLimit = null;
-    for (const m of (modelsData.models || [])) {
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
       // Prefer actual loaded window, then max capability
       const lim = m.loaded_context_length || m.context_length || m.max_context_length || m.context || null;
       if (!lim) continue;
@@ -2646,24 +2377,14 @@ async function refreshModelsSelect(selected) {
   if (data.error || data.reachable === false) setFooterProvider(prov, false);
   else setFooterProvider(prov, true);
   const modelLabel = sel.value || '(auto)';
-<<<<<<< HEAD
   if (data.error || data.reachable === false) setFooterModelStatus(t('model') + ': ' + (data.error || t('offline')), false);
-=======
-  if (data.error || !data.reachable) setFooterModelStatus(t('model') + ': ' + (data.error || t('offline')), false);
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   else if (modelLabel && modelLabel !== '(auto)') setFooterModelStatus(t('model') + ': ' + modelLabel, null);
   const extra = document.getElementById('footer-extra');
   if (extra) {
     const n = (data.models || []).length;
-<<<<<<< HEAD
     extra.textContent = (data.reachable !== false && n) ? (n + ' ' + t('available')) : '';
   }
   const selM = sel.value || '';
-=======
-    extra.textContent = (data.reachable && n) ? (n + ' ' + t('available')) : '';
-  }
-  const selM = (document.getElementById('s-model') || {}).value || '';
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   for (const m of (data.models || [])) {
     const lim = m.loaded_context_length || m.context_length || m.max_context_length || m.context;
     if (!lim) continue;
@@ -2671,11 +2392,7 @@ async function refreshModelsSelect(selected) {
     if (_modelContextLimit == null) _modelContextLimit = Number(lim);
   }
   setFooterContext(_lastPromptTokens, _modelContextLimit);
-<<<<<<< HEAD
   sel.oninput = () => {
-=======
-  sel.onchange = () => {
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
     markSettingsDirty();
     const fe = document.getElementById('footer-extra');
     if (fe) fe.textContent = 'model: ' + (sel.value || '(auto)');
@@ -2869,10 +2586,7 @@ function renderPluginDetail(id) {
     }
   });
   panel.innerHTML = html;
-<<<<<<< HEAD
   syncCompactLimit(panel);
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   if (!draftPlugins[id]) draftPlugins[id] = { values: {} };
   panel.querySelectorAll('[data-fk]').forEach(inp => {
     const ev = (inp.type === 'checkbox' || inp.tagName === 'SELECT') ? 'change' : 'input';
@@ -2882,10 +2596,7 @@ function renderPluginDetail(id) {
       else if (inp.type === 'number') v = Number(inp.value);
       else v = inp.value;
       draftPlugins[id].values[inp.dataset.fk] = v;
-<<<<<<< HEAD
       if (inp.dataset.fk === 'limit_mode') syncCompactLimit(panel, true);
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
       markSettingsDirty();
     });
   });
@@ -3040,11 +2751,7 @@ async function saveAllSettings() {
   clearSettingsDirty();
   const loc = draftPlugins['plugin_web_ui']?.values?.ui_locale || 'en';
   applyUiLocale(loc);
-<<<<<<< HEAD
   toast(t('saved'));
-=======
-  toast(t('save'));
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
   await refreshTree();
   await refreshModelsSelect(apiBody.model);
 }

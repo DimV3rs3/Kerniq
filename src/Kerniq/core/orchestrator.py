@@ -26,14 +26,11 @@ class Orchestrator:
         self.max_iterations = 10
         self.max_identical_tool_streak = 3
         self.max_empty_retries = 2
-<<<<<<< HEAD
         self.provider_retries = 2
         self.max_verification_retries = 2
         self.max_content_loop_hits = 2
         self.max_plan_continuations = 2
         self.finish_open_plan = False
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
         self.generation_options = GenerationOptions()
         self.compactor = None
         self.on_progress = None
@@ -466,236 +463,8 @@ class Orchestrator:
                 )
             return response
 
-
-    @staticmethod
-    def _normalize_reply(text: str) -> str:
-        import re
-        s = (text or "").lower().strip()
-        s = re.sub(r"\s+", " ", s)
-        s = re.sub(r"[`*_#>\-]+", "", s)
-        return s[:2000]
-
-    @staticmethod
-    def _estimate_tokens(messages) -> int:
-        total = 0
-        for m in messages:
-            total += len(m.content or "")
-            if getattr(m, "tool_calls", None):
-                for tc in m.tool_calls:
-                    total += len(tc.name or "") + len(str(tc.arguments or ""))
-        return max(1, total // 4)
-
-    def _detect_content_loop(self, content: str, previous_assistant: list) -> bool:
-        """True if content repeats a prior assistant reply or has heavy self-repetition."""
-        import re
-        norm = self._normalize_reply(content)
-        if len(norm) < 40:
-            return False
-        # Compare against recent assistant texts
-        for prev in previous_assistant[-6:]:
-            pnorm = self._normalize_reply(prev)
-            if not pnorm:
-                continue
-            if norm == pnorm:
-                return True
-            # high overlap: one contains the other (long)
-            if len(norm) > 80 and len(pnorm) > 80:
-                if norm in pnorm or pnorm in norm:
-                    return True
-                # token Jaccard on words
-                a, b = set(norm.split()), set(pnorm.split())
-                if a and b:
-                    j = len(a & b) / max(1, len(a | b))
-                    if j >= 0.92 and len(a) >= 12:
-                        return True
-        # Internal repetition: same long sentence twice
-        sentences = [s.strip() for s in re.split(r"[.!?\n]+", content) if len(s.strip()) > 30]
-        seen = set()
-        for s in sentences:
-            key = self._normalize_reply(s)
-            if key in seen:
-                return True
-            seen.add(key)
-        # Stutter: same 12+ char chunk thrice
-        for n in (20, 40, 60):
-            if len(norm) < n * 3:
-                continue
-            counts = {}
-            for i in range(0, len(norm) - n, max(1, n // 2)):
-                chunk = norm[i : i + n]
-                counts[chunk] = counts.get(chunk, 0) + 1
-                if counts[chunk] >= 3:
-                    return True
-        return False
-
-
-    _TRUNC_MARK = "[Context truncated to fit the model window."
-    _EMPTY_NUDGE = "Your last reply was empty. Provide a final answer or call a different tool."
-
-    def _strip_truncation_notices(self, messages):
-        """Remove prior auto-inserted truncation / empty-nudge system notes."""
-        out = []
-        for m in messages:
-            c = (m.content or "")
-            if m.role == MessageRole.SYSTEM and (
-                c.startswith(self._TRUNC_MARK) or c.startswith("Your last reply was empty")
-            ):
-                continue
-            out.append(m)
-        return out
-
-    def _message_groups(self, messages):
-        """Split non-system messages into atomic groups for safe trimming.
-
-        A group is either:
-        - one user message
-        - one assistant message (optionally with tool_calls) + following tool results
-        - orphan tool messages (will be dropped by sanitize)
-        """
-        groups = []
-        i = 0
-        n = len(messages)
-        while i < n:
-            m = messages[i]
-            if m.role == MessageRole.USER:
-                groups.append([m])
-                i += 1
-            elif m.role == MessageRole.ASSISTANT:
-                g = [m]
-                i += 1
-                # attach following tool results for this assistant's tool_calls
-                while i < n and messages[i].role == MessageRole.TOOL:
-                    g.append(messages[i])
-                    i += 1
-                groups.append(g)
-            elif m.role == MessageRole.TOOL:
-                # orphan tool — keep as own group; sanitize will drop if broken
-                groups.append([m])
-                i += 1
-            else:
-                groups.append([m])
-                i += 1
-        return groups
-
-    def _trim_messages_to_budget(self, messages, budget_tokens: int):
-        """Keep primary system + newest complete dialogue groups under budget."""
-        messages = self._strip_truncation_notices(list(messages))
-        if budget_tokens <= 0:
-            return messages
-        if self._estimate_tokens(messages) <= budget_tokens:
-            return messages
-
-        systems = [m for m in messages if m.role == MessageRole.SYSTEM]
-        primary_system = systems[:1] if systems else []
-        rest = [m for m in messages if m.role != MessageRole.SYSTEM]
-        groups = self._message_groups(rest)
-
-        kept_rev = []
-        used = self._estimate_tokens(primary_system)
-        for g in reversed(groups):
-            cost = self._estimate_tokens(g)
-            if used + cost > budget_tokens and kept_rev:
-                break
-            # always try to keep at least one group
-            kept_rev.append(g)
-            used += cost
-
-        kept = []
-        for g in reversed(kept_rev):
-            kept.extend(g)
-
-        # Hard-truncate oversized tool payloads inside kept groups
-        for m in kept:
-            if m.role == MessageRole.TOOL and m.content and len(m.content) > 12000:
-                m.content = m.content[:12000] + "\n…[tool output truncated]"
-
-        note = Message(
-            role=MessageRole.SYSTEM,
-            content=(
-                self._TRUNC_MARK
-                + " Older turns were dropped as complete groups; "
-                "goals and recent tool results were prioritized.]"
-            ),
-        )
-        return primary_system + [note] + kept
-
-    def _sanitize_for_provider(self, messages):
-        """Make history valid for strict chat templates (Mistral/Gemma/etc.).
-
-        Rules enforced:
-        - at most leading system messages
-        - drop orphan tool messages (no preceding assistant tool_calls)
-        - drop empty assistant messages without tool_calls
-        - drop mid-conversation system nudges (re-inject as user if needed)
-        - ensure tool results only follow assistant with tool_calls
-        """
-        messages = self._strip_truncation_notices(list(messages))
-        systems = []
-        body = []
-        for m in messages:
-            if m.role == MessageRole.SYSTEM:
-                # keep only the first real system prompt(s) at the front
-                if not body:
-                    systems.append(m)
-                # skip mid-stream system messages (empty nudges, trunc notes already stripped)
-                continue
-            body.append(m)
-
-        out = list(systems)
-        pending_tool_ids = set()
-        last_role = None
-
-        for m in body:
-            if m.role == MessageRole.TOOL:
-                tid = m.tool_call_id or ""
-                if tid and tid in pending_tool_ids:
-                    out.append(m)
-                    pending_tool_ids.discard(tid)
-                    last_role = "tool"
-                elif not pending_tool_ids and last_role == "assistant":
-                    # some providers omit ids — allow tool right after assistant with tool_calls
-                    out.append(m)
-                    last_role = "tool"
-                else:
-                    logger.warning("Dropping orphan tool message id=%s name=%s", tid, m.name)
-                continue
-
-            if m.role == MessageRole.ASSISTANT:
-                has_tools = bool(getattr(m, "tool_calls", None))
-                content = (m.content or "").strip()
-                if not content and not has_tools:
-                    logger.warning("Dropping empty assistant message")
-                    continue
-                out.append(m)
-                pending_tool_ids = set()
-                if has_tools:
-                    for tc in m.tool_calls or []:
-                        if tc.id:
-                            pending_tool_ids.add(tc.id)
-                last_role = "assistant"
-                continue
-
-            if m.role == MessageRole.USER:
-                out.append(m)
-                pending_tool_ids = set()
-                last_role = "user"
-                continue
-
-            # ignore unknown
-
-        # If we still have unresolved tool_calls at the end, that's ok — model will continue
-        return out
-
-    def _nudge_after_empty(self, context: TaskContext) -> None:
-        """Ask model to continue without breaking role alternation (use user, not system)."""
-        context.add_message(Message(
-            role=MessageRole.USER,
-            content=self._EMPTY_NUDGE,
-        ))
-
     async def run(self, context: TaskContext) -> str:
         iteration = 0
-<<<<<<< HEAD
         last_tool_sig: Optional[str] = None
         tool_streak = 0
         loop_nudged = False
@@ -711,30 +480,10 @@ class Orchestrator:
         # 32768 is an estimate when the provider does not report a window.
         context.metadata.setdefault("context_limit_estimate", ctx_limit)
         input_budget = max(4096, int(ctx_limit * 0.85))
-=======
-        # Loop protection: identical tool-call signatures in a row
-        last_tool_sig: Optional[str] = None
-        tool_streak = 0
-        empty_retries = 0
-        content_loop_hits = 0
-        assistant_history: list = []
-        # Context budget (tokens). Prefer explicit option, else safe default.
-        ctx_limit = None
-        if self.generation_options and getattr(self.generation_options, "max_tokens", None):
-            # generation max_tokens is output budget; input window is separate
-            pass
-        ctx_limit = int(getattr(self, "context_limit", 0) or 0) or int(
-            (context.metadata or {}).get("context_limit") or 0
-        ) or 32768
-        # leave headroom for reply + tools
-        # Leave room for model reply; never use a tiny budget that nukes history
-        input_budget = max(4096, int(ctx_limit * 0.85)) if ctx_limit else 32000
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 
         while iteration < self.max_iterations:
             if getattr(context, "cancelled", False):
                 logger.info("Orchestration cancelled")
-<<<<<<< HEAD
                 return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
             iteration += 1
             logger.info(f"Orchestration iteration {iteration}/{self.max_iterations}")
@@ -742,16 +491,6 @@ class Orchestrator:
             await self._maybe_compact(context)
             context.messages = self._strip_truncation_notices(context.messages)
             est = self._estimate_tokens(context.messages)
-=======
-                return "Stopped by user."
-            iteration += 1
-            logger.info(f"Orchestration iteration {iteration}/{self.max_iterations}")
-
-            # Fit messages into model context window (strip prior trim notes first)
-            context.messages = self._strip_truncation_notices(context.messages)
-            est = self._estimate_tokens(context.messages)
-            # Only trim when clearly over budget (10% headroom already in input_budget)
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
             if est > input_budget:
                 before = len(context.messages)
                 context.messages = self._trim_messages_to_budget(context.messages, input_budget)
@@ -759,18 +498,10 @@ class Orchestrator:
                     "Context overflow: %s msgs -> %s (est=%s budget=%s)",
                     before, len(context.messages), est, input_budget,
                 )
-<<<<<<< HEAD
             self._pin_todo(context)
 
             safe_messages = self._sanitize_for_provider(context.messages)
             if not any(m.role == MessageRole.USER for m in safe_messages):
-=======
-
-            # 1. Prepare request — sanitize role order for strict chat templates
-            safe_messages = self._sanitize_for_provider(context.messages)
-            if not any(m.role == MessageRole.USER for m in safe_messages):
-                # History collapse lost the user turn — re-anchor on the goal
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
                 safe_messages = list(safe_messages) + [
                     Message(role=MessageRole.USER, content=context.goal or "Continue the task.")
                 ]
@@ -791,7 +522,6 @@ class Orchestrator:
                 options=self.generation_options,
             )
 
-<<<<<<< HEAD
             try:
                 response = await self._generate_with_retries(request)
             except Exception as exc:
@@ -823,18 +553,11 @@ class Orchestrator:
                 )
 
             content_nudged = False
-=======
-            # 2. Get model response
-            response = await self.provider.generate(request)
-
-            # Content loop detection on assistant text before committing tools
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
             for msg in response.messages:
                 text = (msg.content or "").strip()
                 if text and self._detect_content_loop(text, assistant_history):
                     content_loop_hits += 1
                     logger.warning("Content loop detected (hit=%s)", content_loop_hits)
-<<<<<<< HEAD
                     if content_loop_hits >= self.max_content_loop_hits:
                         return self._finish(
                             context,
@@ -852,26 +575,6 @@ class Orchestrator:
                 if text:
                     assistant_history.append(text)
 
-=======
-                    if content_loop_hits >= 2:
-                        return (
-                            "Stopped: the model started repeating the same reasoning/answer "
-                            "(loop protection)."
-                        )
-                    # One chance: nudge to stop repeating
-                    context.add_message(Message(
-                        role=MessageRole.SYSTEM,
-                        content=(
-                            "You are repeating previous content. Do not restate the same "
-                            "reasoning. Either call a different tool or give a final concise answer."
-                        ),
-                    ))
-                    # still add the message but continue loop without treating as final
-                if text:
-                    assistant_history.append(text)
-
-            # Add assistant message to context (skip empty no-tool placeholders)
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
             for msg in response.messages:
                 if msg.role == MessageRole.ASSISTANT and not (msg.content or "").strip() and not msg.tool_calls:
                     continue
@@ -1002,50 +705,6 @@ class Orchestrator:
                     sig[:300],
                 )
 
-<<<<<<< HEAD
-=======
-                final_msg = response.messages[-1] if response.messages else None
-                content = (final_msg.content if final_msg else "") or ""
-                # Remove trailing empty assistant already added from response
-                while context.messages and context.messages[-1].role == MessageRole.ASSISTANT:
-                    last = context.messages[-1]
-                    if (last.content or "").strip() or last.tool_calls:
-                        break
-                    context.messages.pop()
-                if not content.strip():
-                    empty_retries += 1
-                    if empty_retries <= self.max_empty_retries:
-                        self._nudge_after_empty(context)
-                        continue
-                    return "Stopped: model returned empty responses repeatedly."
-                empty_retries = 0
-                return content
-
-            # Loop guard: same tool+args repeated
-            try:
-                sig = "|".join(
-                    f"{c.name}:{json.dumps(c.arguments or {}, sort_keys=True, ensure_ascii=False)}"
-                    for c in tool_calls
-                )
-            except Exception:
-                sig = "|".join(c.name for c in tool_calls)
-            if sig and sig == last_tool_sig:
-                tool_streak += 1
-            else:
-                tool_streak = 1
-                last_tool_sig = sig
-            if tool_streak >= self.max_identical_tool_streak:
-                logger.warning(
-                    "Identical tool streak=%s sig=%s — stopping loop",
-                    tool_streak, sig[:200],
-                )
-                return (
-                    "Stopped: the model repeated the same tool call(s) "
-                    f"{tool_streak} times in a row (loop protection)."
-                )
-
-            # 4. Execute tool calls
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
             for call in tool_calls:
                 logger.info(f"Executing tool: {call.name} with args {call.arguments}")
                 tool = self.tool_registry.get_tool(call.name)
@@ -1196,7 +855,6 @@ class Orchestrator:
                             logger.exception("on_plan failed")
                     self._pin_todo(context)
 
-<<<<<<< HEAD
 
         return self._finish(
             context,
@@ -1204,6 +862,3 @@ class Orchestrator:
             "max_iterations",
             f"Stopped after {self.max_iterations} iterations.",
         )
-=======
-        return "Reached maximum iterations (loop limit)."
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f

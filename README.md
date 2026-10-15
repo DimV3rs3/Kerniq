@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Kerniq 0.1.3 — Modular Open Source AI Agent Platform
 
 Local-first agent runtime with discovered tool packs, plugins, MCP, CLI, and
@@ -28,14 +27,6 @@ provider returns usage or a context length.
 
 ## Install (no PYTHONPATH needed)
 
-=======
-# Kerniq 0.1.2 — Modular Open Source AI Agent Platform
-
-Local-first agent runtime with tools, plugins, MCP, CLI, and Mock / LM Studio providers.
-
-## Install (no PYTHONPATH needed)
-
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 From the repository root:
 
 ```bash

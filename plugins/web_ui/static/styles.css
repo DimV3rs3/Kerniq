@@ -38,15 +38,10 @@ body.settings-mode .panel-toggles{display:none!important}
 .tree .row:hover,.tree .row.active{background:var(--tab)}
 .tree .twist{width:14px;text-align:center;color:var(--muted);font-size:10px;flex-shrink:0}
 .tabs{display:flex;gap:2px;padding:4px 4px 0;background:var(--panel);border-bottom:1px solid var(--border);overflow-x:auto;flex-shrink:0}
-<<<<<<< HEAD
 .tab{display:flex;gap:6px;align-items:center;padding:6px 8px;background:var(--tab);border-radius:6px 6px 0 0;cursor:pointer;max-width:180px;min-width:88px;flex:0 0 auto}
 .tab .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tab .dirty{width:8px;flex:0 0 8px;text-align:center;color:var(--warn)}
 .tab.active{background:var(--bg)}.tab .x{flex:0 0 16px;width:16px;text-align:center;opacity:.7;padding:0}.tab .x:hover{color:var(--err);opacity:1}
-=======
-.tab{display:flex;gap:6px;align-items:center;padding:6px 10px;background:var(--tab);border-radius:6px 6px 0 0;cursor:pointer;max-width:160px}
-.tab.active{background:var(--bg)}.tab .x{opacity:.5;padding:0 2px}.tab .x:hover{color:var(--err);opacity:1}
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 .editor-toolbar{display:flex;gap:8px;padding:4px 8px;border-bottom:1px solid var(--border);align-items:center;flex-shrink:0}
 .code-wrap{flex:1;display:flex;min-height:0;overflow:hidden;position:relative}
 .line-nums{flex-shrink:0;width:44px;background:var(--panel);border-right:1px solid var(--border);overflow:hidden;padding:12px 8px 12px 0;text-align:right;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.45;color:var(--muted);user-select:none;white-space:pre;box-sizing:border-box}
@@ -57,7 +52,6 @@ body.settings-mode .panel-toggles{display:none!important}
 .chat-hist .h.active,.chat-hist .h:hover{background:var(--tab);color:var(--fg)}
 .chat-hist .h .title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chat-hist .del{color:var(--err);opacity:.7;flex-shrink:0}
-<<<<<<< HEAD
 .msgs-wrap{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
 .msgs{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
 .plan-float{
@@ -108,9 +102,6 @@ body.settings-mode .panel-toggles{display:none!important}
 .pack-row .pname,.tool-sub .tname{flex:1;text-align:left;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tool-sub{padding-left:28px}
 .twist{width:16px;flex:0 0 16px;background:transparent;color:var(--muted);padding:0;font-weight:700}
-=======
-.msgs{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 .msg{padding:8px 10px;border-radius:8px;line-height:1.4;max-width:100%;word-break:break-word}
 .msg.user{background:#1f6feb22;border:1px solid var(--user-border);align-self:stretch}
 .msg.assistant{background:var(--tab);align-self:stretch}
@@ -143,13 +134,9 @@ body.settings-mode .panel-toggles{display:none!important}
 .tool-row .tdesc{color:var(--muted);font-size:11px;margin-left:auto;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .detail-panel{border:1px solid var(--border);border-radius:8px;padding:12px;background:#0d1117;overflow:auto;max-height:360px}
 .detail-panel h3{margin:0 0 8px;font-size:14px}.detail-panel .empty{color:var(--muted);font-size:12px}
-<<<<<<< HEAD
 .settings-actions{position:fixed;left:20px;right:20px;bottom:40px;display:flex;gap:8px;z-index:50;align-items:center;pointer-events:none}
 .settings-actions button,.settings-actions .settings-actions-right{pointer-events:auto}
 .settings-actions .settings-actions-right{margin-left:auto;display:flex;gap:8px}
-=======
-.settings-actions{position:fixed;right:20px;bottom:40px;display:flex;gap:8px;z-index:50}
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f
 .settings-actions button{min-width:100px}
 .hr{border:0;border-top:1px solid var(--border);margin:16px 0}
 .reset-block h3{margin:0 0 8px;font-size:14px}
@@ -622,9 +609,6 @@ a.file-ref { color:#58a6ff; text-decoration:underline; cursor:pointer; }
 .settings-actions{display:flex;align-items:center;gap:8px}
 .danger-stop{color:#f85149!important;border-color:#da3633!important}
 .danger-stop:hover{background:#da363322!important}
-<<<<<<< HEAD
 
 .pack .twist{padding:0 !important;min-width:16px;background:transparent !important;font-size:12px}
 .combo-arrow{padding:0 !important}
-=======
->>>>>>> 40f42b55ff944a9834cde2fa864246295b00a27f

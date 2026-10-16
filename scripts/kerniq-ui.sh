@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Launch Kerniq Web UI in background (Linux/macOS)
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-# Prefer nohup so terminal can close
-if command -v python3 >/dev/null 2>&1; then
+if [ -f "$ROOT/.kerniq/install.json" ] && grep -q '"created_venv": true' "$ROOT/.kerniq/install.json" && [ -x "$ROOT/.venv/bin/python" ]; then
+  PY="$ROOT/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
   PY=python3
 else
   PY=python

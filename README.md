@@ -27,14 +27,41 @@ provider returns usage or a context length.
 
 ## Install
 
-Ready-made scripts live in `scripts/` and do the editable install for you:
+Ready-made scripts live in `scripts/`. Double-click or run one. They do not need Python on `PATH`.
 
 | Platform | Command |
 |----------|---------|
 | Windows | `scripts\install.bat` |
 | Linux, macOS | `bash scripts/install.sh` |
 
-Uninstall without deleting the source tree resets settings, `sessions/`, `logs/`, and `state/` back to a fresh install. `scripts\uninstall.bat` and `bash scripts/uninstall.sh` do that. Deleting the project files as well is a separate, explicit wipe (`kerniq uninstall --wipe-project`) and is not what those scripts do.
+What the script does:
+
+1. If `python`, `python3`, or `py -3.11` (or newer) is already on `PATH`, Kerniq is installed into that interpreter. No virtual environment is created.
+2. If Python is not on `PATH`, the script looks for a local install and, if needed, downloads a private CPython into `.kerniq/runtime`. It then creates `.venv` and installs there. Launchers use that venv.
+3. Install always goes through `python -m pip`, so a missing `pip` command does not matter.
+4. Before installing, it records the packages already present. Uninstall removes only packages that were not there before. Packages you already had stay. A `.venv` is deleted only when this install created it. A downloaded private Python is deleted only when this install downloaded it.
+
+When Python was already on `PATH`:
+
+```bash
+python -m Kerniq plugins ui
+```
+
+When it was not, and a venv was created:
+
+```bash
+.venv\Scripts\python.exe -m Kerniq plugins ui
+.kerniq\kerniq.cmd plugins ui
+```
+
+```bash
+.venv/bin/python -m Kerniq plugins ui
+.kerniq/kerniq plugins ui
+```
+
+Uninstall (`scripts\uninstall.bat`, `bash scripts/uninstall.sh`) resets settings, `sessions/`, `logs/`, and `state/`, then removes only the packages this install added. Deleting the project files as well is a separate wipe (`uninstall.bat --wipe-project`).
+
+The same scan runs again when a plugin or tool pack is loaded or installed, so you do not pip-install its libraries by hand. Shell commands inside the agent workspace use a private `.kerniq-venv` created in that workspace. That interpreter is not the host Python and not a project `.venv`. Docker is not required.
 
 From the repository root you can also install by hand:
 

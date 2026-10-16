@@ -9,12 +9,17 @@ class ToolRegistry:
         self._tools_by_id: Dict[str, Tool] = {}
         self._tools_by_name: Dict[str, Tool] = {}
 
-    def register_tool(self, tool: Tool):
-        if tool.tool_id in self._tools_by_id:
-            raise ValueError(f"Tool with id {tool.tool_id} is already registered")
-        if tool.name in self._tools_by_name:
-            raise ValueError(f"Tool with name {tool.name} is already registered")
-            
+    def register_tool(self, tool: Tool, replace: bool = False):
+        existing = self._tools_by_id.get(tool.tool_id)
+        if existing is not None or tool.name in self._tools_by_name:
+            if not replace:
+                if tool.tool_id in self._tools_by_id:
+                    raise ValueError(f"Tool with id {tool.tool_id} is already registered")
+                raise ValueError(f"Tool with name {tool.name} is already registered")
+            old = self._tools_by_id.pop(tool.tool_id, None)
+            if old is not None:
+                self._tools_by_name.pop(old.name, None)
+            self._tools_by_name.pop(tool.name, None)
         self._tools_by_id[tool.tool_id] = tool
         self._tools_by_name[tool.name] = tool
         logger.info(f"Registered tool: {tool.name} (id: {tool.tool_id})")

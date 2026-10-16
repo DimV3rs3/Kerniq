@@ -35,6 +35,12 @@ def _scrub_env(workspace: Path) -> dict:
         if any(marker in upper for marker in _SECRET_MARKERS):
             env.pop(key, None)
     env["KERNIQ_WORKSPACE"] = str(workspace)
+    try:
+        from Kerniq.sandbox.venv import apply_sandbox_env
+
+        env = apply_sandbox_env(env, workspace)
+    except Exception as exc:
+        logger.warning("Sandbox env was not applied: %s", exc)
     return env
 
 
@@ -55,6 +61,8 @@ class TerminalTools(Tool):
     def description(self) -> str:
         return (
             "Run a shell command in the workspace. "
+            "python and pip in this shell are the workspace sandbox .kerniq-venv, "
+            "not the host interpreter and not a project .venv. Do not use Docker for Python tests. "
             "Absolute paths, UNC paths, '..', encoded PowerShell, and network utilities are denied. "
             "On Windows this is PowerShell (not cmd). On Linux/macOS this is bash/sh. "
             "Examples (Windows): Get-Date; Get-ChildItem . Examples (Unix): date; ls -la."
@@ -171,7 +179,7 @@ class TerminalTools(Tool):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd_abs),
-            env=_scrub_env(cwd_abs),
+            env=_scrub_env(self._workspace_root),
         )
         if sys.platform == "win32":
             # Prevent interactive hangs from inheriting console input (e.g. bare `date`)

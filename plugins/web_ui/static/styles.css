@@ -58,7 +58,7 @@ body.settings-mode .panel-toggles{display:none!important}
 .msgs{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
 .plan-float{
   position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:6;
-  width:min(92%,440px);background:#241c0ccc;border:1px solid var(--warn);border-radius:10px;
+  width:440px;max-width:none;background:#241c0ccc;border:1px solid var(--warn);border-radius:10px;
   box-shadow:0 0 0 1px #d2992266,0 10px 28px #000a,0 0 18px #d2992244;
 }
 .plan-float[hidden]{display:none}
@@ -66,12 +66,22 @@ body.settings-mode .panel-toggles{display:none!important}
 .plan-head:hover,
 .plan-head:focus{
   display:flex;width:100%;justify-content:space-between;align-items:center;
+  min-height:32px;box-sizing:border-box;
   background:transparent !important;color:var(--warn);font-weight:700;padding:6px 10px;
   border:0 !important;border-radius:10px;box-shadow:none !important;
 }
-.plan-chevron{font-size:16px;line-height:1}
-.plan-float.collapsed .plan-body{display:none}
-.plan-body{padding:0 8px 8px;max-height:180px;overflow:auto}
+.plan-chevron{
+  width:8px;height:8px;flex:0 0 8px;display:inline-block;
+  border-right:2px solid currentColor;border-bottom:2px solid currentColor;
+  transform:rotate(-135deg);margin-right:2px;
+  transition:transform .25s ease-in-out;
+}
+.plan-float.collapsed .plan-chevron{transform:rotate(45deg)}
+.plan-body{
+  padding:0 8px 8px;max-height:180px;overflow:auto;
+  transition:max-height .28s ease-in-out, opacity .28s ease-in-out, padding .28s ease-in-out;
+}
+.plan-float.collapsed .plan-body{max-height:0;opacity:0;padding-top:0;padding-bottom:0;overflow:hidden}
 .plan-item{display:flex;gap:8px;align-items:flex-start;padding:3px 4px;font-size:12px;text-align:left;pointer-events:none;user-select:text}
 .plan-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--err);background:transparent;flex-shrink:0;margin-top:1px;box-sizing:border-box;pointer-events:none}
 .plan-item.pending .plan-dot{border-color:#6e7681;background:transparent}
@@ -375,10 +385,11 @@ body.resizing-panels #chat-panel {
 #chat-panel > .status-bar,
 #chat-panel > .composer,
 #chat-panel > #attach-chips {
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
+  width: var(--panel-w, 360px);
+  min-width: var(--panel-w, 360px);
+  max-width: var(--panel-w, 360px);
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 #chat-panel > h3 { flex-shrink: 0; }
 #chat-panel h3 .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -390,10 +401,11 @@ body.resizing-panels #chat-panel {
 }
 #explorer > h3,
 #explorer > .tree {
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
+  width: var(--panel-w, 280px);
+  min-width: var(--panel-w, 280px);
+  max-width: var(--panel-w, 280px);
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 /* soft radio (same look as soft-check) */
 input[type=radio].soft-check {
@@ -498,7 +510,13 @@ input[type=radio].soft-check:checked {
   align-self: flex-start !important;
   max-width: 100%;
 }
-.msg.tool .tool-ico { margin-right: 4px; }
+.msg.tool, .msg.tool_agg{
+  padding:1px 2px;margin:0;line-height:1.2;background:transparent;border-radius:0;
+}
+.msg.tool + .msg.tool,
+.msg.tool + .msg.tool_agg,
+.msg.tool_agg + .msg.tool,
+.msg.tool_agg + .msg.tool_agg{margin-top:-6px}
 select#s-chat-lang {
   min-height: 32px;
   background: #21262d !important;
@@ -682,11 +700,20 @@ select.fit,#s-auto-approve,#s-chat-lang,#s-provider{width:auto;min-width:12rem;m
   border:1px solid #f85149;background:#3d1214;color:#ffd7d5;border-radius:8px;padding:8px 10px;
 }
 .msg.error-card .err-detail{margin:6px 0 0;white-space:pre-wrap;color:#ffb4b0;font-size:11px}
+body.run-locked #view-settings .settings-layout,
+body.run-locked #view-settings .settings-main,
+body.run-locked #view-settings nav,
 body.run-locked #view-settings input,
 body.run-locked #view-settings select,
 body.run-locked #view-settings textarea,
-body.run-locked #view-settings button{
-  pointer-events:none;opacity:.55;
+body.run-locked #view-settings button,
+body.run-locked #view-settings label{
+  pointer-events:none;
+}
+body.run-locked #view-settings input,
+body.run-locked #view-settings select,
+body.run-locked #view-settings textarea{
+  opacity:.55;
 }
 .danger-stop{color:#f85149!important;border-color:#da3633!important}
 .danger-stop:hover{background:#da363322!important}

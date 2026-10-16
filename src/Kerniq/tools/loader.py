@@ -15,7 +15,24 @@ from ..interfaces.tools import Tool
 logger = logging.getLogger(__name__)
 
 
+def _ensure_deps(path: Path) -> None:
+    try:
+        from Kerniq.sandbox.deps import ensure_project_deps
+
+        ensure_project_deps(path)
+    except Exception as exc:
+        logger.warning("Dependency install for %s failed: %s", path, exc)
+
+
 def _load_pack_class(module_name: str) -> Optional[Type[ToolPack]]:
+    try:
+        import Kerniq.tools.packs as packs_pkg
+
+        pack_dir = Path(list(packs_pkg.__path__)[0]) / module_name.rsplit(".", 1)[-1]
+        if pack_dir.is_dir():
+            _ensure_deps(pack_dir)
+    except Exception as exc:
+        logger.warning("Could not scan tool pack %s: %s", module_name, exc)
     try:
         mod = importlib.import_module(module_name)
     except Exception as e:
@@ -64,6 +81,7 @@ def discover_pack_classes(extra_dirs: Optional[Sequence[Path]] = None) -> List[T
         for child in sorted(d.iterdir()):
             if not child.is_dir() or not (child / "__init__.py").exists():
                 continue
+            _ensure_deps(child)
             # load via path
             try:
                 import importlib.util

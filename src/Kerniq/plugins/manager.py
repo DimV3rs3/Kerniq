@@ -107,6 +107,12 @@ class PluginManager:
                 return
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
+            try:
+                from Kerniq.sandbox.deps import ensure_project_deps
+
+                ensure_project_deps(plugin_path)
+            except Exception as dep_error:
+                logger.warning("Dependency install for %s failed: %s", pid, dep_error)
             spec.loader.exec_module(module)
 
             # Prefer PluginImpl; fall back to first Plugin subclass

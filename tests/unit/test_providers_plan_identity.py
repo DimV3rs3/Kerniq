@@ -323,3 +323,40 @@ def test_chat_payload_keeps_a_single_leading_system_message():
     same = LMStudioProvider(base_url="http://127.0.0.1:1234")._to_openai_messages(messages)
     assert [row["role"] for row in same] == ["system", "user", "assistant"]
     assert same[0]["content"] == rows[0]["content"]
+
+
+def test_numeric_plan_ids_are_sorted():
+    from Kerniq.tools.packs.plan.tools import merge_plan
+    scrambled = [
+        {"id": "1", "title": "a", "status": "pending"},
+        {"id": "2", "title": "b", "status": "pending"},
+        {"id": "9", "title": "i", "status": "pending"},
+        {"id": "7", "title": "g", "status": "pending"},
+        {"id": "6", "title": "f", "status": "pending"},
+        {"id": "5", "title": "e", "status": "pending"},
+        {"id": "3", "title": "c", "status": "pending"},
+        {"id": "8", "title": "h", "status": "pending"},
+        {"id": "4", "title": "d", "status": "pending"},
+    ]
+    ordered = merge_plan([], scrambled)
+    assert [item["id"] for item in ordered] == ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+
+def test_compact_budget_uses_half_the_window_not_1200():
+    import importlib.util
+    path = Path(__file__).resolve().parents[2] / "plugins" / "context_compact" / "main.py"
+    spec = importlib.util.spec_from_file_location("context_compact_budget", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    plugin = mod.PluginImpl()
+    plugin.cfg_context_limit = 262144
+    plugin.cfg_trigger_percent = 75
+    plugin.cfg_target_percent = 50
+    plugin.cfg_target_mode = "percent"
+    assert plugin.trigger_tokens() == int(262144 * 75 / 100)
+    assert plugin.target_tokens() == int(262144 * 50 / 100)
+    assert plugin.summary_token_budget(20_000) > 1200
+    short = [Message(role=MessageRole.USER, content="x" * (20_000 * 4))]
+    assert plugin.needs_compact(short) is False
+    plugin.cfg_context_limit = 0
+    assert plugin.needs_compact(short) is False

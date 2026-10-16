@@ -321,9 +321,19 @@ class InstallPluginTool(Tool):
             )
 
         has_manifest = (dest / "manifest.toml").exists()
+        dep_line = ""
+        try:
+            from Kerniq.sandbox.deps import ensure_project_deps
+
+            added = ensure_project_deps(dest, enabled=True)
+            if added:
+                dep_line = "installed packages: " + ", ".join(added) + "\n"
+        except Exception as dep_error:
+            dep_line = f"dependency install failed: {dep_error}\n"
         msg = (
             f"Installed {owner}/{repo}@{ref} → {dest}\n"
             f"manifest.toml: {'yes' if has_manifest else 'MISSING'}\n"
+            f"{dep_line}"
             f"security risk: {scan['risk']} ({len(scan.get('findings', []))} findings)\n"
             f"content sha256 prefix: {sha}"
         )

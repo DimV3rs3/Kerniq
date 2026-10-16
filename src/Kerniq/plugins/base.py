@@ -17,7 +17,18 @@ class PluginContext:
         self.tool_registry = tool_registry
 
     def register_tool(self, tool):
-        self.tool_registry.register_tool(tool)
+        """Plugins call this from initialize() to add their own tools.
+
+        A plugin tool replaces an older registration with the same id, so a
+        plugin can ship a tool without a manual edit of the core registry.
+        """
+        register = getattr(self.tool_registry, "register_tool", None)
+        if register is None:
+            return
+        try:
+            register(tool, replace=True)
+        except TypeError:
+            register(tool)
 
 
 class Plugin(ABC):

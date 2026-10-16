@@ -159,22 +159,53 @@ class Orchestrator:
             + ("\n".join(open_lines) or "- (none)")
             + "\nDone items stay on the list. Do not delete them and do not redo them:\n"
             + ("\n".join(done_lines) or "- (none)")
+            + "\n[/Pinned TODO]"
         )
+
+    def _strip_pinned_todo(self, text: str) -> str:
+        mark = "[Pinned TODO."
+        end = "[/Pinned TODO]"
+        raw = text or ""
+        while raw.startswith(mark):
+            at = raw.find(end)
+            if at < 0:
+                break
+            raw = raw[at + len(end):].lstrip("\n")
+        return raw
 
     def _pin_todo(self, context: TaskContext) -> None:
         note = self._todo_note(context)
         mark = "[Pinned TODO."
-        kept = [
-            m for m in context.messages
-            if not (m.role == MessageRole.SYSTEM and (m.content or "").startswith(mark))
-        ]
+        kept = []
+        for message in context.messages:
+            if message.role == MessageRole.SYSTEM and (message.content or "").startswith(mark):
+                continue
+            if message.role == MessageRole.SYSTEM and mark in (message.content or ""):
+                message.content = self._strip_pinned_todo(message.content or "")
+            kept.append(message)
         if not note:
             context.messages = kept
             return
-        pin = Message(role=MessageRole.SYSTEM, content=note)
-        insert_at = 1 if kept and kept[0].role == MessageRole.SYSTEM else 0
-        kept.insert(insert_at, pin)
+        if kept and kept[0].role == MessageRole.SYSTEM:
+            body = self._strip_pinned_todo(kept[0].content or "")
+            kept[0].content = note + "\n\n" + body
+        else:
+            kept.insert(0, Message(role=MessageRole.SYSTEM, content=note))
         context.messages = kept
+
+    def _stop_requested(self, context: TaskContext) -> bool:
+        if getattr(context, "cancelled", False):
+            return True
+        check = getattr(self, "cancel_check", None)
+        if not callable(check):
+            return False
+        try:
+            if check():
+                context.cancelled = True
+                return True
+        except Exception:
+            logger.exception("Cancel check failed")
+        return False
 
     _TRUNC_MARK = "[Context truncated to fit the model window."
     _EMPTY_NUDGE = "Your last reply was empty. Provide a final answer or call a different tool."
@@ -475,11 +506,12 @@ class Orchestrator:
         assistant_history: list = []
         ctx_limit = int(getattr(self, "context_limit", 0) or 0) or int(
             (context.metadata or {}).get("context_limit") or 0
-        ) or 32768
-        # Leave room for model reply; never use a tiny budget that nukes history.
-        # 32768 is an estimate when the provider does not report a window.
-        context.metadata.setdefault("context_limit_estimate", ctx_limit)
-        input_budget = max(4096, int(ctx_limit * 0.85))
+        )
+        context.metadata["context_limit_estimate"] = ctx_limit
+        if ctx_limit > 0:
+            input_budget = max(4096, int(ctx_limit * 0.85))
+        else:
+            input_budget = 10**9
         mode_name = str((context.metadata or {}).get("agent_mode") or "act")
         context.metadata["iterations_used"] = 0
         logger.info(
@@ -489,7 +521,7 @@ class Orchestrator:
         )
 
         while iteration < self.max_iterations:
-            if getattr(context, "cancelled", False):
+            if getattr(context, "cancelled", False) or self._stop_requested(context):
                 logger.info("Orchestration cancelled")
                 return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
             # Compaction may call the model, but it is bookkeeping and must not spend an iteration.
@@ -715,6 +747,9 @@ class Orchestrator:
                 )
 
             for call in tool_calls:
+                if self._stop_requested(context):
+                    logger.info("Stop requested before the next tool")
+                    return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
                 logger.info(f"Executing tool: {call.name} with args {call.arguments}")
                 tool = self.tool_registry.get_tool(call.name)
                 schema = tool.input_schema if tool is not None else None

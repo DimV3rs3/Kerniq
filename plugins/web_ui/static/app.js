@@ -271,22 +271,16 @@ const MAX_CHATS = 3;
 let running = false;
 function setRunLock(on) {
   document.body.classList.toggle('run-locked', !!on);
-  const ids = [
-    's-workspace','s-max-iter','s-timeout','s-timeout-unit','s-loop-retries',
-    's-provider','s-base-url','s-api-token','s-api-temp','s-api-max-tokens',
-    's-model','s-act-model','s-split-models','s-system','s-include-tools',
-    's-chat-streaming','s-chat-reasoning','s-chat-empty','s-chat-debug',
-    's-chat-fileops','s-chat-agg','s-mode-auto','s-compose-plan','s-auto-act',
-    's-auto-approve','s-chat-lang','provider-blurb','btn-stop-ui','btn-settings-reset'
-  ];
-  ids.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.disabled = !!on;
+  document.querySelectorAll('#view-settings input, #view-settings select, #view-settings textarea, #view-settings button').forEach(el => {
+    if (on) {
+      if (el.dataset.lockPrev == null) el.dataset.lockPrev = el.disabled ? '1' : '0';
+      el.disabled = true;
+    } else if (el.dataset.lockPrev != null) {
+      el.disabled = el.dataset.lockPrev === '1';
+      delete el.dataset.lockPrev;
+    }
   });
-  document.querySelectorAll('#tab-tools input, #tab-tools button, #tab-plugins input, #tab-plugins select, #tab-plugins button').forEach(el => {
-    if (el.id === 'btn-settings-save' || el.id === 'btn-settings-cancel') return;
-    el.disabled = !!on;
-  });
+  if (!on && typeof syncSettingLocks === 'function') syncSettingLocks();
 }
 let currentRunId = null;
 let streamingEnabled = true;
@@ -2111,7 +2105,7 @@ function renderPlan() {
   if (title) title.textContent = finished ? t('planCompleted') : t('planTitle');
   const collapsed = planCollapsed();
   box.classList.toggle('collapsed', collapsed);
-  if (chev) chev.textContent = collapsed ? '⌄' : '⌃';
+  if (chev) chev.textContent = '';
   body.innerHTML = '';
   shown.forEach(raw => {
     const row = document.createElement('div');
@@ -2328,7 +2322,7 @@ async function refreshModelFooter() {
 
 /* settings */
 function markSettingsDirty() {
-  if (settingsHydrating) return;
+  if (settingsHydrating || document.body.classList.contains('run-locked')) return;
   settingsDirty = true;
   const save = document.getElementById('btn-settings-save');
   const cancel = document.getElementById('btn-settings-cancel');
@@ -2388,7 +2382,11 @@ function bindSettingsDirty() {
   if (!root || root.dataset.dirtyDelegated) return;
   root.dataset.dirtyDelegated = '1';
   const onEdit = (ev) => {
-    if (settingsHydrating) return;
+    if (settingsHydrating || document.body.classList.contains('run-locked')) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
     const node = ev.target;
     if (!node || !node.closest) return;
     if (node.id === 's-show-hidden-plugins') return;
@@ -3615,14 +3613,23 @@ if (scrollBtn) {
     stickToBottom = true;
     updateScrollBtn();
     programmaticScroll = true;
-    try { el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }
-    catch (_) { el.scrollTop = el.scrollHeight; }
-    setTimeout(() => {
+    const top = el.scrollHeight;
+    try { el.scrollTo({ top: top, behavior: 'smooth' }); }
+    catch (_) { el.scrollTop = top; }
+    const finish = () => {
+      if (!nearBottom(el)) return;
       programmaticScroll = false;
       stickToBottom = true;
-      el.scrollTop = el.scrollHeight;
       updateScrollBtn();
-    }, 450);
+      el.removeEventListener('scroll', finish);
+    };
+    el.addEventListener('scroll', finish);
+    setTimeout(() => {
+      el.removeEventListener('scroll', finish);
+      programmaticScroll = false;
+      stickToBottom = nearBottom(el);
+      updateScrollBtn();
+    }, 900);
   };
 }
 

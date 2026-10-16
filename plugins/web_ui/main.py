@@ -1367,7 +1367,6 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         compactor = pm.plugins.get("plugin_context_compact")
         if compactor is not None:
             agent.orchestrator.compactor = compactor
-            agent.orchestrator.compactor.cfg_context_limit = 0
     except Exception:
         logger.exception("plugin load during chat run failed")
     if ui.agent.max_iterations is not None:
@@ -1383,27 +1382,32 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     try:
         models = await provider.list_models() if hasattr(provider, "list_models") else []
         want = (ui.api.model or "").strip()
+        loaded_fallback = 0
         for m in models or []:
+            mid = str(m.get("id") or m.get("key") or "")
+            if "embed" in mid.lower():
+                continue
             lim = (
                 m.get("loaded_context_length")
                 or m.get("context_length")
                 or m.get("max_context_length")
                 or m.get("context")
             )
+            if m.get("loaded_context_length"):
+                loaded_fallback = int(m["loaded_context_length"])
             if not lim:
                 continue
-            mid = str(m.get("id") or m.get("key") or "")
             if want and (mid == want or want in mid or mid in want):
                 ctx_lim = int(lim)
                 break
-            if not ctx_lim:
-                ctx_lim = int(lim)
+        if not ctx_lim and loaded_fallback:
+            ctx_lim = loaded_fallback
     except Exception:
         pass
-    agent.orchestrator.context_limit = ctx_lim or 32768
+    agent.orchestrator.context_limit = int(ctx_lim or 0)
     compactor = getattr(agent.orchestrator, "compactor", None)
     if compactor is not None:
-        compactor.cfg_context_limit = ctx_lim or getattr(compactor, "cfg_max_tokens", 0) or 0
+        compactor.cfg_context_limit = int(ctx_lim or 0)
     retries = int(getattr(ui.agent, "loop_retries", None) or 4)
     agent.orchestrator.max_content_loop_hits = max(1, retries)
     agent.orchestrator.max_identical_tool_streak = max(2, retries)
@@ -1415,8 +1419,20 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         with STATE.runs_lock:
             return bool(STATE.runs.get(run_id, {}).get("cancelled"))
 
+    agent.orchestrator.cancel_check = _is_cancelled
+
     async def generate_with_status(request):
         if (request.metadata or {}).get("kerniq_internal"):
+            if request.metadata is None:
+                request.metadata = {}
+            request.metadata["cancel_check"] = _is_cancelled
+            if _is_cancelled():
+                from Kerniq.interfaces.models import ModelResponse, Message, MessageRole
+                return ModelResponse(
+                    messages=[Message(role=MessageRole.ASSISTANT, content="")],
+                    finish_reason="cancelled",
+                    metadata={"cancelled": True},
+                )
             return await orig_generate(request)
         if _is_cancelled():
             from Kerniq.interfaces.models import ModelResponse, Message, MessageRole

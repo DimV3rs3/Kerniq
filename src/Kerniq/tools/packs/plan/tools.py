@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from ....interfaces.tools import Tool, ToolResult
@@ -91,6 +92,25 @@ def _single_active(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return items
 
 
+def _numeric_id(item_id: str):
+    text = str(item_id or "").strip()
+    if text.isdigit():
+        return int(text)
+    match = re.fullmatch(r"(?:step|item|todo)[-_ ]?(\d+)", text, flags=re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _order_numeric(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """If every id is numeric, show 1,2,3 rather than the order the model typed."""
+    ranks = [_numeric_id(item["id"]) for item in items]
+    if not ranks or any(rank is None for rank in ranks):
+        return items
+    paired = sorted(enumerate(items), key=lambda pair: (ranks[pair[0]], pair[0]))
+    return [item for _index, item in paired]
+
+
 def merge_plan(previous: Any, incoming: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """Keep every existing item. New items may be inserted only from the current one down.
 
@@ -103,7 +123,7 @@ def merge_plan(previous: Any, incoming: List[Dict[str, str]]) -> List[Dict[str, 
     prior = normalize_plan_items(previous)
     fresh = normalize_plan_items(incoming)
     if not prior:
-        return _single_active(fresh)
+        return _single_active(_order_numeric(fresh))
     by_id = {item["id"]: dict(item) for item in prior}
     for item in fresh:
         current = by_id.get(item["id"])
@@ -128,12 +148,17 @@ def merge_plan(previous: Any, incoming: List[Dict[str, str]]) -> List[Dict[str, 
         item_id = item["id"]
         if item_id in known:
             continue
-        try:
-            at = incoming_ids.index(item_id)
-        except ValueError:
-            at = len(incoming_ids)
-        anchor = next((later for later in incoming_ids[at + 1 :] if later in known), None)
-        pos = order.index(anchor) if anchor is not None else len(order)
+        rank = _numeric_id(item_id)
+        order_ranks = [_numeric_id(existing) for existing in order]
+        if rank is not None and order_ranks and all(item is not None for item in order_ranks):
+            pos = sum(1 for existing in order_ranks if existing < rank)
+        else:
+            try:
+                at = incoming_ids.index(item_id)
+            except ValueError:
+                at = len(incoming_ids)
+            anchor = next((later for later in incoming_ids[at + 1 :] if later in known), None)
+            pos = order.index(anchor) if anchor is not None else len(order)
         if pos < min_pos:
             pos = min_pos
         order.insert(pos, item_id)

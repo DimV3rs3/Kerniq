@@ -1,5 +1,9 @@
+import asyncio
+import contextlib
 import json
 import logging
+from pathlib import Path
+import tomllib
 from typing import Any, Optional
 from .context import TaskContext
 from ..interfaces.models import ModelRequest, ModelResponse, Message, MessageRole, GenerationOptions
@@ -12,6 +16,26 @@ from ..security.task_scope import use_task
 from .verifier import Verifier, is_unverified
 
 logger = logging.getLogger(__name__)
+
+
+class _RunStopped(Exception):
+    """User stop aborted the current model call or tool."""
+
+
+def _spec_name(spec) -> str:
+    if not isinstance(spec, dict):
+        return ""
+    fn = spec.get("function") if isinstance(spec.get("function"), dict) else None
+    if fn and fn.get("name"):
+        return str(fn.get("name"))
+    return str(spec.get("name") or "")
+
+
+def _plan_status_blocks(status: object) -> bool:
+    """Pending, active, and frozen hold the run. Failed is a recorded miss."""
+    text = str(status or "pending").strip().lower().replace(" ", "_")
+    return text not in ("done", "skipped", "failed", "complete", "completed", "skip", "cancelled", "canceled")
+
 
 class Orchestrator:
     def __init__(self, provider: ModelProvider, tool_registry: ToolRegistry, 
@@ -35,6 +59,7 @@ class Orchestrator:
         self.compactor = None
         self.on_progress = None
         self.on_plan = None
+        self.require_plan = True
 
 
     @staticmethod
@@ -104,12 +129,11 @@ class Orchestrator:
             return False
         mode = str((context.metadata or {}).get("agent_mode") or "act")
         raw = (context.metadata or {}).get("plan") or []
-        archive = (context.metadata or {}).get("plan_archive") or []
         if not isinstance(raw, list):
             raw = []
         open_items = [
             item for item in raw
-            if isinstance(item, dict) and str(item.get("status") or "") not in ("done", "skipped")
+            if isinstance(item, dict) and _plan_status_blocks(item.get("status"))
         ]
         if mode == "plan":
             # Plan mode's own TODO is the research checklist. It must be closed
@@ -119,7 +143,8 @@ class Orchestrator:
             return bool(open_items)
         if open_items:
             return True
-        if not raw and not archive:
+        # An inherited archive is finished research, not this run's TODO.
+        if not raw:
             return continuations < 2
         return False
 
@@ -131,6 +156,7 @@ class Orchestrator:
         if not isinstance(archive, list):
             archive = []
         open_lines = []
+        failed_lines = []
         done_ids = set()
         done_lines = []
         for item in archive:
@@ -145,18 +171,25 @@ class Orchestrator:
                 continue
             title = str(item.get("title") or "").strip()
             status = str(item.get("status") or "pending")
+            if status == "failed":
+                if title:
+                    failed_lines.append(f"- {title}")
+                continue
             if status in ("done", "skipped"):
                 if str(item.get("id") or "") not in done_ids and title:
                     done_lines.append(f"- [{status}] {title}")
                 continue
             if title:
                 open_lines.append(f"- [{status}] {title}")
-        if not open_lines and not done_lines:
+        if not open_lines and not done_lines and not failed_lines:
             return ""
         return (
-            "[Pinned TODO. This survives compaction. Do not drop it and do not redo archived items.]\n"
-            "Open (pending, active, frozen, and failed all block the end):\n"
+            "[Pinned TODO. This survives compaction. Archived items are already done. "
+            "Do not redo them and do not put them back on the live list.]\n"
+            "Open (pending, active, and frozen block the end):\n"
             + ("\n".join(open_lines) or "- (none)")
+            + "\nFailed (recorded, do not repeat the same attempt, does not block the end):\n"
+            + ("\n".join(failed_lines) or "- (none)")
             + "\nDone items stay on the list. Do not delete them and do not redo them:\n"
             + ("\n".join(done_lines) or "- (none)")
             + "\n[/Pinned TODO]"
@@ -174,24 +207,76 @@ class Orchestrator:
         return raw
 
     def _pin_todo(self, context: TaskContext) -> None:
+        """Refresh the leading TODO without dropping the system prompt.
+
+        The pin is prepended to the first system message. The next turn that
+        message starts with the pin, so it must be stripped and kept. Dropping
+        every message that starts with the pin throws away the prompt.
+        """
         note = self._todo_note(context)
         mark = "[Pinned TODO."
         kept = []
         for message in context.messages:
-            if message.role == MessageRole.SYSTEM and (message.content or "").startswith(mark):
-                continue
             if message.role == MessageRole.SYSTEM and mark in (message.content or ""):
-                message.content = self._strip_pinned_todo(message.content or "")
+                body = self._strip_pinned_todo(message.content or "").strip()
+                if not body:
+                    continue
+                message.content = body
             kept.append(message)
         if not note:
             context.messages = kept
+            self._pin_tool_gate(context)
             return
         if kept and kept[0].role == MessageRole.SYSTEM:
-            body = self._strip_pinned_todo(kept[0].content or "")
-            kept[0].content = note + "\n\n" + body
+            body = self._strip_pinned_todo(kept[0].content or "").strip()
+            kept[0].content = note + "\n\n" + body if body else note
         else:
             kept.insert(0, Message(role=MessageRole.SYSTEM, content=note))
         context.messages = kept
+        self._pin_tool_gate(context)
+
+    def _offered_tool_names(self, context: TaskContext) -> set:
+        names = set()
+        for spec in self._tools_for_mode(context):
+            name = _spec_name(spec)
+            if name:
+                names.add(name)
+        return names
+
+    def _pin_tool_gate(self, context: TaskContext) -> None:
+        """The system text must match the tools actually sent this turn.
+
+        The operator prompt and the tool catalog otherwise list every tool,
+        and the first request looks fully unlocked.
+        """
+        import re
+
+        if not self.finish_open_plan:
+            return
+        names = []
+        for spec in self._tools_for_mode(context):
+            name = _spec_name(spec)
+            if name and name not in names:
+                names.append(name)
+        if self._todo_missing(context):
+            line = (
+                "[Tools this turn: update_plan only. "
+                "Do not call list_directory, read_file, search_code, web_search, fetch_url, "
+                "run_command, or any other tool. "
+                "This overrides the operator prompt and the tool catalog.]"
+            )
+        else:
+            shown = ", ".join(names) if names else "none"
+            line = f"[Tools this turn: {shown}.]"
+        gate = re.compile(r"\n*\[Tools this turn:.*?\]", re.S)
+        for message in context.messages:
+            if message.role == MessageRole.SYSTEM:
+                message.content = gate.sub("", message.content or "").strip()
+        if context.messages and context.messages[0].role == MessageRole.SYSTEM:
+            body = (context.messages[0].content or "").strip()
+            context.messages[0].content = (body + "\n\n" + line) if body else line
+        else:
+            context.messages.insert(0, Message(role=MessageRole.SYSTEM, content=line))
 
     def _stop_requested(self, context: TaskContext) -> bool:
         if getattr(context, "cancelled", False):
@@ -206,6 +291,35 @@ class Orchestrator:
         except Exception:
             logger.exception("Cancel check failed")
         return False
+
+    async def _await_or_stop(self, coro, context: TaskContext):
+        """Run `coro` until it finishes or the user hits Stop.
+
+        Cancel is checked several times a second, not only between iterations,
+        so a blocked model call or tool does not ignore Stop. If the call
+        swallows cancellation (a stuck socket), the run still ends: the UI
+        must not sit on "Stopping…" until the provider timeout.
+        """
+        task = asyncio.create_task(coro)
+        try:
+            while not task.done():
+                if self._stop_requested(context):
+                    task.cancel()
+                    try:
+                        await asyncio.wait_for(task, 1.5)
+                    except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                        pass
+                    if not task.done():
+                        logger.warning("Stop: in-flight call did not exit within 1.5s; abandoning it")
+                    raise _RunStopped()
+                await asyncio.sleep(0.2)
+            return task.result()
+        except asyncio.CancelledError:
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                    await asyncio.wait_for(task, 1.5)
+            raise
 
     _TRUNC_MARK = "[Context truncated to fit the model window."
     _EMPTY_NUDGE = "Your last reply was empty. Provide a final answer or call a different tool."
@@ -296,7 +410,25 @@ class Orchestrator:
             if m.role == MessageRole.TOOL and m.content and len(m.content) > 12000:
                 m.content = m.content[:12000] + "\n…[tool output truncated]"
 
-        return kept_systems + pinned + kept
+        kept = kept_systems + pinned + kept
+        trimmed = len(kept) < len(messages)
+        if trimmed:
+            note = (
+                "[Context trimmed. The compaction plugin is off or did not run, "
+                "so older turns were dropped. The TODO and the latest turns were kept.]"
+            )
+            if not any((m.content or "").startswith("[Context trimmed.") for m in kept):
+                kept = [Message(role=MessageRole.SYSTEM, content=note)] + kept
+            self._notify(
+                "trimmed",
+                "Context trimmed. Older turns were dropped. The latest turns were kept.",
+            )
+        return kept
+
+    @staticmethod
+    def _is_context_overflow(exc: BaseException) -> bool:
+        from Kerniq.core.runtime_flow import is_context_overflow
+        return is_context_overflow(exc)
 
     def _sanitize_for_provider(self, messages):
         """Make history valid for strict chat templates (Mistral/Gemma/etc.).
@@ -372,6 +504,27 @@ class Orchestrator:
             content=self._EMPTY_NUDGE,
         ))
 
+    def _needs_plan_draft(self, context: TaskContext) -> bool:
+        """Plan may not hand off until the research itself is in the transcript."""
+        if str((context.metadata or {}).get("agent_mode") or "") != "plan":
+            return False
+        if not (context.metadata or {}).get("plan_handoff"):
+            return False
+        for message in context.messages:
+            text = message.content or ""
+            if "===ACT_DRAFT===" in text and "===END_DRAFT===" in text:
+                return False
+        return True
+
+    def _notify(self, kind: str, text: str) -> None:
+        cb = getattr(self, "on_notice", None)
+        if not callable(cb):
+            return
+        try:
+            cb(kind, text)
+        except Exception:
+            logger.exception("Notice callback failed")
+
     def _user_note(self, context: TaskContext, text: str) -> None:
         """Feedback the model must see. Mid-loop system messages are stripped."""
         context.add_message(Message(role=MessageRole.USER, content=text))
@@ -391,7 +544,7 @@ class Orchestrator:
             context.metadata["outcome_detail"] = detail
         self._checkpoint(context)
         text = content or ""
-        if outcome != "verified":
+        if outcome not in ("verified", "cancelled"):
             note = f"[kerniq] outcome={outcome}"
             if detail:
                 note += f" — {detail}"
@@ -399,15 +552,38 @@ class Orchestrator:
                 text = (text.rstrip() + "\n\n" + note).strip()
         return text
 
+    def _todo_missing(self, context: TaskContext) -> bool:
+        raw = (context.metadata or {}).get("plan") or []
+        if not isinstance(raw, list):
+            return True
+        return not any(
+            isinstance(item, dict) and str(item.get("title") or item.get("text") or "").strip()
+            for item in raw
+        )
+
     def _tools_for_mode(self, context: TaskContext):
         specs = self.tool_registry.get_tools_for_model()
+        # When a TODO exists with open items, only update_plan may be offered.
+        raw = (context.metadata or {}).get("plan") or []
+        if not isinstance(raw, list):
+            raw = []
+        has_open = any(
+            isinstance(item, dict)
+            and str(item.get("title") or item.get("text") or "").strip()
+            and str(item.get("status") or "pending") in ("pending", "active", "frozen")
+            for item in raw
+        )
+        if has_open:
+            return [spec for spec in specs if _spec_name(spec) == "update_plan"]
+        # If there is no TODO yet, only the update_plan tool may be offered.
+        if self._todo_missing(context):
+            return [spec for spec in specs if _spec_name(spec) == "update_plan"]
         if str((context.metadata or {}).get("agent_mode") or "act") != "plan":
             return specs
         allowed = {
             tool.name
             for tool in self.tool_registry.list_tools()
-            if tool.name == "update_plan"
-            or str(getattr(tool, "risk_level", "medium") or "medium") in ("read_only", "low")
+            if self.tool_included_in_plan(tool)
         }
         kept = []
         for spec in specs:
@@ -417,16 +593,63 @@ class Orchestrator:
                 kept.append(spec)
         return kept
 
+    async def _exhaust_current_item(self, context: TaskContext) -> str:
+        """The same lookup failed often enough. Record it and move on."""
+        raw = (context.metadata or {}).get("plan") or []
+        if not isinstance(raw, list):
+            return ""
+        items = []
+        title = ""
+        marked = False
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            copy = {
+                "id": str(item.get("id") or ""),
+                "title": str(item.get("title") or item.get("text") or ""),
+                "status": str(item.get("status") or "pending"),
+            }
+            if not marked and copy["status"] == "active" and copy["title"]:
+                copy["status"] = "failed"
+                title = copy["title"]
+                marked = True
+            items.append(copy)
+        if not marked:
+            return ""
+        try:
+            from Kerniq.tools.packs.plan.tools import UpdatePlanTool
+
+            await UpdatePlanTool().execute({"items": items}, context)
+        except Exception:
+            logger.exception("Could not mark the current TODO item failed")
+            return ""
+        plan = (context.metadata or {}).get("plan") or []
+        archive = (context.metadata or {}).get("plan_archive") or []
+        cb = getattr(self, "on_plan", None)
+        if callable(cb):
+            try:
+                cb(plan, archive)
+            except Exception:
+                logger.exception("on_plan failed")
+        self._pin_todo(context)
+        return title
+
+    @staticmethod
+    def tool_included_in_plan(tool) -> bool:
+        """Plan mode offers update_plan and tools whose include_in_plan flag is on."""
+        if tool is None:
+            return False
+        if str(getattr(tool, "name", "") or "") == "update_plan":
+            return True
+        return bool(getattr(tool, "include_in_plan", False))
+
     @staticmethod
     def plan_blocks_tool(context: TaskContext, tool) -> bool:
         if str((context.metadata or {}).get("agent_mode") or "act") != "plan":
             return False
         if tool is None:
             return False
-        if getattr(tool, "name", "") == "update_plan":
-            return False
-        risk = str(getattr(tool, "risk_level", "medium") or "medium")
-        return risk not in ("read_only", "low")
+        return not Orchestrator.tool_included_in_plan(tool)
 
     async def _maybe_compact(self, context: TaskContext) -> None:
         compactor = getattr(self, "compactor", None)
@@ -448,12 +671,18 @@ class Orchestrator:
                         summary = produced
                 except Exception:
                     logger.exception("Model compact failed; using extractive outline")
+            before_compact = len(context.messages)
             context.messages = compact(context.messages, summary)
             stored = getattr(compactor, "last_summary", None)
             if stored:
                 context.metadata["context_summary"] = stored
             context.metadata["compacted"] = True
             self._pin_todo(context)
+            if len(context.messages) < before_compact:
+                self._notify(
+                    "compacted",
+                    "Context compacted. Older turns were replaced by a memory note.",
+                )
             self._checkpoint(context)
         except Exception:
             logger.exception("Context compactor failed; keeping full history")
@@ -482,6 +711,10 @@ class Orchestrator:
             try:
                 response = await self.provider.generate(request)
             except Exception as exc:
+                from ..models.cancel import StreamCancelled, cancelled_response
+
+                if isinstance(exc, StreamCancelled):
+                    return cancelled_response()
                 if not self._transient_provider_error(exc) or attempt >= self.provider_retries:
                     raise
                 attempt += 1
@@ -502,6 +735,7 @@ class Orchestrator:
         empty_retries = 0
         content_loop_hits = 0
         plan_continuations = 0
+        plan_draft_nudges = 0
         verify_failures = 0
         assistant_history: list = []
         ctx_limit = int(getattr(self, "context_limit", 0) or 0) or int(
@@ -555,16 +789,38 @@ class Orchestrator:
                 )
                 context.messages = list(safe_messages)
 
+            options = self.generation_options
+            if context.metadata.get("unlimited_final"):
+                options = self.generation_options.model_copy(update={"max_tokens": None})
+                context.metadata["unlimited_final"] = False
+                logger.info("Final answer is not capped. The model may use the provider output limit.")
+
             request = ModelRequest(
                 messages=safe_messages,
                 session_id=context.session_id,
                 tools=self._tools_for_mode(context),
-                options=self.generation_options,
+                options=options,
             )
 
             try:
-                response = await self._generate_with_retries(request)
+                response = await self._await_or_stop(self._generate_with_retries(request), context)
+            except _RunStopped:
+                logger.info("Stop requested during model generation")
+                return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
             except Exception as exc:
+                if int(context.metadata.get("overflow_retries") or 0) < 1 and self._is_context_overflow(exc):
+                    context.metadata["overflow_retries"] = 1
+                    before = len(context.messages)
+                    tighter = max(2048, input_budget // 2)
+                    context.messages = self._trim_messages_to_budget(context.messages, tighter)
+                    self._pin_todo(context)
+                    logger.warning(
+                        "Provider rejected the prompt as too long (%s messages -> %s). Trimmed and retrying once.",
+                        before,
+                        len(context.messages),
+                    )
+                    iteration -= 1
+                    continue
                 logger.exception("Provider failed")
                 return self._finish(
                     context,
@@ -578,7 +834,19 @@ class Orchestrator:
                 or (response.metadata or {}).get("cancelled")
             ):
                 context.cancelled = True
-                return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
+                partial = []
+                for msg in response.messages or []:
+                    text = (msg.content or "").strip()
+                    if text or msg.tool_calls:
+                        context.add_message(msg)
+                    if text:
+                        partial.append(msg.content)
+                return self._finish(
+                    context,
+                    "\n".join(partial).strip() or "Stopped by user.",
+                    "cancelled",
+                    "Stopped by user.",
+                )
 
             if not response.messages:
                 empty_retries += 1
@@ -591,6 +859,26 @@ class Orchestrator:
                     "empty_response",
                     "No assistant message.",
                 )
+
+            from .runtime_flow import promote_reasoning
+
+            promote_reasoning(response)
+
+            finish = str(getattr(response, "finish_reason", "") or "")
+            pending_calls = []
+            for msg in response.messages:
+                if msg.tool_calls:
+                    pending_calls.extend(msg.tool_calls)
+            if (
+                not pending_calls
+                and finish in ("length", "max_tokens")
+                and not context.metadata.get("final_output_expanded")
+            ):
+                context.metadata["final_output_expanded"] = True
+                context.metadata["unlimited_final"] = True
+                logger.info("The last reply was cut by the output cap. Retrying with no cap.")
+                iteration -= 1
+                continue
 
             content_nudged = False
             for msg in response.messages:
@@ -647,28 +935,59 @@ class Orchestrator:
                         "Empty assistant content.",
                     )
                 empty_retries = 0
+                if self.finish_open_plan and self._todo_missing(context):
+                    if plan_continuations < 3:
+                        plan_continuations += 1
+                        self._user_note(
+                            context,
+                            "There is no TODO. Your next call must be update_plan and nothing else. "
+                            "Do not answer, and do not explore the project, until that list exists.",
+                        )
+                        continue
+                    return self._finish(
+                        context,
+                        "Stopped: the model answered without writing a TODO. update_plan has to run first.",
+                        "no_plan",
+                        "No TODO was published.",
+                    )
                 if self._continue_open_plan(context, plan_continuations):
                     plan_continuations += 1
                     mode = str((context.metadata or {}).get("agent_mode") or "act")
                     if mode == "plan":
                         note = (
-                            "Plan mode is not done. Keep researching and publish the TODO with update_plan. "
-                            "Do not implement. Do not stop while any item is pending, active, frozen, or failed."
+                            "Plan mode is not done. The first call is update_plan if the TODO is missing. "
+                            "Then keep researching. Do not implement. "
+                            "Do not stop while any item is pending, active, or frozen. "
+                            "A failed item does not block the end."
                         )
                     elif not (context.metadata or {}).get("plan"):
                         note = (
-                            "Write a short TODO with update_plan before you finish, then do the work. "
+                            "Write a short TODO with update_plan before you read the project or finish. "
                             "You cannot end the task without one."
                         )
                     else:
                         note = (
                             "The TODO is still open. Work strictly in order. "
                             "Only the first unfinished item is current, and you may change only that one. "
-                            "Finish it, or mark that one item failed if you cannot. "
+                            "Mark it done if you finished it. "
+                            "If the same attempt is empty about three times, or you have given up, mark that one item failed. "
+                            "failed does not block the end. frozen does. "
                             "Do not activate or complete a later item in the same call. "
                             "Completed items stay on the list. You cannot delete items. "
                         )
                     self._user_note(context, note)
+                    continue
+                if self._needs_plan_draft(context) and plan_draft_nudges < 2:
+                    plan_draft_nudges += 1
+                    self._user_note(
+                        context,
+                        "The research list is closed, but Act cannot see this chat. "
+                        "Your next message must be the audit, with no tool calls. "
+                        "Repeat what you already learned inside this block, even if you wrote it earlier:\n"
+                        "===ACT_DRAFT===\n"
+                        "project:\ntask:\nfindings:\nreasoning:\nfiles:\nrisks:\nsuggested_steps:\n"
+                        "===END_DRAFT===",
+                    )
                     continue
                 if self.verifier:
                     verification = await self.verifier.verify(context.goal, context, context.workspace)
@@ -730,12 +1049,22 @@ class Orchestrator:
                             tool_call_id=call.id,
                             name=call.name,
                         ))
-                    self._user_note(
-                        context,
-                        "The same tool call was repeated and did not change the outcome. "
-                        "Try a different tool or different arguments, or explain why the "
-                        "original goal cannot be completed.",
-                    )
+                    failed_title = await self._exhaust_current_item(context)
+                    if failed_title:
+                        note = (
+                            "The same tool call was repeated and did not change the outcome. "
+                            f"The current TODO item was marked failed: {failed_title}. "
+                            "failed stays on the list and does not block the end. Do not repeat that lookup. "
+                            "The next item is now current. Continue with it, or stop if none remain."
+                        )
+                    else:
+                        note = (
+                            "The same tool call was repeated and did not change the outcome. "
+                            "Do not call it again. If this was the current TODO item and the attempt is exhausted, "
+                            "mark that item failed with update_plan. failed does not block the end. "
+                            "Mark an item done only when you actually found or finished it."
+                        )
+                    self._user_note(context, note)
                     continue
                 logger.warning("Identical tool streak=%s sig=%s — stopping loop", tool_streak, sig[:200])
                 return self._finish(
@@ -746,6 +1075,8 @@ class Orchestrator:
                     sig[:300],
                 )
 
+            todo_missing = self.finish_open_plan and self._todo_missing(context)
+            offered = self._offered_tool_names(context) if self.finish_open_plan else None
             for call in tool_calls:
                 if self._stop_requested(context):
                     logger.info("Stop requested before the next tool")
@@ -787,12 +1118,32 @@ class Orchestrator:
                     ))
                     continue
 
+                if offered is not None and call.name not in offered:
+                    if todo_missing:
+                        refusal = (
+                            "No TODO yet. The first call must be update_plan with the full list. "
+                            "Do not explore the project until that list exists. "
+                            f"{call.name} was not run."
+                        )
+                    else:
+                        refusal = (
+                            f"{call.name} is not available on this turn and was not run. "
+                            "Use one of the tools listed under [Tools this turn]."
+                        )
+                    context.add_message(Message(
+                        role=MessageRole.TOOL,
+                        content=refusal,
+                        tool_call_id=call.id,
+                        name=call.name,
+                    ))
+                    continue
+
                 if tool is not None and self.plan_blocks_tool(context, tool):
                     context.add_message(Message(
                         role=MessageRole.TOOL,
                         content=(
-                            "Security Error: Plan mode only allows read-only tools and update_plan. "
-                            f"{call.name} would change the workspace."
+                            "Plan mode does not include this tool. "
+                            f"{call.name} was not run."
                         ),
                         tool_call_id=call.id,
                         name=call.name,
@@ -890,7 +1241,12 @@ class Orchestrator:
 
                 try:
                     with use_task(context):
-                        result = await tool.execute(call.arguments, context)
+                        result = await self._await_or_stop(
+                            tool.execute(call.arguments, context), context
+                        )
+                except _RunStopped:
+                    logger.info("Stop requested during tool %s", call.name)
+                    return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
                 except Exception as exc:
                     logger.exception("Tool %s raised", call.name)
                     text = str(exc)
@@ -910,6 +1266,10 @@ class Orchestrator:
                         name=call.name,
                     ))
                     continue
+
+                if self._stop_requested(context) or getattr(result, "stop_reason", "") == "cancelled":
+                    logger.info("Stop requested after tool %s", call.name)
+                    return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
 
                 content = result.to_model_content() if hasattr(result, "to_model_content") else (result.human_readable or "")
                 content = (

@@ -19,6 +19,7 @@ from ...interfaces.models import (
     ToolCall,
 )
 from ...interfaces.providers import ModelProvider
+from ..cancel import StreamCancelled, await_unless_cancelled, cancelled_response, next_stream_line
 
 logger = logging.getLogger(__name__)
 
@@ -282,11 +283,18 @@ class OpenAICompatProvider(ModelProvider):
             payload["tool_choice"] = "auto"
         use_stream = bool(request.options and request.options.streaming)
         url = f"{self.base_url}/chat/completions"
+        cancel_check = (request.metadata or {}).get("cancel_check")
         try:
             if use_stream:
                 return await self._generate_stream(url, payload, request)
             async with self._client() as client:
-                response = await client.post(url, json=payload, headers=self._headers())
+                try:
+                    response = await await_unless_cancelled(
+                        client.post(url, json=payload, headers=self._headers()),
+                        cancel_check,
+                    )
+                except StreamCancelled:
+                    return cancelled_response()
         except ProviderError:
             raise
         except httpx.TimeoutException as exc:
@@ -353,18 +361,14 @@ class OpenAICompatProvider(ModelProvider):
                     code = ErrorCode.AUTHENTICATION_ERROR if response.status_code in (401, 403) else ErrorCode.PROVIDER_REQUEST_FAILED
                     raise ProviderError(code, f"{self.label} stream error {response.status_code}: {text[:400]}")
                 cancel_check = (request.metadata or {}).get("cancel_check")
-                async for line in response.aiter_lines():
-                    if callable(cancel_check):
-                        try:
-                            if cancel_check():
-                                await response.aclose()
-                                return ModelResponse(
-                                    messages=[Message(role=MessageRole.ASSISTANT, content="".join(content_parts))],
-                                    finish_reason="cancelled",
-                                    metadata={"cancelled": True},
-                                )
-                        except Exception:
-                            pass
+                lines = response.aiter_lines()
+                while True:
+                    try:
+                        line = await next_stream_line(lines, response, cancel_check)
+                    except StreamCancelled:
+                        return cancelled_response("".join(content_parts))
+                    except StopAsyncIteration:
+                        break
                     line = (line or "").strip()
                     if not line.startswith("data:"):
                         continue

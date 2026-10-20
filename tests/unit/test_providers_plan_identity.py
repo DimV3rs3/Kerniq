@@ -39,6 +39,15 @@ def test_identity_is_before_the_operator_prompt():
 def test_deepseek_ui_is_key_and_model_only():
     spec = spec_by_id("deepseek")
     assert [f["key"] for f in spec["fields"]] == ["api_token", "model"]
+    model = next(f for f in spec["fields"] if f["key"] == "model")
+    assert model["type"] == "model"
+
+
+def test_provider_model_field_opens_the_picker():
+    for pid in ("lm_studio", "ollama", "openai", "anthropic", "openrouter", "gemini"):
+        spec = spec_by_id(pid)
+        model = next(f for f in spec["fields"] if f["key"] == "model")
+        assert model["type"] == "model", pid
 
 
 def test_claude_code_is_a_path_not_a_key():
@@ -158,9 +167,19 @@ def test_plan_cannot_delete_or_run_two_items():
         ],
     )
     assert [item["status"] for item in advanced] == ["done", "done", "active", "pending"]
+    failed = merge_plan(
+        prior,
+        [
+            {"id": "1", "title": "one", "status": "done"},
+            {"id": "2", "title": "two", "status": "failed"},
+            {"id": "3", "title": "three", "status": "pending"},
+            {"id": "4", "title": "four", "status": "pending"},
+        ],
+    )
+    assert [item["status"] for item in failed] == ["done", "failed", "active", "pending"]
 
 
-def test_frozen_and_failed_block_finish():
+def test_frozen_blocks_and_failed_does_not():
     ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="act")
     ctx.metadata["agent_mode"] = "act"
     orch = Orchestrator(provider=None, tool_registry=None)
@@ -168,10 +187,81 @@ def test_frozen_and_failed_block_finish():
     ctx.metadata["plan"] = [{"id": "a", "title": "hold", "status": "frozen"}]
     assert orch._continue_open_plan(ctx, 3) is True
     ctx.metadata["plan"] = [{"id": "a", "title": "boom", "status": "failed"}]
-    assert orch._continue_open_plan(ctx, 3) is True
+    assert orch._continue_open_plan(ctx, 3) is False
     ctx.metadata["plan"] = [{"id": "a", "title": "ok", "status": "done"}]
     ctx.metadata["plan_archive"] = [{"id": "a", "title": "ok", "status": "done"}]
     assert orch._continue_open_plan(ctx, 3) is False
+    ctx.metadata["plan"] = []
+    ctx.metadata["plan_archive"] = [{"id": "research:1", "title": "Read router", "status": "done"}]
+    assert orch._continue_open_plan(ctx, 0) is True
+
+
+def test_tools_stay_hidden_until_a_todo_exists():
+    class Reg:
+        def get_tools_for_model(self):
+            return [
+                {"type": "function", "function": {"name": "update_plan"}},
+                {"type": "function", "function": {"name": "list_directory"}},
+            ]
+
+        def list_tools(self):
+            return [
+                SimpleNamespace(name="update_plan", risk_level="read_only", include_in_plan=True),
+                SimpleNamespace(name="list_directory", risk_level="low", include_in_plan=True),
+            ]
+
+    orch = Orchestrator(provider=None, tool_registry=Reg())
+    orch.finish_open_plan = True
+    ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="look")
+    ctx.metadata["agent_mode"] = "plan"
+    ctx.metadata["plan"] = []
+    names = []
+    for spec in orch._tools_for_mode(ctx):
+        fn = spec.get("function") or {}
+        names.append(fn.get("name"))
+    assert names == ["update_plan"]
+    ctx.metadata["plan"] = [{"id": "1", "title": "Find the entry point", "status": "active"}]
+    names = []
+    for spec in orch._tools_for_mode(ctx):
+        fn = spec.get("function") or {}
+        names.append(fn.get("name"))
+    assert names == ["update_plan", "list_directory"]
+
+
+def test_exhausted_lookup_marks_the_current_item_failed():
+    ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="look")
+    ctx.metadata["agent_mode"] = "plan"
+    ctx.metadata["plan"] = [
+        {"id": "1", "title": "Study the project", "status": "active"},
+        {"id": "2", "title": "Find the entry point", "status": "pending"},
+    ]
+    orch = Orchestrator(provider=None, tool_registry=SimpleNamespace(get_tools_for_model=lambda: [], list_tools=lambda: []))
+    orch.finish_open_plan = True
+    title = asyncio.run(orch._exhaust_current_item(ctx))
+    assert title == "Study the project"
+    assert [item["status"] for item in ctx.metadata["plan"]] == ["failed", "active"]
+    assert any(item.get("status") == "failed" for item in ctx.metadata["plan_archive"])
+    assert orch._continue_open_plan(ctx, 3) is True
+    ctx.metadata["plan"][1]["status"] = "done"
+    assert orch._continue_open_plan(ctx, 3) is False
+
+
+def test_agent_does_not_repeat_the_same_trailing_user_text():
+    from Kerniq.core.agent import Agent
+    from Kerniq.interfaces.models import ModelRequest
+
+    seen = {}
+
+    class Prov:
+        async def generate(self, request: ModelRequest):
+            seen["users"] = [m.content for m in request.messages if m.role == MessageRole.USER]
+            return ModelResponse(messages=[Message(role=MessageRole.ASSISTANT, content="ok")])
+
+    agent = Agent(Prov(), SimpleNamespace(get_tools_for_model=lambda: [], list_tools=lambda: []))
+    agent.orchestrator.finish_open_plan = False
+    text = "а план составлять кто будет?"
+    asyncio.run(agent.run(text, history=[Message(role=MessageRole.USER, content=text)], workspace="."))
+    assert seen["users"].count(text) == 1
 
 
 def test_compaction_does_not_spend_an_iteration():
@@ -232,14 +322,53 @@ def test_compaction_does_not_spend_an_iteration():
 def test_plan_mode_blocks_writes():
     ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="plan")
     ctx.metadata["agent_mode"] = "plan"
-    write = SimpleNamespace(name="write_file", risk_level="medium")
-    read = SimpleNamespace(name="read_file", risk_level="low")
-    plan = SimpleNamespace(name="update_plan", risk_level="read_only")
+    write = SimpleNamespace(name="write_file", risk_level="medium", include_in_plan=False)
+    read = SimpleNamespace(name="read_file", risk_level="low", include_in_plan=True)
+    plan = SimpleNamespace(name="update_plan", risk_level="read_only", include_in_plan=False)
+    low_write = SimpleNamespace(name="create_directory", risk_level="low", include_in_plan=False)
+    opted_in = SimpleNamespace(name="fetch_url", risk_level="medium", include_in_plan=True)
     assert Orchestrator.plan_blocks_tool(ctx, write) is True
+    assert Orchestrator.plan_blocks_tool(ctx, low_write) is True
     assert Orchestrator.plan_blocks_tool(ctx, read) is False
+    assert Orchestrator.plan_blocks_tool(ctx, opted_in) is False
     assert Orchestrator.plan_blocks_tool(ctx, plan) is False
     ctx.metadata["agent_mode"] = "act"
     assert Orchestrator.plan_blocks_tool(ctx, write) is False
+
+
+def test_builtin_plan_defaults_are_read_and_search(tmp_path):
+    from Kerniq.security.policy import SecurityPolicy
+    from Kerniq.tools.loader import load_all_tools
+    from Kerniq.tools.packs.filesystem import Pack as FsPack
+    from Kerniq.tools.packs.plan import Pack as PlanPack
+    from Kerniq.tools.packs.terminal import Pack as TermPack
+    from Kerniq.tools.packs.web import Pack as WebPack
+    from Kerniq.tools.runtime_settings import apply_stored_tool_settings, ensure_common_fields
+
+    assert FsPack().include_in_plan is False
+    assert TermPack().include_in_plan is False
+    assert WebPack().include_in_plan is True
+    assert PlanPack().include_in_plan is True
+    tools = {tool.name: tool for tool in load_all_tools(str(tmp_path), policy=SecurityPolicy(tmp_path))}
+    assert "read_docx" not in tools
+    for name in ("file_exists", "read_file", "list_directory", "get_file_info", "search_code", "web_search", "fetch_url", "update_plan"):
+        assert tools[name].include_in_plan is True, name
+    for name in ("write_file", "create_file", "edit_file", "delete_file", "create_directory", "zip", "unzip", "move_file", "run_command"):
+        assert tools[name].include_in_plan is False, name
+        assert tools[name].plan_membership_default() is False
+    ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="plan")
+    ctx.metadata["agent_mode"] = "plan"
+    assert Orchestrator.plan_blocks_tool(ctx, tools["create_directory"]) is True
+    assert Orchestrator.plan_blocks_tool(ctx, tools["read_file"]) is False
+    reader = tools["read_file"]
+    schema = ensure_common_fields(reader.settings_schema(), reader)
+    field = next(item for item in schema.fields if item.key == "include_in_plan")
+    assert field.default is True
+    apply_stored_tool_settings([reader], tmp_path)
+    assert reader.include_in_plan is True
+    reader.cfg_include_in_plan = False
+    assert reader.include_in_plan is False
+    assert reader.plan_membership_default() is True
 
 
 def test_compact_outlines_symbols_not_bodies():

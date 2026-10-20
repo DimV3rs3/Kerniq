@@ -32,7 +32,25 @@ def test_shell_escapes_denied(command):
     assert verdict.allowed is False, command
 
 
-def test_relative_command_allowed():
+@pytest.mark.parametrize(
+    "command",
+    [
+        r"Get-Content $USERPROFILE\secret.txt",
+        r"Get-Content $HOME\secret.txt",
+        r"Get-Content $TEMP\x",
+        "Add-Type -AssemblyName System.Windows.Forms",
+        "New-Object -ComObject WScript.Shell",
+        "Start-Process calc",
+    ],
+)
+def test_shell_variables_and_host_escapes_denied(command):
+    verdict = assess_command(command, allow_network=False)
+    assert verdict.allowed is False, command
+
+
+def test_powershell_literals_stay_allowed():
+    assert assess_command("Write-Output $true", allow_network=False).allowed
+    assert assess_command("python script.py", allow_network=False).allowed
     assert assess_command("ls -la", allow_network=False).allowed
     assert assess_command("python script.py", allow_network=False).allowed
 

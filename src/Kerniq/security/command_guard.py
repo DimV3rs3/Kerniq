@@ -41,6 +41,11 @@ _NETWORK = re.compile(
     r"invoke-command|new-pssession|start-bitstransfer|"
     r"certutil|bitsadmin|nslookup|webclient)\b"
 )
+_SHELL_HOST = re.compile(
+    r"(?i)\b(?:add-type|new-object|start-process|invoke-wmimethod|register-scheduledjob)\b"
+)
+_DOLLAR = re.compile(r"(?<![\w])\$([A-Za-z_][A-Za-z0-9_]*)")
+_DOLLAR_OK = {"true", "false", "null", "_"}
 
 
 def _normalize(text: str) -> str:
@@ -95,6 +100,17 @@ def assess_command(command: str, *, allow_network: bool = False) -> CommandVerdi
         return CommandVerdict(False, "Environment-variable or home-directory paths are denied in shell commands")
     if _FILE_URL.search(cmd):
         return CommandVerdict(False, "file:// URLs are denied")
+    if _SHELL_HOST.search(cmd):
+        return CommandVerdict(
+            False,
+            "Add-Type, New-Object, Start-Process, and similar host escapes are denied",
+        )
+    for match in _DOLLAR.finditer(cmd):
+        if match.group(1).lower() not in _DOLLAR_OK:
+            return CommandVerdict(
+                False,
+                "Shell variables are denied; use a workspace-relative path",
+            )
     if not allow_network and _NETWORK.search(cmd):
         return CommandVerdict(
             False,

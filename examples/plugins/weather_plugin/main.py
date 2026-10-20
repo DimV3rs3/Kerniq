@@ -19,6 +19,10 @@ class WeatherTool(Tool):
         return "get_weather"
 
     @property
+    def display_phrase(self) -> str:
+        return "forecasts"
+
+    @property
     def description(self) -> str:
         return "Gets the current weather for a city (mock data)."
 

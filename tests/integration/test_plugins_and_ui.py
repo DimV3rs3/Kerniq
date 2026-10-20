@@ -128,7 +128,120 @@ def test_web_ui_run_cancel_and_approval(tmp_path, monkeypatch):
                 threading.Event().wait(0.05)
             assert done
             assert "cancelled" in statuses
+            saved = mod.STATE.chat_histories.get("c2") or []
+            assert any(item.get("role") == "user" and "wait" in (item.get("content") or "") for item in saved)
+            assert any(item.get("role") == "assistant" and "Stopped by the user" in (item.get("content") or "") for item in saved)
+            assert "c2" not in mod.STATE.cancel_chats
         finally:
             agent_mod.Agent.run = original
+        started = call("POST", "/api/chat/run", {"task": "next question", "chat_id": "c2", "history": []})
+        with mod.STATE.runs_lock:
+            follow = mod.STATE.runs.get(started["run_id"])
+        assert follow is not None
+        assert follow.get("cancelled") is False
     finally:
         httpd.shutdown()
+
+
+def test_stopped_turn_stays_in_model_history():
+    import importlib.util
+
+    ui_path = _plugins_root() / "web_ui" / "main.py"
+    spec = importlib.util.spec_from_file_location("kerniq_web_ui_hist", ui_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    server = [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "did the first part"},
+    ]
+    client = server + [{"role": "user", "content": "continue the same task"}]
+    merged = mod.merge_histories(server, client)
+    assert merged[-1]["content"] == "continue the same task"
+
+    # Server kept tool calls the browser does not resend. Client is a prefix.
+    rich = [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "1", "name": "read_file", "arguments": {}}]},
+        {"role": "tool", "content": "file body", "tool_call_id": "1", "name": "read_file"},
+        {"role": "assistant", "content": "partial reply"},
+    ]
+    visible = [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "partial reply"},
+    ]
+    assert mod.merge_histories(rich, visible) == rich
+
+    continued = visible + [{"role": "user", "content": "go on from here"}]
+    merged = mod.merge_histories(rich, continued)
+    assert any(row.get("role") == "tool" for row in merged)
+    assert merged[-1]["role"] == "user" and merged[-1]["content"] == "go on from here"
+
+    # Visible text diverged, but the new user turn still has to reach the model.
+    diverged = [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "something else"},
+        {"role": "user", "content": "go on from here"},
+    ]
+    merged = mod.merge_histories(rich, diverged)
+    assert any(row.get("role") == "tool" for row in merged)
+    assert merged[-1]["content"] == "go on from here"
+
+    saved = mod.compose_saved_history(
+        [{"role": "user", "content": "older"}, {"role": "assistant", "content": "done"}],
+        None,
+        user_task="do the thing",
+        partial="started the patch",
+        cancelled=True,
+    )
+    assert saved[0]["content"] == "older"
+    assert saved[-2]["role"] == "user" and saved[-2]["content"] == "do the thing"
+    assert "started the patch" in saved[-1]["content"]
+    assert "Stopped by the user" in saved[-1]["content"]
+
+
+def test_cancel_of_a_live_run_does_not_arm_the_next_one():
+    import importlib.util
+
+    ui_path = _plugins_root() / "web_ui" / "main.py"
+    spec = importlib.util.spec_from_file_location("kerniq_web_ui_cancel", ui_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.STATE.runs.clear()
+    mod.STATE.cancel_chats.clear()
+    mod.STATE.runs["r1"] = {
+        "done": False,
+        "chat_id": "c",
+        "cancelled": False,
+        "log": [],
+        "events": [],
+    }
+    handler = mod.UIHandler.__new__(mod.UIHandler)
+    result = handler._cancel_run({"run_id": "r1", "chat_id": "c"})
+    assert result["ok"] is True
+    assert mod.STATE.runs["r1"]["cancelled"] is True
+    assert "c" not in mod.STATE.cancel_chats
+    armed = handler._cancel_run({"chat_id": "later"})
+    assert armed["ok"] is True
+    assert "later" in mod.STATE.cancel_chats
+
+
+def test_duplicate_user_text_is_collapsed():
+    import importlib.util
+
+    ui_path = _plugins_root() / "web_ui" / "main.py"
+    spec = importlib.util.spec_from_file_location("kerniq_web_ui_dup", ui_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    saved = mod.compose_saved_history(
+        [
+            {"role": "assistant", "content": "Stopped by the user. This reply was not finished. Continue the same task from the work already done. Do not start over."},
+            {"role": "user", "content": "а план составлять кто будет?"},
+            {"role": "user", "content": "а план составлять кто будет?"},
+        ],
+        None,
+        user_task="а план составлять кто будет?",
+        cancelled=False,
+    )
+    users = [row["content"] for row in saved if row.get("role") == "user"]
+    assert users == ["а план составлять кто будет?"]

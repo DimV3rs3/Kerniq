@@ -58,6 +58,10 @@ class ExampleTool(Tool):
         return "example_tool"
 
     @property
+    def display_phrase(self) -> str:
+        return "example calls"
+
+    @property
     def description(self) -> str:
         return "Example tool from scaffold"
 

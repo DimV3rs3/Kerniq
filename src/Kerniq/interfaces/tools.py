@@ -91,6 +91,32 @@ class Tool(ABC):
         """Per-tool opt-out of confirmation. Ignored when risk is critical."""
         return bool(getattr(self, "cfg_auto_accept", False))
 
+    def plan_membership_default(self) -> bool:
+        """Code default for Plan mode, before a saved setting.
+
+        A tool sets ``_include_in_plan``. Otherwise it inherits
+        ``_pack_include_in_plan`` copied from its pack at load time.
+        Both missing means the tool stays out of Plan.
+        """
+        own = self.__dict__.get("_include_in_plan", None)
+        if own is not None:
+            return bool(own)
+        pack = self.__dict__.get("_pack_include_in_plan", None)
+        if pack is not None:
+            return bool(pack)
+        return True
+
+    @property
+    def include_in_plan(self) -> bool:
+        """Whether Plan mode may offer this tool. A saved setting wins over the code default.
+
+        ``update_plan`` is always offered in Plan mode, even when this is false.
+        """
+        saved = self.__dict__.get("cfg_include_in_plan", None)
+        if saved is not None:
+            return bool(saved)
+        return self.plan_membership_default()
+
     @property
     def category(self) -> str:
         """Logical group for UI: filesystem | terminal | web | fetch | other."""
@@ -107,10 +133,21 @@ class Tool(ABC):
         return "tool"
 
 
+    @property
+    def display_phrase(self) -> str:
+        """English words shown after the call count, for example 'files read'.
+
+        Kerniq reads this and passes it to whoever is displaying the call.
+        Tools do not know about a shell, and they do not ship translations.
+        """
+        return "calls"
+
     def chat_label(self, count: int = 1, *, success: bool = True) -> str:
-        """Human label for chat aggregation, e.g. '3 поисков по коду'."""
-        unit = "вызов" if count == 1 else "вызовов"
-        return f"{count} {unit}"
+        """Count plus the tool's own display phrase. English only."""
+        phrase = self.display_phrase or "calls"
+        if not success:
+            return f"{count} {phrase} failed"
+        return f"{count} {phrase}"
 
     def settings_schema(self) -> Optional[SettingsSchema]:
         """Default schema includes chat-collapse toggle; subclasses may extend."""
@@ -134,6 +171,13 @@ class Tool(ABC):
                     default=False,
                     description="Skip confirmation for this tool. Critical risk still always asks the user.",
                 ),
+                SettingField(
+                    key="include_in_plan",
+                    label="Include in Plan mode",
+                    type=SettingType.BOOL,
+                    default=self.plan_membership_default(),
+                    description="Plan mode may call this tool. Writes, commands, and other changes stay off until this is on.",
+                ),
             ],
         )
 
@@ -142,6 +186,8 @@ class Tool(ABC):
             self.cfg_collapsible = bool(values["collapsible"])
         if values and "auto_accept" in values:
             self.cfg_auto_accept = bool(values["auto_accept"])
+        if values and "include_in_plan" in values:
+            self.cfg_include_in_plan = bool(values["include_in_plan"])
 
     @property
     def collapsible(self) -> bool:

@@ -9,6 +9,8 @@ import subprocess
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional
 
+from Kerniq.sandbox.proc import hidden_run
+
 
 @dataclass
 class SystemInfo:
@@ -85,12 +87,13 @@ def _nvidia_vram_gb() -> tuple[Optional[float], List[str]]:
     if not shutil.which("nvidia-smi"):
         return None, notes
     try:
-        out = subprocess.check_output(
+        out = hidden_run(
             ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
             timeout=4,
             text=True,
             stderr=subprocess.DEVNULL,
-        )
+            check=True,
+        ).stdout
     except Exception as exc:
         notes.append(f"nvidia-smi failed: {exc}")
         return None, notes

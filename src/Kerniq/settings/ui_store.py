@@ -1,4 +1,8 @@
-"""Persistent UI / agent settings (JSON under state/)."""
+"""Main project settings: agent, API, prompt, and chat.
+
+File: state/settings.json. Tool values live in state/tools.json.
+Plugin values live in state/plugins.json. This store does not touch them.
+"""
 
 from __future__ import annotations
 
@@ -91,6 +95,7 @@ class SystemPromptSettings(BaseModel):
     system_prompt: str = (
         "You are a helpful coding agent with filesystem, terminal and web tools. "
         "Work only inside the workspace. Prefer small, correct edits. "
+        "When a fact can have changed, call web_search and fetch_url before you rely on memory. "
         "You may call multiple tools in one turn (parallel tool_calls), "
         "e.g. fetch several URLs or search+fetch together."
     )
@@ -117,66 +122,64 @@ class ChatSettings(BaseModel):
     compose_plan: bool = True
 
 
-class ToolsUiSettings(BaseModel):
-    fs_enabled: bool = True
-    terminal_enabled: bool = True
-    web_search_enabled: bool = True
-    fetch_url_enabled: bool = True
-    enabled_tools: Dict[str, bool] = Field(default_factory=dict)
-
-
-class PluginsUiSettings(BaseModel):
-    enabled: Dict[str, bool] = Field(default_factory=dict)
-
-
 class UiSettings(BaseModel):
     chat: ChatSettings = Field(default_factory=ChatSettings)
     agent: AgentRuntimeSettings = Field(default_factory=AgentRuntimeSettings)
     api: ApiModelSettings = Field(default_factory=ApiModelSettings)
     prompt: SystemPromptSettings = Field(default_factory=SystemPromptSettings)
-    tools: ToolsUiSettings = Field(default_factory=ToolsUiSettings)
-    plugins: PluginsUiSettings = Field(default_factory=PluginsUiSettings)
 
 
 class UiSettingsStore:
-    FILENAME = "ui_settings.json"
+    FILENAME = "settings.json"
 
     def __init__(self, state_dir: Path | str):
         self.state_dir = Path(state_dir)
-        self.state_dir.mkdir(parents=True, exist_ok=True)
         self.path = self.state_dir / self.FILENAME
         self._cache: Optional[UiSettings] = None
 
     def load(self) -> UiSettings:
         if self._cache is not None:
             return self._cache
-        if self.path.exists():
-            try:
-                data = json.loads(self.path.read_text(encoding="utf-8"))
-                self._cache = UiSettings(**data)
-                return self._cache
-            except Exception:
-                pass
-        self._cache = UiSettings()
+        from .file import read_settings_file, settings_path
+        path = settings_path(self.state_dir)
+        if not path.parent.is_dir():
+            self._cache = UiSettings()
+            return self._cache
+        raw = read_settings_file(self.state_dir)
+        existed = path.is_file()
+        try:
+            self._cache = UiSettings.model_validate(raw) if raw else UiSettings()
+        except Exception:
+            self._cache = UiSettings()
+        known = self._cache.model_dump()
+        if not existed or any(key not in raw for key in known):
+            self.save()
         return self._cache
 
     def save(self, settings: Optional[UiSettings] = None) -> UiSettings:
+        from .file import read_settings_file, write_settings_file
         if settings is not None:
             self._cache = settings
         if self._cache is None:
             self._cache = UiSettings()
-        tmp = self.path.with_suffix(".tmp")
-        # Never leave secrets in world-readable logs; file is local state
-        tmp.write_text(self._cache.model_dump_json(indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+        raw = read_settings_file(self.state_dir)
+        dumped = self._cache.model_dump()
+        for key in list(raw):
+            if key not in dumped:
+                raw.pop(key, None)
+        raw.update(dumped)
+        write_settings_file(self.state_dir, raw)
         return self._cache
 
     def update(self, patch: Dict[str, Any]) -> UiSettings:
         current = self.load().model_dump()
         for section, values in patch.items():
-            if section in current and isinstance(values, dict):
+            if section in current and isinstance(values, dict) and isinstance(current[section], dict):
                 current[section].update(values)
             else:
                 current[section] = values
-        self._cache = UiSettings(**current)
+        self._cache = UiSettings.model_validate(current)
         return self.save()
+
+
+SettingsStore = UiSettingsStore

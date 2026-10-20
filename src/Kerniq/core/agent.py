@@ -24,16 +24,20 @@ KERNIQ_IDENTITY = (
     "You work at a professional level on whatever the task requires: "
     "software engineering, systems design, debugging, security review, auditing, research, and adjacent technical work. "
     "When several project files matter, read them in one turn (multiple tool calls) instead of one file per step. "
-    "Before you trust training memory about a library, API, CLI, protocol, or current fact, look it up. "
-    "Search the web or read the project's own docs and source first. Interfaces get rewritten, and a remembered signature is often wrong. "
-    "Do not invent a current API from memory when a lookup or a local file can answer it. "
+    "Before you trust training memory about a library, API, CLI, protocol, CVE, version, or current fact, look it up. "
+    "Call web_search, and fetch_url when a page matters, before you answer or edit. "
+    "Do this in Plan and in Act. Local files do not replace a fact that can have changed. "
+    "Skip the lookup only when the user forbade the network or you just read the answer in a project file. "
+    "Do not invent a current API from memory."
     "Shell python and pip are the workspace sandbox .kerniq-venv. Do not use the host Python, an existing .venv, or Docker to test code. "
     "The operator's system prompt follows this identity. Follow it unless it conflicts with workspace safety rules."
 )
 
 PLAN_MODE_TEXT = (
     "MODE: PLAN. This pass only gathers facts. It does not design the implementation and it does not do the work. "
-    "Read the project and look up current APIs, docs, and files the request depends on. "
+    "Your first tool call must be update_plan. Write a short research TODO before any other tool. "
+    "Do not call list_directory, read_file, search_code, web_search, fetch_url, or anything else until that list exists. "
+    "After it exists, read the project and look up current APIs, docs, and files the request depends on. "
     "Do not create, edit, delete, or move files, and do not run the shell. "
     "Your TODO is a short research list: what to open, search, or verify. "
     "Do not put the whole job on it. No implementation steps such as writing code, editing files, or shipping the feature. "
@@ -45,22 +49,27 @@ PLAN_MODE_TEXT = (
     "If you use numeric ids, keep them in numeric order: 1, 2, 3, not 1, 2, 9, 7. "
     "Statuses: pending, active, done, frozen, failed. "
     "Work the research list in order. Exactly one item is in progress, and you may change only that item per update_plan call. "
-    "If you cannot finish it, mark it failed. Do not open, finish, or fail the next item in the same call. "
-    "The next item becomes current only after the current one is done. "
-    "Completed items stay on the list. You cannot delete them. "
-    "Do not stop while any item is pending, active, frozen, or failed. "
+    "If you found what that item asked for, mark it done. "
+    "If the same lookup is empty about three times, or you have given up, mark that item failed. "
+    "Do not mark failed on the first miss. A failed item stays on the list, does not block the end, and the next item becomes current. "
+    "Do not repeat that same lookup. frozen still blocks the end. "
+    "Do not open, finish, or fail the next item in the same call. "
+    "The next item becomes current only after the current one is done or failed. "
+    "Completed and failed items stay on the list. You cannot delete them. "
+    "Do not stop while any item is pending, active, or frozen. "
+    "Once every research item is done or failed, the list is sealed and archived. Do not add more items in this mode. "
     "Write every TODO title in the response language from the instruction above."
 )
 
 PLAN_HANDOFF_TEXT = (
-    "Auto handoff is on. When every research item is done and nothing is pending, active, frozen, or failed, "
-    "write a short note for the operator and then this machine block. "
-    "Act will not see your transcript. The block must be long enough for Act to build its own TODO "
-    "from the original request and from your reasoning:\n"
+    "Auto handoff is on. Act will not see this transcript, your tool results, or an audit you wrote earlier. "
+    "The archived TODO is only a list of titles. It is not the research. "
+    "Your last message, after the research list is closed, must contain the full draft below. "
+    "Repeat the findings there even if you already said them. Do not call tools in that message.\n"
     "===ACT_DRAFT===\n"
     "project: <what the project is>\n"
     "task: <the original request, restated precisely>\n"
-    "findings: <what you read, searched, and learned>\n"
+    "findings: <what you read, searched, and learned. This is the audit. Be specific.>\n"
     "reasoning: <why this approach, and what you rejected>\n"
     "files: <paths, classes, methods>\n"
     "risks: <constraints>\n"
@@ -73,37 +82,48 @@ PLAN_HUMAN_TEXT = (
     "Auto handoff is off. Answer the user in normal language in the response language. "
     "Do not write an ACT_DRAFT and do not write a private note for another model. "
     "Still close your own research TODO before the final answer. "
-    "Frozen and failed items block that answer."
+    "Frozen items block that answer. A failed item is a recorded miss and does not."
 )
 
 ACT_MODE_TEXT = (
     "MODE: ACT. Do the work. "
-    "First write YOUR OWN action TODO with update_plan. "
+    "Your first tool call must be update_plan. Write YOUR OWN action TODO before any other tool. "
+    "Do not call list_directory, read_file, search_code, or any other tool until that list exists. "
     "Base it on the original request, then on any plan-mode draft. Do not reuse a research checklist as yours. "
+    "Archived research items are already done or recorded as failed. Do not copy them onto your TODO and do not change them. "
+    "Do not repeat a lookup the archive marks failed unless the draft says that fact is still required. "
     "You may search again and add items. Insert them only among the current item and the items after it. "
     "You cannot delete an item. "
     "Statuses: pending, active, done, frozen, failed. "
     "Work the list in order. Exactly one item is in progress. Each update_plan call may change only that item. "
-    "Mark it done only after the step is really finished. If you cannot finish it, mark it failed. "
-    "Do not start the next item until the current one is done. Completed items stay on the list. "
-    "frozen pauses the current item. failed marks it failed. Both still block the end. "
-    "You may not refuse, skip, or end the task while any item is pending, active, frozen, or failed. "
+    "Mark it done only after the step is really finished. "
+    "If the same attempt is empty about three times, or you have given up, mark that item failed. "
+    "Do not mark failed on the first miss. failed stays on the list and does not block the end. The next item becomes current. "
+    "frozen pauses the current item and still blocks the end. "
+    "Do not start the next item until the current one is done or failed. Completed items stay on the list. "
+    "You may not refuse, skip, or end the task while any item is pending, active, or frozen. "
     "Write TODO titles in the response language."
 )
 
 TODO_CONTRACT = (
     "TODO contract: both Plan and Act always keep a TODO, including after context is compacted. "
+    "The first tool call of a run that has no live TODO is update_plan. Do not explore the project before that. "
     "The live list is repeated at the start of the system message as [Pinned TODO]. Obey that list. "
     "update_plan is the only editor. Items cannot be removed or renamed. "
     "Numbered ids stay in numeric order (1, 2, 3), never scrambled (1, 2, 9, 7). "
     "Work sequentially: one current item, one status change per call. "
-    "If that item is not finished, keep working on it or mark it failed. Do not skip ahead. "
+    "If you found it, mark the current item done. "
+    "If the same attempt comes back empty about three times, or you have given up, mark that item failed. "
+    "Do not mark failed on the first miss. A failed item stays visible, does not block the end, and the next item becomes current. "
+    "Do not repeat that same attempt. frozen still blocks the end. Do not skip ahead. "
     "Completed items stay visible. New items are inserted only from the current item downward. "
     "Plan only researches. Its TODO is a short list of what to read or look up, not the implementation plan. "
-    "When that research list is closed, Plan writes a detailed draft for Act. "
+    "When that research list is closed, it is archived and Plan writes a detailed draft for Act. "
+    "Failed research is part of that archive so Act does not blindly redo it. "
     "Act then writes a separate action TODO from the original request and that draft, and does the work. "
+    "Archived items stay closed. Act must not put them back on the live list. "
     "A large task starts in Plan. A small task can start in Act and still writes a short TODO. "
-    "The task is not finished while any item is pending, active, frozen, or failed. "
+    "The task is not finished while any item is pending, active, or frozen. "
     "Plan and Act are separate tasks: each starts with a fresh iteration budget. "
     "Context compaction does not consume that budget."
 )
@@ -240,6 +260,7 @@ class Agent:
             context.metadata["checks"] = dict(checks)
         mode = "plan" if str(agent_mode or "act").lower() == "plan" else "act"
         context.metadata["agent_mode"] = mode
+        context.metadata["plan_handoff"] = bool(plan_handoff)
         if initial_plan:
             try:
                 from Kerniq.tools.packs.plan.tools import normalize_plan_items
@@ -271,7 +292,15 @@ class Agent:
                     continue
                 context.add_message(msg)
 
-        context.add_message(Message(role=MessageRole.USER, content=user_task))
+        trailing = context.messages[-1] if context.messages else None
+        already = (
+            trailing is not None
+            and trailing.role == MessageRole.USER
+            and (trailing.content or "") == user_task
+            and bool(user_task)
+        )
+        if not already:
+            context.add_message(Message(role=MessageRole.USER, content=user_task))
         logger.info("Context messages (%s): %s", len(context.messages), [m.role.value for m in context.messages])
 
         try:

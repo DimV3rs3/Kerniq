@@ -96,8 +96,9 @@ def _apply_ui_log_level():
     """Use Web UI plugin log_level when running plugins ui (default: warning)."""
     try:
         from Kerniq.settings.component_store import ComponentSettingsStore
+        from Kerniq.settings.loader import SettingsProvider
         from Kerniq.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
-        store = ComponentSettingsStore()
+        store = ComponentSettingsStore(SettingsProvider().config.storage.state_dir)
         # minimal schema for key
         sch = SettingsSchema(
             component_id="plugin_web_ui",
@@ -129,24 +130,42 @@ def _build_registry(config, workspace: Path, tool_settings_store: ToolSettingsSt
 
 
 async def run_agent(args: argparse.Namespace, config) -> int:
-    workspace_path = Path(args.workspace or str(config.application.workspace_root))
-    workspace_path.mkdir(parents=True, exist_ok=True)
-    store = ToolSettingsStore(config.storage.state_dir)
-    registry, policy = _build_registry(config, workspace_path, store)
+    from Kerniq.core.runtime_flow import (
+        act_followup_task,
+        apply_runtime,
+        attach_compactor,
+        handoff_archive,
+        plan_research_record,
+        open_plan_items,
+        probe_context_limit,
+        route_mode,
+        strip_draft,
+        system_prompt_from_settings,
+        use_model_for_mode,
+    )
+    from Kerniq.settings.ui_store import UiSettingsStore
 
-    provider_name = args.provider or config.models.default_provider
-    ui_api = None
-    try:
-        from Kerniq.settings.ui_store import UiSettingsStore
-        ui_api = UiSettingsStore(config.storage.state_dir).load().api
-    except Exception:
-        ui_api = None
+    ui = UiSettingsStore(config.storage.state_dir).load()
+    workspace_path = Path(args.workspace or ui.agent.workspace or str(config.application.workspace_root))
+    workspace_path.mkdir(parents=True, exist_ok=True)
+    ceiling = getattr(ui.chat, "auto_approve_up_to", None) or getattr(
+        config.security, "auto_approve_up_to", "low"
+    )
+    registry, policy = build_tool_registry(
+        workspace_path,
+        config=config,
+        state_dir=config.storage.state_dir,
+        auto_approve_up_to=ceiling,
+    )
+
+    provider_name = args.provider or ui.api.provider or config.models.default_provider
+    timeout = float(ui.agent.timeout_seconds or getattr(config.runtime, "timeout_seconds", None) or 600)
     try:
         provider = build_provider(
             provider_name,
-            api=ui_api,
+            api=ui.api,
             config=config,
-            timeout=float(getattr(config.runtime, "timeout_seconds", None) or 600),
+            timeout=timeout,
         )
     except Exception as exc:
         logger.error("Cannot build provider %s: %s", provider_name, exc)
@@ -154,9 +173,7 @@ async def run_agent(args: argparse.Namespace, config) -> int:
         return 1
     if provider_name not in ("mock", "mock_provider"):
         if not await provider.check_connection():
-            # Implicit default LM Studio may be down in a fresh checkout.
-            # An explicit --provider never falls through to mock.
-            if provider_name == "lm_studio" and not args.provider:
+            if provider_name == "lm_studio" and not args.provider and ui.api.provider == "lm_studio":
                 logger.warning("LM Studio not reachable — falling back to mock")
                 from Kerniq.models.providers.mock import MockProvider
                 provider = MockProvider()
@@ -172,8 +189,10 @@ async def run_agent(args: argparse.Namespace, config) -> int:
     agent = Agent(provider, registry)
     agent.orchestrator.security_policy = policy
     agent.orchestrator.verifier = BasicVerifier(check_files=list(getattr(args, "expect_file", None) or []))
-    agent.orchestrator.max_iterations = config.runtime.max_iterations
     agent.orchestrator.provider_retries = int(config.runtime.retry_limit or 0)
+    apply_runtime(agent.orchestrator, ui)
+    await attach_compactor(agent.orchestrator, config)
+    agent.orchestrator.context_limit = await probe_context_limit(provider, ui.api.model)
     from Kerniq.interfaces.approvals import ConsoleApprovalProvider
     agent.orchestrator.approval_provider = ConsoleApprovalProvider()
 
@@ -196,16 +215,56 @@ async def run_agent(args: argparse.Namespace, config) -> int:
         )
 
     agent.orchestrator.on_progress = _checkpoint
-
-    print(f"Provider: {provider_name} | Workspace: {workspace_path}")
-    print(f"Tools: {[t.name for t in registry.list_tools()]}")
-    lang = "auto"
-    try:
-        from Kerniq.settings.ui_store import UiSettingsStore
-        lang = UiSettingsStore(config.storage.state_dir).load().chat.response_language or "auto"
-    except Exception:
-        pass
-    result = await agent.run(args.task, workspace=str(workspace_path), response_language=lang)
+    system = system_prompt_from_settings(ui, [t.name for t in registry.list_tools()])
+    lang = ui.chat.response_language or "auto"
+    mode = str(ui.chat.agent_mode or "act").lower()
+    if mode not in ("plan", "act"):
+        mode = "act"
+    if ui.chat.mode_auto:
+        mode = await route_mode(provider, args.task, compose_plan=bool(ui.chat.compose_plan))
+    auto_act = bool(ui.chat.auto_act_after_plan)
+    switched = await use_model_for_mode(provider, ui.api, mode)
+    if switched:
+        print(f"Could not load the {mode} model: {switched}", file=sys.stderr)
+    print(f"Provider: {provider_name} | Model: {getattr(provider, 'model', None) or ui.api.model or '(auto)'} | Workspace: {workspace_path}")
+    print(f"Mode: {mode} | Tools: {[t.name for t in registry.list_tools()]}")
+    result = await agent.run(
+        args.task,
+        workspace=str(workspace_path),
+        system_prompt=system,
+        response_language=lang,
+        agent_mode=mode,
+        plan_handoff=bool(mode == "plan" and auto_act),
+    )
+    outcome = ""
+    if agent.last_context is not None:
+        outcome = str((agent.last_context.metadata or {}).get("outcome") or "")
+    failed = outcome in {
+        "provider_error", "verification_failed", "tool_loop", "content_loop",
+        "empty_response", "max_iterations",
+    }
+    if mode == "plan" and auto_act and not failed and not open_plan_items(agent.last_context):
+        print("Plan finished. Starting Act with a fresh iteration budget.")
+        switched = await use_model_for_mode(provider, ui.api, "act")
+        if switched:
+            print(f"Could not load the act model: {switched}", file=sys.stderr)
+        draft = plan_research_record(
+            agent.last_context.messages if agent.last_context is not None else [],
+            result if isinstance(result, str) else "",
+        )
+        research = handoff_archive(agent.last_context)
+        result = await agent.run(
+            act_followup_task(args.task, draft, max_iterations=agent.orchestrator.max_iterations),
+            workspace=str(workspace_path),
+            system_prompt=system,
+            response_language=lang,
+            agent_mode="act",
+            plan_archive=research or None,
+        )
+        if agent.last_context is not None:
+            outcome = str((agent.last_context.metadata or {}).get("outcome") or "")
+    elif mode == "plan" and not auto_act and isinstance(result, str):
+        result = strip_draft(result)
     ctx = agent.last_context
     if ctx is not None:
         transcript = (ctx.metadata or {}).get("transcript") or [
@@ -328,7 +387,13 @@ async def async_main(argv: Optional[list] = None) -> int:
     settings_parser = subparsers.add_parser("settings", help="Manage component settings")
     settings_sub = settings_parser.add_subparsers(dest="action")
     settings_sub.add_parser("reset", help="Reset tool/plugin settings to defaults")
-    settings_sub.add_parser("show", help="Show component settings files")
+    settings_sub.add_parser("show", help="Show the shared settings file")
+    settings_set = settings_sub.add_parser(
+        "set",
+        help="Set one shared setting: settings set agent.max_iterations 20",
+    )
+    settings_set.add_argument("key", help="section.name, for example api.model or chat.mode_auto")
+    settings_set.add_argument("value", help="Use null to clear an optional number such as api.max_tokens")
     lang_list = settings_sub.add_parser("languages", help="List response languages")
     lang_set = settings_sub.add_parser("language", help="Get/set response language (english name or code)")
     lang_set.add_argument("value", nargs="?", default=None, help="e.g. Russian, ru, English, auto")
@@ -412,7 +477,8 @@ async def async_main(argv: Optional[list] = None) -> int:
         print(f"Configuration error: {e}", file=sys.stderr)
         return 1
 
-    if config.application.auto_install_deps and args.command in ("run", "doctor", "plugins"):
+    ui_launch = args.command == "plugins" and getattr(args, "action", None) == "ui"
+    if config.application.auto_install_deps and args.command in ("run", "doctor", "plugins") and not ui_launch:
         ensure_dependencies(auto_install=True)
 
     if not (args.command == "mcp" and getattr(args, "action", None) == "serve"):
@@ -528,7 +594,8 @@ async def async_main(argv: Optional[list] = None) -> int:
             ws = Path(config.application.workspace_root)
             reg, _ = _build_registry(config, ws, tool_store)
             for t in reg.list_tools():
-                print(f"  {t.name:20}  {t.tool_id:20}  {t.description[:60]}")
+                phrase = getattr(t, "display_phrase", "") or "calls"
+                print(f"  {t.name:22} {phrase}")
             return 0
         if args.action == "settings":
             ts = tool_store.settings
@@ -583,7 +650,17 @@ async def async_main(argv: Optional[list] = None) -> int:
                 print("No plugins to list. Hidden plugins stay out of this list until Show in plugin list is on.")
             return 0
         if args.action == "validate":
-            print("Use: plugins list")
+            from Kerniq.settings.file import settings_path
+
+            for d in plugin_dirs:
+                await pm.discover_and_load(d)
+            path = settings_path(config.storage.state_dir)
+            print(f"Validated {len(pm.manifests)} plugin(s).")
+            print(f"Settings: {path}")
+            if pm.errors:
+                for pid, err in pm.errors.items():
+                    print(f"  {pid}: {err}")
+                return 1
             return 0
         if args.action == "ui":
             _apply_ui_log_level()
@@ -666,7 +743,10 @@ async def async_main(argv: Optional[list] = None) -> int:
             return 0
     if args.command == "settings":
         from Kerniq.settings.ui_store import UiSettingsStore, RESPONSE_LANGUAGES
-        ui_store = UiSettingsStore()
+        from Kerniq.settings.file import read_state_file, settings_path
+
+        state_dir = anchored_dir(config.storage.state_dir)
+        ui_store = UiSettingsStore(state_dir)
         if args.action == "languages":
             for code, name in RESPONSE_LANGUAGES.items():
                 print(f"  {code:8} {name}")
@@ -696,15 +776,18 @@ async def async_main(argv: Optional[list] = None) -> int:
             return 0
 
         from Kerniq.settings.component_store import ComponentSettingsStore
-        store = ComponentSettingsStore(config.storage.state_dir)
+        store = ComponentSettingsStore(state_dir)
         if args.action == "reset":
             n = store.reset_all()
-            # also reset ui_settings.json optional fields? keep ui store
-            print(f"Reset {n} component setting file(s) under {config.storage.state_dir}")
+            print(f"Cleared {n} tool/plugin block(s).")
+            print("Main settings stay in settings.json. Tool and plugin values stay in tools.json and plugins.json.")
+            print("Defaults are written again the next time those components are validated.")
             return 0
         if args.action == "show":
+            from Kerniq.settings.file import PLUGINS_FILE, TOOLS_FILE, state_file
+
             ui = ui_store.load()
-            print(f"[ui] {ui_store.path}")
+            print(f"Main: {settings_path(state_dir)}")
             data = ui.model_dump()
             for section, values in data.items():
                 print(f"  [{section}]")
@@ -713,12 +796,57 @@ async def async_main(argv: Optional[list] = None) -> int:
                         if key in ("api_token",) and value:
                             value = "***"
                         print(f"    {key} = {value}")
-            for kind, d in (("tools", store.tools_dir), ("plugins", store.plugins_dir)):
-                print(f"[{kind}] {d}")
-                for f in sorted(d.glob("*.json")):
-                    print(f"  {f.name}")
+            for label, filename, kind in (
+                ("Tools", TOOLS_FILE, "tool"),
+                ("Plugins", PLUGINS_FILE, "plugin"),
+            ):
+                print(f"{label}: {state_file(state_dir, filename)}")
+                raw_part = read_state_file(state_dir, filename)
+                names = raw_part.get("components") if isinstance(raw_part.get("components"), dict) else {}
+                if not names:
+                    print("    (none yet — run plugins validate or open settings)")
+                for name in sorted(names):
+                    print(f"    {name}")
             return 0
-        print("Usage: settings reset | settings show")
+        if args.action == "set":
+            section, _, name = str(args.key).partition(".")
+            if not section or not name:
+                print("Use section.name, for example: settings set api.temperature 0.4")
+                return 1
+            raw = str(args.value)
+            low = raw.strip().lower()
+            if low in ("null", "none"):
+                parsed: object = None
+            elif low in ("true", "yes", "on"):
+                parsed = True
+            elif low in ("false", "no", "off"):
+                parsed = False
+            else:
+                try:
+                    parsed = int(raw)
+                except ValueError:
+                    try:
+                        parsed = float(raw)
+                    except ValueError:
+                        parsed = raw
+            current = ui_store.load()
+            if not hasattr(current, section):
+                print(f"Unknown section: {section}")
+                return 1
+            block = getattr(current, section)
+            if not hasattr(block, name):
+                print(f"Unknown setting: {section}.{name}")
+                return 1
+            try:
+                setattr(block, name, parsed)
+                current = type(current).model_validate(current.model_dump())
+            except Exception as exc:
+                print(f"Rejected {section}.{name} = {parsed}: {exc}")
+                return 1
+            ui_store.save(current)
+            print(f"{section}.{name} = {getattr(getattr(current, section), name)}")
+            return 0
+        print("Usage: settings show | settings set section.name value | settings reset | settings language")
         return 1
     if args.command == "mcp":
         if args.action == "validate":

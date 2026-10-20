@@ -62,6 +62,13 @@ class SearchPluginsTool(Tool):
         return "plugin_search"
 
     @property
+    def display_phrase(self) -> str:
+        return "plugin searches"
+
+    def plan_membership_default(self) -> bool:
+        return True
+
+    @property
     def description(self) -> str:
         return (
             "Search GitHub for Kerniq-compatible plugins. "
@@ -165,6 +172,10 @@ class InstallPluginTool(Tool):
     @property
     def name(self) -> str:
         return "plugin_install"
+
+    @property
+    def display_phrase(self) -> str:
+        return "plugins installed"
 
     @property
     def description(self) -> str:
@@ -373,6 +384,10 @@ class RemovePluginTool(Tool):
         return "plugin_remove"
 
     @property
+    def display_phrase(self) -> str:
+        return "plugins removed"
+
+    @property
     def description(self) -> str:
         return (
             "Remove an installed plugin directory under ./plugins/<name>. "
@@ -432,6 +447,20 @@ class RemovePluginTool(Tool):
                 error="confirm=true required",
                 human_readable=f"Refusing to delete {dest} without confirm=true",
             )
+        plugin_ids = [name]
+        manifest = dest / "manifest.toml"
+        if manifest.is_file():
+            try:
+                import tomllib
+                with open(manifest, "rb") as handle:
+                    raw = tomllib.load(handle)
+                if isinstance(raw, dict):
+                    block = raw.get("plugin") if isinstance(raw.get("plugin"), dict) else raw
+                    pid = str((block or {}).get("plugin_id") or "").strip()
+                    if pid:
+                        plugin_ids.append(pid)
+            except Exception:
+                pass
         try:
             shutil.rmtree(dest)
         except Exception as e:
@@ -443,6 +472,13 @@ class RemovePluginTool(Tool):
                 error=str(e),
                 human_readable=f"Remove failed: {e}",
             )
+        try:
+            from Kerniq.settings.component_store import ComponentSettingsStore
+            from Kerniq.settings.loader import SettingsProvider
+
+            ComponentSettingsStore(SettingsProvider().config.storage.state_dir).forget("plugin", *plugin_ids)
+        except Exception:
+            pass
         return ToolResult(
             tool_call_id=arguments.get("tool_call_id", ""),
             tool_id=self.tool_id,
@@ -460,6 +496,13 @@ class SecurityScanPluginTool(Tool):
     @property
     def name(self) -> str:
         return "plugin_security_scan"
+
+    @property
+    def display_phrase(self) -> str:
+        return "plugin scans"
+
+    def plan_membership_default(self) -> bool:
+        return True
 
     @property
     def description(self) -> str:
@@ -518,6 +561,13 @@ class ListInstalledPluginsTool(Tool):
     @property
     def name(self) -> str:
         return "plugin_list_installed"
+
+    @property
+    def display_phrase(self) -> str:
+        return "plugin lists"
+
+    def plan_membership_default(self) -> bool:
+        return True
 
     @property
     def description(self) -> str:

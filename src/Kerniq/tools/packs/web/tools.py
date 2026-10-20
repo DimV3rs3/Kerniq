@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import re
+import socket
 from html import unescape
 from typing import Any, Dict, List, Optional
 
@@ -12,6 +14,50 @@ from ....interfaces.tools import Tool, ToolResult
 from ....interfaces.settings_schema import SettingsSchema, SettingField, SettingType
 
 logger = logging.getLogger(__name__)
+
+
+def _url_host(url: str) -> str:
+    raw = (url or "").split("://", 1)[-1]
+    raw = raw.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    if "@" in raw:
+        raw = raw.rsplit("@", 1)[-1]
+    if raw.startswith("["):
+        end = raw.find("]")
+        return raw[1:end].strip().lower() if end > 1 else ""
+    return raw.split(":")[0].strip().lower().rstrip(".")
+
+
+def blocked_fetch_url(url: str) -> str:
+    """Reject loopback, private, and link-local targets. Empty means allowed."""
+    host = _url_host(url)
+    if not host:
+        return "URL has no host"
+    if host in {"localhost", "metadata", "metadata.google.internal"} or host.endswith(".localhost"):
+        return "Local and metadata URLs are denied"
+    addresses = []
+    try:
+        addresses.append(ipaddress.ip_address(host))
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except Exception:
+            return ""
+        for info in infos:
+            try:
+                addresses.append(ipaddress.ip_address(info[4][0]))
+            except Exception:
+                continue
+    for ip in addresses:
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return "Local, private, and link-local URLs are denied"
+    return ""
 
 
 def _url_encode(s: str) -> str:
@@ -53,8 +99,9 @@ class WebSearchTool(Tool):
     def collapsible(self) -> bool:
         return bool(getattr(self, "cfg_collapsible", True))
 
-    def chat_label(self, count: int = 1, *, success: bool = True) -> str:
-        return f"{count} поисков"
+    @property
+    def display_phrase(self) -> str:
+        return "searches"
 
     def settings_schema(self):
         return SettingsSchema(
@@ -101,6 +148,9 @@ class WebSearchTool(Tool):
     @property
     def risk_level(self) -> str:
         return "low"
+
+    def plan_membership_default(self) -> bool:
+        return True
 
     @property
     def description(self) -> str:
@@ -297,8 +347,9 @@ class FetchUrlTool(Tool):
     def collapsible(self) -> bool:
         return bool(getattr(self, "cfg_collapsible", True))
 
-    def chat_label(self, count: int = 1, *, success: bool = True) -> str:
-        return f"{count} ссылок"
+    @property
+    def display_phrase(self) -> str:
+        return "fetches"
 
     def settings_schema(self):
         return SettingsSchema(
@@ -338,6 +389,9 @@ class FetchUrlTool(Tool):
     def risk_level(self) -> str:
         return "low"
 
+    def plan_membership_default(self) -> bool:
+        return True
+
     @property
     def description(self) -> str:
         return "Fetches text/HTML content from an http(s) URL for reading documentation or pages."
@@ -374,12 +428,29 @@ class FetchUrlTool(Tool):
                 human_readable="Only http(s) URLs are allowed",
                 error="VALIDATION",
             )
+        blocked = blocked_fetch_url(url)
+        if blocked:
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="error",
+                output=None,
+                human_readable=blocked,
+                error="VALIDATION",
+            )
         max_bytes = int(arguments.get("max_bytes") or self.max_bytes)
         try:
             import httpx
 
+            async def _reject_private(request):
+                reason = blocked_fetch_url(str(request.url))
+                if reason:
+                    raise PermissionError(reason)
+
             async with httpx.AsyncClient(
-                timeout=self.timeout, follow_redirects=True
+                timeout=self.timeout,
+                follow_redirects=True,
+                event_hooks={"request": [_reject_private]},
             ) as client:
                 resp = await client.get(
                     url,

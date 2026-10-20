@@ -55,3 +55,6 @@ def test_tool_settings_persist(tmp_path):
     store2 = ToolSettingsStore(tmp_path)
     assert store2.settings.web_search_enabled is False
     assert store2.settings.fs_list_max_depth == 3
+    assert (tmp_path / "tools.json").is_file()
+    assert not (tmp_path / "tool_settings.json").exists()
+    assert not (tmp_path / "settings.json").exists()

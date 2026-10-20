@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 import threading
+import time
 import uuid
 from difflib import SequenceMatcher
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +17,12 @@ from typing import Any, Dict, Optional
 from Kerniq.plugins.base import Plugin, PluginContext
 from Kerniq.plugins.manifest import PluginManifest
 from Kerniq.interfaces.settings_schema import SettingsSchema, SettingField, SettingType
+
+# The explorer tree has no entry cap. To keep a huge workspace from burning CPU on the UI's 2.5 s poll,
+# a finished walk is reused for 10x the time it took (at most 30 s). Requests with ?fresh=1 (the UI sends
+# them after its own file operations and on manual refresh) always walk again.
+_TREE_CACHE: Dict[str, Any] = {}
+_TREE_LOCK = threading.Lock()
 
 logger = logging.getLogger("plugin.web_ui")
 
@@ -216,6 +223,10 @@ class _State:
     chat_lock = threading.Lock()
     approvals = None
     chat_log = None
+    # Chats whose Stop arrived before the run id existed.
+    cancel_chats: set = set()
+    # Absolute paths the file dialog on this process actually returned.
+    granted_paths: set = set()
 
 
 STATE = _State()
@@ -223,13 +234,248 @@ from Kerniq.security.approval_broker import ApprovalBroker
 
 STATE.approvals = ApprovalBroker()
 
+_STOP_NOTE = (
+    "Stopped by the user. This reply was not finished. "
+    "Continue the same task from the work already done. Do not start over."
+)
+
+
+def _norm_visible(text: str) -> str:
+    body = (text or "").strip()
+    marker = "\n\n[kerniq] outcome="
+    if marker in body:
+        body = body.split(marker, 1)[0].strip()
+    if body.endswith(_STOP_NOTE):
+        body = body[: -len(_STOP_NOTE)].strip()
+    return body
+
+
+def _is_visible_row(row: dict) -> bool:
+    role = row.get("role")
+    return role in ("user", "assistant") and bool(str(row.get("content") or "").strip())
+
+
+def _visible_equal(left: dict, right: dict) -> bool:
+    if left.get("role") != right.get("role"):
+        return False
+    a = _norm_visible(str(left.get("content") or ""))
+    b = _norm_visible(str(right.get("content") or ""))
+    if not a or not b:
+        return a == b
+    return a == b or a.startswith(b) or b.startswith(a)
+
+
+def transcript_rows(messages) -> list:
+    """Model-facing turns. System notes stay out. Tool calls stay in."""
+    rows = []
+    for msg in messages or []:
+        if isinstance(msg, dict):
+            role = msg.get("role")
+            content = msg.get("content") or ""
+            calls = msg.get("tool_calls") or None
+            tool_call_id = msg.get("tool_call_id")
+            name = msg.get("name")
+        else:
+            role = getattr(getattr(msg, "role", None), "value", None) or str(getattr(msg, "role", "") or "")
+            content = getattr(msg, "content", "") or ""
+            calls = []
+            for tc in getattr(msg, "tool_calls", None) or []:
+                calls.append({
+                    "id": str(getattr(tc, "id", "") or ""),
+                    "name": str(getattr(tc, "name", "") or ""),
+                    "arguments": getattr(tc, "arguments", None) or {},
+                })
+            calls = calls or None
+            tool_call_id = getattr(msg, "tool_call_id", None)
+            name = getattr(msg, "name", None)
+        if role not in ("user", "assistant", "tool"):
+            continue
+        if role == "assistant" and not str(content).strip() and not calls:
+            continue
+        if role != "assistant" and not str(content).strip():
+            continue
+        row = {"role": role, "content": content}
+        if calls:
+            row["tool_calls"] = calls
+        if tool_call_id:
+            row["tool_call_id"] = tool_call_id
+        if name:
+            row["name"] = name
+        rows.append(row)
+    return rows
+
+
+def _covers(longer: list, shorter: list) -> bool:
+    long_vis = [row for row in longer if _is_visible_row(row)]
+    short_vis = [row for row in shorter if _is_visible_row(row)]
+    if len(long_vis) < len(short_vis):
+        return False
+    return all(_visible_equal(long_vis[i], short_vis[i]) for i in range(len(short_vis)))
+
+
+def _collapse_consecutive_users(rows: list) -> list:
+    """One send must not land as two identical user turns in a row."""
+    out = []
+    for row in rows or []:
+        prev = out[-1] if out else None
+        if (
+            prev
+            and prev.get("role") == "user"
+            and row.get("role") == "user"
+            and (prev.get("content") or "") == (row.get("content") or "")
+            and not prev.get("tool_calls")
+            and not row.get("tool_calls")
+        ):
+            continue
+        out.append(row)
+    return out
+
+
+def merge_histories(server, client) -> list:
+    """Keep the transcript the model should continue.
+
+    The server copy can hold tool calls the browser does not send back.
+    The browser copy can hold the turn the user just typed after Stop.
+    A new user message is never dropped, and server tool calls are kept
+    when the two copies still share a prefix.
+    """
+    server_rows = [dict(row) for row in (server or []) if isinstance(row, dict) and row.get("role")]
+    client_rows = [
+        dict(row)
+        for row in (client or [])
+        if isinstance(row, dict) and row.get("role") in ("user", "assistant", "tool")
+    ]
+    if not client_rows:
+        return server_rows
+    if not server_rows:
+        return client_rows
+    server_vis_idx = [i for i, row in enumerate(server_rows) if _is_visible_row(row)]
+    client_vis = [row for row in client_rows if _is_visible_row(row)]
+    matched = 0
+    limit = min(len(server_vis_idx), len(client_vis))
+    while matched < limit and _visible_equal(server_rows[server_vis_idx[matched]], client_vis[matched]):
+        matched += 1
+    if matched == 0:
+        return _collapse_consecutive_users(client_rows if len(client_vis) >= len(server_vis_idx) else server_rows)
+    if matched == len(client_vis):
+        return _collapse_consecutive_users(server_rows)
+    extra = []
+    for row in client_vis[matched:]:
+        if row.get("role") == "user":
+            extra.append(dict(row))
+            continue
+        if row.get("role") != "assistant":
+            continue
+        tail = extra[-1] if extra else (server_rows[-1] if server_rows else None)
+        if not tail or tail.get("role") != "assistant":
+            extra.append(dict(row))
+    return _collapse_consecutive_users(server_rows + extra)
+
+
+def _mark_stopped(rows: list, partial: str) -> list:
+    rows = [dict(row) for row in rows]
+    partial = (partial or "").strip()
+    if rows and rows[-1].get("role") == "assistant" and not rows[-1].get("tool_calls"):
+        body = rows[-1].get("content") or ""
+        if partial and partial not in body:
+            body = (body.rstrip() + "\n" + partial).strip()
+        if _STOP_NOTE not in body:
+            body = (body.rstrip() + "\n\n" + _STOP_NOTE).strip() if body.strip() else _STOP_NOTE
+        rows[-1]["content"] = body
+        return rows
+    text = partial
+    if _STOP_NOTE not in text:
+        text = (text.rstrip() + "\n\n" + _STOP_NOTE).strip() if text else _STOP_NOTE
+    rows.append({"role": "assistant", "content": text})
+    return rows
+
+
+def compose_saved_history(prior, context_messages, *, user_task="", partial="", cancelled=False) -> list:
+    """Full transcript for the next model call, including a stopped turn."""
+    fresh = transcript_rows(context_messages)
+    prior_rows = transcript_rows(prior)
+    if fresh and _covers(fresh, prior_rows):
+        rows = fresh
+    elif fresh:
+        rows = prior_rows + fresh
+    else:
+        rows = list(prior_rows)
+        task = (user_task or "").strip()
+        if task and not (rows and rows[-1].get("role") == "user" and (rows[-1].get("content") or "") == task):
+            rows.append({"role": "user", "content": task})
+    if cancelled:
+        rows = _mark_stopped(rows, partial)
+    rows = _collapse_consecutive_users(rows)
+    if len(rows) > 200:
+        rows = rows[-200:]
+        while rows and rows[0].get("role") == "tool":
+            rows.pop(0)
+    return rows
+
+
+def partial_assistant_text(events) -> str:
+    """Text the UI already showed, after the last finished tool."""
+    buf: list[str] = []
+    for event in events or []:
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
+        if kind == "content_delta":
+            buf.append(event.get("text") or "")
+        elif kind == "tool" and event.get("status") not in (None, "pending"):
+            buf = []
+        elif kind == "assistant" and str(event.get("content") or "").strip():
+            buf = [str(event.get("content") or "")]
+    return "".join(buf).strip()
+
+
+def history_message(row: dict):
+    from Kerniq.interfaces.models import Message, MessageRole, ToolCall
+
+    if not isinstance(row, dict):
+        return None
+    role = row.get("role")
+    content = row.get("content") or ""
+    if role not in ("user", "assistant", "tool"):
+        return None
+    calls = []
+    for tc in row.get("tool_calls") or []:
+        if not isinstance(tc, dict) or not tc.get("name"):
+            continue
+        args = tc.get("arguments") if isinstance(tc.get("arguments"), dict) else {}
+        calls.append(ToolCall(id=str(tc.get("id") or uuid.uuid4()), name=str(tc["name"]), arguments=args))
+    if role == "assistant" and not str(content).strip() and not calls:
+        return None
+    if role != "assistant" and not str(content).strip():
+        return None
+    return Message(
+        role=MessageRole(role),
+        content=content,
+        tool_calls=calls or None,
+        tool_call_id=row.get("tool_call_id") or None,
+        name=row.get("name") or None,
+    )
+
+
+def _grant_path(path: str) -> None:
+    try:
+        STATE.granted_paths.add(str(Path(path).resolve()))
+    except Exception:
+        return
+
+
+def _granted(path: str) -> bool:
+    try:
+        return str(Path(path).resolve()) in STATE.granted_paths
+    except Exception:
+        return False
+
 
 def _json(handler: BaseHTTPRequestHandler, code: int, payload: Any) -> None:
     body = json.dumps(payload, default=str, ensure_ascii=False).encode("utf-8")
     handler.send_response(code)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
-    handler.send_header("Access-Control-Allow-Origin", "*")
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -251,10 +497,23 @@ def _settings_store():
     return UiSettingsStore(cfg.storage.state_dir)
 
 
+def _langpacks():
+    import importlib.util
+    import sys
+    name = "kerniq_web_ui_langpacks"
+    if name in sys.modules:
+        return sys.modules[name]
+    path = Path(__file__).resolve().parent / "langpacks.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _workspace() -> Path:
     store = _settings_store()
     ws = Path(store.load().agent.workspace or "./workspace")
-    ws.mkdir(parents=True, exist_ok=True)
     return ws.resolve()
 
 
@@ -287,7 +546,6 @@ class UIHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -316,6 +574,10 @@ class UIHandler(BaseHTTPRequestHandler):
         if path == "/api/languages":
             from Kerniq.settings.ui_store import RESPONSE_LANGUAGES
             return _json(self, 200, {"languages": RESPONSE_LANGUAGES})
+        if path == "/api/ui/languages":
+            from Kerniq.settings.loader import SettingsProvider
+            state = SettingsProvider().config.storage.state_dir
+            return _json(self, 200, {"packs": _langpacks().list_packs(state, with_strings=True)})
         if path == "/api/tools":
             return _json(self, 200, self._tools())
         if path == "/api/plugins":
@@ -325,7 +587,7 @@ class UIHandler(BaseHTTPRequestHandler):
         if path == "/api/lms/loaded":
             return _json(self, 200, self._lms_loaded())
         if path == "/api/fs/tree":
-            return _json(self, 200, self._tree())
+            return _json(self, 200, self._tree(fresh=(qs.get("fresh") == "1")))
         if path == "/api/fs/file":
             return _json(self, 200, self._read_file(qs.get("path", "")))
         if path == "/api/chat/events":
@@ -359,6 +621,21 @@ class UIHandler(BaseHTTPRequestHandler):
             return _json(self, 200, self._save_component_settings(data))
         if path == "/api/settings/reset":
             return _json(self, 200, self._reset_settings(data))
+        if path == "/api/ui/languages/import":
+            from Kerniq.settings.loader import SettingsProvider
+            try:
+                saved = _langpacks().import_pack(SettingsProvider().config.storage.state_dir, data.get("pack"))
+            except ValueError as exc:
+                body = {"error": str(exc)}
+                errors = getattr(exc, "errors", None)
+                if errors:
+                    body["errors"] = list(errors)
+                return _json(self, 400, body)
+            return _json(self, 200, saved)
+        if path == "/api/ui/languages/delete":
+            from Kerniq.settings.loader import SettingsProvider
+            ok = _langpacks().delete_pack(SettingsProvider().config.storage.state_dir, str((data or {}).get("id") or ""))
+            return _json(self, 200, {"ok": ok})
         if path == "/api/fs/rename":
             return _json(self, 200, self._rename(data))
         if path == "/api/fs/reveal":
@@ -421,19 +698,24 @@ class UIHandler(BaseHTTPRequestHandler):
 
     def _tools(self) -> Dict[str, Any]:
         tools = []
+
+        def _one(t) -> Dict[str, Any]:
+            return {
+                "name": t.name,
+                "id": t.tool_id,
+                "description": t.description,
+                "display_phrase": getattr(t, "display_phrase", "") or "",
+            }
+
         if STATE.context and STATE.context.tool_registry:
             for t in STATE.context.tool_registry.list_tools():
-                tools.append(
-                    {"name": t.name, "id": t.tool_id, "description": t.description}
-                )
+                tools.append(_one(t))
         if not tools:
             try:
                 from Kerniq.tools.loader import load_all_tools
 
                 for t in load_all_tools(str(_workspace())):
-                    tools.append(
-                        {"name": t.name, "id": t.tool_id, "description": t.description}
-                    )
+                    tools.append(_one(t))
             except Exception as exc:
                 logger.warning("tool pack discovery failed: %s", exc)
         return {"tools": tools}
@@ -477,34 +759,47 @@ class UIHandler(BaseHTTPRequestHandler):
         except Exception as e:
             return {"models": [], "embeddings": [], "reachable": False, "error": str(e), "provider": provider_id}
 
-    def _tree(self) -> Dict[str, Any]:
+    def _tree(self, fresh: bool = False) -> Dict[str, Any]:
         try:
             ws = _workspace()
+            key = str(ws)
+            if not fresh:
+                with _TREE_LOCK:
+                    hit = _TREE_CACHE.get("tree")
+                    if hit and hit["ws"] == key and time.monotonic() - hit["at"] < hit["ttl"]:
+                        return hit["data"]
+            started = time.monotonic()
             entries = []
-            max_entries = 2000
 
             def walk(dir_path: Path, prefix: str, depth: int) -> None:
-                if len(entries) >= max_entries or depth > 12:
+                if depth > 32:
                     return
                 try:
                     kids = sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
                 except OSError:
                     return
                 for p in kids:
-                    if len(entries) >= max_entries:
-                        return
                     name = p.name
                     rel = f"{prefix}/{name}" if prefix else name
                     rel = rel.replace(chr(92), "/")
                     hidden = name.startswith(".")
-                    if p.is_dir():
+                    try:
+                        is_dir = p.is_dir()
+                    except OSError:
+                        continue
+                    if is_dir:
                         entries.append({"path": rel, "type": "dir", "name": name, "hidden": hidden})
-                        walk(p, rel, depth + 1)
+                        if not p.is_symlink():  # a linked folder is listed but not entered: no loops
+                            walk(p, rel, depth + 1)
                     else:
                         entries.append({"path": rel, "type": "file", "name": name, "hidden": hidden})
 
             walk(ws, "", 0)
-            return {"entries": entries, "workspace": str(ws)}
+            data = {"entries": entries, "workspace": key}
+            cost = time.monotonic() - started
+            with _TREE_LOCK:
+                _TREE_CACHE["tree"] = {"ws": key, "at": time.monotonic(), "ttl": min(30.0, cost * 10.0), "data": data}
+            return data
         except Exception as e:
             return {"error": str(e), "entries": []}
 
@@ -675,6 +970,23 @@ class UIHandler(BaseHTTPRequestHandler):
             if err:
                 item["error"] = err
             rows.append(item)
+        if root.is_dir():
+            from Kerniq.interfaces.settings_schema import SettingsSchema
+
+            schemas = {}
+            for row in rows:
+                public = row.get("schema")
+                if isinstance(public, dict):
+                    try:
+                        schemas[row["id"]] = SettingsSchema(**public)
+                        continue
+                    except Exception:
+                        pass
+                schemas[row["id"]] = None
+            try:
+                store.reconcile("plugin", schemas)
+            except Exception:
+                logger.exception("plugin settings reconcile")
         return rows
 
     def _component_store(self):
@@ -694,7 +1006,14 @@ class UIHandler(BaseHTTPRequestHandler):
             ws = _workspace()
             policy = SecurityPolicy(workspace_root=ws)
             instances = list(load_all_tools(str(ws), policy=policy))
+            from Kerniq.settings.loader import SettingsProvider
+            from Kerniq.tools.runtime_settings import apply_stored_tool_settings
+            from Kerniq.tools.settings import ToolSettingsStore
+
+            state_dir = SettingsProvider().config.storage.state_dir
+            apply_stored_tool_settings(instances, state_dir)
             store = self._component_store()
+            enabled_map = dict(ToolSettingsStore(state_dir).load().enabled_tools or {})
             for tool in instances:
                 try:
                     schema = tool.settings_schema()
@@ -702,11 +1021,7 @@ class UIHandler(BaseHTTPRequestHandler):
 
                     schema = ensure_common_fields(schema, tool)
                     values = store.load("tool", tool.tool_id, schema) if schema else {}
-                    if "collapsible" in values:
-                        try:
-                            tool.apply_settings({"collapsible": values["collapsible"]})
-                        except Exception:
-                            pass
+                    phrase = getattr(tool, "display_phrase", "") or ""
                     tools.append({
                         "id": tool.tool_id,
                         "name": tool.name,
@@ -717,8 +1032,10 @@ class UIHandler(BaseHTTPRequestHandler):
                         "collapsible": bool(getattr(tool, "collapsible", False)),
                         "risk_level": getattr(tool, "risk_level", "medium"),
                         "auto_accept": bool(getattr(tool, "cfg_auto_accept", False)),
+                        "include_in_plan": bool(getattr(tool, "include_in_plan", False)),
+                        "display_phrase": phrase,
                         "chat_label": tool.chat_label(1) if hasattr(tool, "chat_label") else tool.name,
-                        "enabled": True,
+                        "enabled": bool(enabled_map.get(tool.tool_id, enabled_map.get(tool.name, True))),
                         "schema": schema.to_public() if schema else None,
                         "values": values or {},
                     })
@@ -779,17 +1096,18 @@ class UIHandler(BaseHTTPRequestHandler):
                     schema = SettingsSchema(**item["schema"])
                 break
         saved = store.save(kind, cid, values, schema)
-        # also persist enabled map into ui_settings tools.enabled_tools
         if enabled is not None and kind == "tool":
-            ui = _settings_store()
-            cur = ui.load()
-            et = dict(cur.tools.enabled_tools or {})
+            from Kerniq.settings.loader import SettingsProvider
+            from Kerniq.tools.settings import ToolSettingsStore
+
+            toggles = ToolSettingsStore(SettingsProvider().config.storage.state_dir)
+            current = toggles.load()
+            et = dict(current.enabled_tools or {})
             et[cid] = bool(enabled)
-            # also by name
             for item in listing["tools"]:
                 if item["id"] == cid:
                     et[item["name"]] = bool(enabled)
-            ui.update({"tools": {"enabled_tools": et}})
+            toggles.update(enabled_tools=et)
         return {"ok": True, "values": saved}
 
     def _reset_settings(self, data):
@@ -827,8 +1145,6 @@ class UIHandler(BaseHTTPRequestHandler):
                 if q in name:
                     rel = str(p.relative_to(ws)).replace(chr(92), "/")
                     hits.append({"path": rel, "name": p.name})
-                    if len(hits) >= 40:
-                        break
         except Exception as e:
             return {"hits": [], "error": str(e)}
         return {"hits": hits}
@@ -867,12 +1183,13 @@ class UIHandler(BaseHTTPRequestHandler):
             sp = Path(src)
             if not sp.is_file():
                 return {"error": "source not a file"}
-            # security: only allow if under workspace OR explicit import into attachments
             try:
                 rel_ws = sp.resolve().relative_to(ws.resolve())
                 return {"ok": True, "path": str(rel_ws).replace(chr(92), "/"), "workspace_relative": True}
             except ValueError:
                 pass
+            if not _granted(str(sp)):
+                return {"error": "That path was not chosen in the file dialog."}
             safe_name = re.sub(r"[^\w.\-]+", "_", name or sp.name)[:120]
             dest = att / safe_name
             i = 1
@@ -933,7 +1250,7 @@ class UIHandler(BaseHTTPRequestHandler):
             paths = filedialog.askopenfilenames(
                 title="Attach files",
                 filetypes=[
-                    ("Documents and code", "*.md *.txt *.docx *.py *.js *.ts *.tsx *.jsx *.json *.toml *.yml *.yaml *.html *.css *.rs *.go *.java *.c *.cpp *.h *.cs *.rb *.php *.sh *.sql *.xml *.csv *.vue *.svelte"),
+                    ("Documents and code", "*.md *.txt *.py *.js *.ts *.tsx *.jsx *.json *.toml *.yml *.yaml *.html *.css *.rs *.go *.java *.c *.cpp *.h *.cs *.rb *.php *.sh *.sql *.xml *.csv *.vue *.svelte"),
                     ("All files", "*.*"),
                 ],
             )
@@ -948,6 +1265,7 @@ class UIHandler(BaseHTTPRequestHandler):
                     blocked.append(Path(raw).name)
                     continue
                 allowed.append(raw)
+                _grant_path(raw)
             return {"paths": allowed, "blocked": blocked}
         except Exception as e:
             logger.exception("pick_files")
@@ -1103,26 +1421,32 @@ class UIHandler(BaseHTTPRequestHandler):
             return {"error": str(e)}
 
     def _shutdown_server(self):
-        """Stop HTTP server after response is sent."""
+        """Close the UI socket. A running task stays in this process."""
         import threading
 
         def _stop():
             import time
             time.sleep(0.4)
+            active = 0
+            try:
+                with STATE.runs_lock:
+                    active = sum(1 for run in STATE.runs.values() if not run.get("done"))
+            except Exception:
+                active = 0
             try:
                 srv = STATE.server
                 if srv is not None and hasattr(srv, "shutdown"):
                     srv.shutdown()
+                    STATE.server = None
             except Exception:
                 pass
-            try:
-                import os
-                os._exit(0)
-            except Exception:
-                pass
+            if active:
+                print("Web UI closed. Kerniq is still working on the current task. Ctrl+C stops the process.", flush=True)
+            else:
+                print("Web UI closed. Kerniq is still running. Ctrl+C stops the process.", flush=True)
 
         threading.Thread(target=_stop, daemon=True).start()
-        return {"ok": True, "message": "shutting down"}
+        return {"ok": True, "message": "ui closed"}
 
     def _lms_unload_all(self):
         try:
@@ -1132,28 +1456,57 @@ class UIHandler(BaseHTTPRequestHandler):
             return {"error": str(e)}
 
     def _cancel_run(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        run_id = (data or {}).get("run_id") or ""
+        run_id = str((data or {}).get("run_id") or "")
+        chat_id = str((data or {}).get("chat_id") or "")
         with STATE.runs_lock:
-            run = STATE.runs.get(run_id)
-            if not run:
+            if not run_id:
+                for rid, candidate in reversed(list(STATE.runs.items())):
+                    if candidate.get("done"):
+                        continue
+                    if chat_id and candidate.get("chat_id") != chat_id:
+                        continue
+                    run_id = rid
+                    break
+            run = STATE.runs.get(run_id) if run_id else None
+            live = run is not None and not run.get("done")
+            if live:
+                run["cancelled"] = True
+                # A live run is flagged directly. Do not arm the next message.
+                STATE.cancel_chats.discard(str(run.get("chat_id") or chat_id))
+                # Poll reads `log`. Writing only `events` left the UI on Stopping forever.
+                event = {"type": "status", "status": "cancelled", "text": "Stopping…"}
+                run.setdefault("log", []).append(event)
+                run.setdefault("events", []).append(event)
+            elif chat_id:
+                # Stop arrived before this run was registered. One shot only.
+                STATE.cancel_chats.add(chat_id)
+            elif run is None:
                 return {"ok": False, "error": "run not found"}
-            run["cancelled"] = True
-            # Do not mark done immediately — worker emits final status and sets done
-            run.setdefault("events", []).append(
-                {"type": "status", "status": "cancelled", "text": "Stopping…"}
-            )
-        return {"ok": True, "run_id": run_id}
+        try:
+            broker = STATE.approvals
+            if broker is not None:
+                for item in broker.list_pending():
+                    rid = str((item or {}).get("request_id") or "")
+                    if rid:
+                        broker.decide(rid, "deny", "cancelled")
+        except Exception:
+            logger.exception("cancel approvals failed")
+        return {"ok": True, "run_id": run_id, "chat_id": chat_id}
 
     def _start_run(self, data: Dict[str, Any]) -> Dict[str, Any]:
         run_id = str(uuid.uuid4())
         chat_id = str((data or {}).get("chat_id") or "default")
         with STATE.runs_lock:
+            pre_cancelled = chat_id in STATE.cancel_chats
+            if pre_cancelled:
+                STATE.cancel_chats.discard(chat_id)
             STATE.runs[run_id] = {
                 "events": [],
                 "log": [],
                 "done": False,
                 "error": None,
                 "chat_id": chat_id,
+                "cancelled": pre_cancelled,
             }
         try:
             _chat_log().begin(
@@ -1229,6 +1582,9 @@ def _finish_run(run_id: str, error: Optional[str] = None) -> None:
         if run:
             run["done"] = True
             run["error"] = error
+            chat_id = str(run.get("chat_id") or "")
+            if chat_id:
+                STATE.cancel_chats.discard(chat_id)
     try:
         _chat_log().finish(run_id, done=True, error=error)
     except Exception:
@@ -1339,7 +1695,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
 
     def _on_plan(items, archive=None):
         rows = [item for item in (items or []) if isinstance(item, dict)]
-        open_items = [item for item in rows if item.get("status") not in ("done", "skipped")]
+        open_items = [item for item in rows if item.get("status") not in ("done", "skipped", "failed")]
         _emit(run_id, {
             "type": "plan",
             "items": rows,
@@ -1348,6 +1704,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         })
 
     agent.orchestrator.on_plan = _on_plan
+
+    def _on_notice(kind, text):
+        _emit(run_id, {"type": "notice", "kind": kind, "text": text})
+
+    agent.orchestrator.on_notice = _on_notice
     try:
         from Kerniq.plugins.manager import PluginManager
         from Kerniq.plugins.base import PluginContext
@@ -1371,12 +1732,8 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         logger.exception("plugin load during chat run failed")
     if ui.agent.max_iterations is not None:
         agent.orchestrator.max_iterations = ui.agent.max_iterations
-    from Kerniq.interfaces.models import GenerationOptions
-    agent.orchestrator.generation_options = GenerationOptions(
-        temperature=ui.api.temperature if ui.api.temperature is not None else 0.7,
-        max_tokens=ui.api.max_tokens,
-        streaming=bool(getattr(ui, "chat", None) and ui.chat.streaming),
-    )
+    from Kerniq.core.runtime_flow import apply_runtime
+    apply_runtime(agent.orchestrator, ui)
     # Model context window for overflow protection (best-effort)
     ctx_lim = 0
     try:
@@ -1490,6 +1847,13 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             pass
         try:
             resp = await orig_generate(request)
+        except asyncio.CancelledError:
+            hb_stop["v"] = True
+            try:
+                hb_task.cancel()
+            except Exception:
+                pass
+            raise
         except Exception as e:
             msg = str(e)
             low = msg.lower()
@@ -1516,6 +1880,13 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             except Exception:
                 pass
             raise
+        if getattr(resp, "finish_reason", None) == "cancelled" or (resp.metadata or {}).get("cancelled"):
+            hb_stop["v"] = True
+            try:
+                hb_task.cancel()
+            except Exception:
+                pass
+            return resp
         reasoning = None
         if resp.metadata:
             reasoning = resp.metadata.get("reasoning")
@@ -1525,10 +1896,12 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                     reasoning = msg.metadata.get("reasoning")
         if reasoning and str(reasoning).strip():
             _emit(run_id, {"type": "think_done", "text": reasoning})
-        # empty final content marker
+        from Kerniq.core.runtime_flow import promote_reasoning
+
+        promote_reasoning(resp)
         texts = [m.content for m in resp.messages if (m.content or "").strip()]
         if not texts and not any(m.tool_calls for m in resp.messages):
-            _emit(run_id, {"type": "status", "status": "empty_done", "text": "Model finished (empty response)"})
+            _emit(run_id, {"type": "status", "status": "empty_done", "text": "Empty reply, retrying…"})
         tps = (resp.metadata or {}).get("tokens_per_second")
         if tps:
             _emit(run_id, {"type": "tps", "value": float(tps)})
@@ -1586,6 +1959,22 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         tname = tool.name
 
         async def wrapped(arguments, context, _orig=orig_exec, _name=tname):
+            if _is_cancelled():
+                try:
+                    context.cancelled = True
+                except Exception:
+                    pass
+                from Kerniq.interfaces.tools import ToolResult
+                return ToolResult(
+                    tool_call_id=getattr(context, "last_tool_call_id", "unknown"),
+                    tool_id=_name,
+                    status="error",
+                    success=False,
+                    stop_reason="cancelled",
+                    output="",
+                    human_readable="Stopped by user.",
+                    error="cancelled",
+                )
             _emit(run_id, {"type": "status", "status": "tool", "text": f"Running tool: {_name}…"})
             _emit(run_id, {"type": "status", "status": "waiting_tool", "text": f"Waiting for tool: {_name}…"})
             before = None
@@ -1656,26 +2045,29 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
 
     chat_id = str(data.get("chat_id") or "default")
     history_msgs: list = []
-    # 1) server-side store for this chat
     with STATE.chat_lock:
         stored = list(STATE.chat_histories.get(chat_id) or [])
-    for h in stored:
-        role = h.get("role")
-        content = h.get("content") or ""
-        if role in ("user", "assistant") and content:
-            history_msgs.append(Message(role=MessageRole(role), content=content))
-    # 2) client history if longer (browser may have more)
+    if not stored:
+        try:
+            stored = _chat_log().model_messages(chat_id)
+        except Exception:
+            logger.exception("model history load failed")
+            stored = []
+        if stored:
+            with STATE.chat_lock:
+                if not STATE.chat_histories.get(chat_id):
+                    STATE.chat_histories[chat_id] = list(stored)
+                else:
+                    stored = list(STATE.chat_histories[chat_id])
     try:
         client_hist = data.get("history") or []
-        if len(client_hist) > len(history_msgs):
-            history_msgs = []
-            for h in client_hist:
-                role = h.get("role")
-                content = h.get("content") or ""
-                if role in ("user", "assistant") and content:
-                    history_msgs.append(Message(role=MessageRole(role), content=content))
     except Exception:
+        client_hist = []
         logger.exception("client history parse")
+    for row in merge_histories(stored, client_hist):
+        msg = history_message(row)
+        if msg is not None:
+            history_msgs.append(msg)
 
     system = (ui.prompt.system_prompt or "").strip() or None
     # File reference protocol for the UI
@@ -1690,9 +2082,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     else:
         system = file_link_hint
     if ui.prompt.include_tool_catalog:
-        tools_desc = ", ".join(t.name for t in reg.list_tools())
-        if tools_desc:
-            system = (system or "") + f"\n\nAvailable tools: {tools_desc}."
+        system = (system or "") + (
+            "\n\nCallable tools for each turn are listed at the end of the system message "
+            "as [Tools this turn]. Only those may be called. "
+            "Until a TODO exists, that list is update_plan and nothing else."
+        )
 
     # Never bake system into task
     user_task = (task or "").strip()
@@ -1702,6 +2096,37 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         mm = _re.search(r"\[User\]\s*(.*)$", user_task, flags=_re.S | _re.I)
         if mm:
             user_task = mm.group(1).strip()
+
+    prior_rows = transcript_rows(history_msgs)
+
+    def _event_partial() -> str:
+        with STATE.runs_lock:
+            log = list((STATE.runs.get(run_id) or {}).get("log") or [])
+        return partial_assistant_text(log)
+
+    def _remember(context, *, cancelled=False) -> None:
+        try:
+            rows = compose_saved_history(
+                prior_rows,
+                getattr(context, "messages", None) if context is not None else None,
+                user_task=user_task,
+                partial=_event_partial(),
+                cancelled=cancelled,
+            )
+            with STATE.chat_lock:
+                STATE.chat_histories[chat_id] = rows
+            try:
+                _chat_log().save_model_messages(chat_id, rows)
+            except Exception:
+                logger.exception("model history persist failed")
+        except Exception:
+            logger.exception("history save failed")
+
+    def _finish_cancelled() -> None:
+        _remember(getattr(agent, "last_context", None), cancelled=True)
+        _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
+        _emit(run_id, {"type": "cleanup_think"})
+        _finish_run(run_id, None)
 
     logger.info(
         "run chat_id=%s history=%s system_len=%s task=%r",
@@ -1714,8 +2139,10 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     for item in data.get("attachments") or []:
         if isinstance(item, dict) and item.get("external"):
             raw = str(item.get("path") or "").strip()
-            if raw:
-                external_files.append(raw)
+            if raw and _granted(raw):
+                external_files.append(str(Path(raw).resolve()))
+            elif raw:
+                logger.warning("Rejected external attachment that was not granted by the file dialog")
             continue
         path = item.get("path") if isinstance(item, dict) else str(item)
         path = str(path or "").replace("\\", "/").lstrip("./")
@@ -1748,84 +2175,79 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         compose_plan = bool(data.get("compose_plan"))
     agent.orchestrator.finish_open_plan = True
     initial_plan = data.get("plan") if isinstance(data.get("plan"), list) else None
+    initial_archive = data.get("archive") if isinstance(data.get("archive"), list) else None
 
-    async def _activate_act_model() -> None:
-        if not getattr(ui.api, "split_models", False):
-            return
-        act_model = str(getattr(ui.api, "act_model", "") or "").strip()
-        plan_model = str(getattr(ui.api, "model", "") or "").strip()
-        if not act_model or act_model == plan_model:
-            return
-        provider_id = str(getattr(ui.api, "provider", "") or "")
-        try:
-            if provider_id == "lm_studio" and hasattr(provider, "unload_all"):
-                await provider.unload_all()
-                await provider.load_model(act_model)
-            elif provider_id == "ollama":
-                import httpx
-                base = str(getattr(provider, "base_url", "") or ui.api.base_url or "http://127.0.0.1:11434").rstrip("/")
-                async with httpx.AsyncClient(timeout=30) as client:
-                    if plan_model:
-                        await client.post(base + "/api/generate", json={"model": plan_model, "keep_alive": 0})
-                    await client.post(base + "/api/generate", json={"model": act_model, "keep_alive": "10m"})
-            if hasattr(provider, "model"):
-                provider.model = act_model
-            _emit(run_id, {"type": "status", "status": "loading_model", "text": act_model})
-        except Exception:
-            logger.exception("act model switch failed")
+    async def _use_mode_model(mode_name: str) -> None:
+        from Kerniq.core.runtime_flow import probe_context_limit, use_model_for_mode
+
+        before = str(getattr(provider, "model", "") or "")
+        err = await use_model_for_mode(provider, ui.api, mode_name)
+        if err:
             _emit(run_id, {
                 "type": "assistant",
-                "content": "Could not switch to the Act model. Continuing with the current one.",
+                "content": f"Could not switch to the {mode_name} model. Continuing with the current one.",
                 "error": True,
-                "detail": f"{plan_model} -> {act_model}",
+                "detail": err,
                 "completed": False,
             })
+        after = str(getattr(provider, "model", "") or "")
+        if after and after != before:
+            _emit(run_id, {"type": "status", "status": "loading_model", "text": after})
+        limit = 0
+        try:
+            limit = int(await probe_context_limit(provider, after) or 0)
+        except Exception:
+            logger.exception("context probe failed")
+        if limit:
+            agent.orchestrator.context_limit = limit
+            compactor = getattr(agent.orchestrator, "compactor", None)
+            if compactor is not None:
+                compactor.cfg_context_limit = limit
+        _emit(run_id, {
+            "type": "model",
+            "mode": mode_name,
+            "model": after,
+            "context_limit": limit,
+        })
 
     async def _verdict(task_text: str) -> str:
-        from uuid import uuid4
+        from Kerniq.core.runtime_flow import route_mode
+        return await route_mode(provider, task_text, compose_plan=compose_plan)
 
-        from Kerniq.interfaces.models import GenerationOptions, Message, MessageRole, ModelRequest
-
-        request = ModelRequest(
-            messages=[
-                Message(
-                    role=MessageRole.SYSTEM,
-                    content=(
-                        "You route one user request by complexity. Reply with a single word: PLAN or ACT. "
-                        "PLAN if the work is large, unfamiliar, or spans several files. "
-                        "Plan only studies the project and closes its own research TODO. "
-                        "ACT if the work is small: one script, one obvious edit, or a direct question. "
-                        "Act still writes its own short TODO and then does the work. "
-                        "Do not explain."
-                    ),
-                ),
-                Message(role=MessageRole.USER, content=(task_text or "")[:4000]),
-            ],
-            session_id=uuid4(),
-            tools=None,
-            options=GenerationOptions(
-                temperature=0,
-                max_tokens=8,
-                streaming=False,
-                extra_params={"enable_thinking": False, "thinking": {"type": "disabled"}, "reasoning_effort": "none"},
-            ),
-            metadata={"kerniq_internal": "route"},
-        )
+    async def _await_cancel(coro):
+        """Stop must unblock routing and model load, not only the agent loop."""
+        task = asyncio.create_task(coro)
         try:
-            response = await provider.generate(request)
-            text = ""
-            if response and response.messages:
-                text = (response.messages[0].content or "").strip().upper()
-        except Exception:
-            logger.exception("plan/act verdict failed")
-            return "plan" if compose_plan else "act"
-        if text.startswith("ACT"):
-            return "act"
-        return "plan"
+            while not task.done():
+                if _is_cancelled():
+                    task.cancel()
+                    try:
+                        await asyncio.wait_for(task, 1.5)
+                    except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                        pass
+                    return None
+                await asyncio.sleep(0.2)
+            return task.result()
+        except asyncio.CancelledError:
+            if not task.done():
+                task.cancel()
+            raise
 
     if mode_auto:
-        mode = await _verdict(user_task)
+        routed = await _await_cancel(_verdict(user_task))
+        if _is_cancelled():
+            _finish_cancelled()
+            return
+        if isinstance(routed, str) and routed:
+            mode = routed
+    if _is_cancelled():
+        _finish_cancelled()
+        return
     _emit(run_id, {"type": "mode", "mode": mode})
+    await _await_cancel(_use_mode_model(mode))
+    if _is_cancelled():
+        _finish_cancelled()
+        return
 
     async def _one(task_text, hist, run_mode, plan0, archive0=None):
         return await agent.run(
@@ -1843,12 +2265,15 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             external_files=external_files or None,
         )
 
+    if _is_cancelled():
+        _finish_cancelled()
+        return
+
     try:
-        result = await _one(user_task, history_msgs or None, mode, initial_plan)
+        result = await _one(user_task, history_msgs or None, mode, initial_plan, initial_archive)
     except Exception as e:
         if _is_cancelled():
-            _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
-            _emit(run_id, {"type": "assistant", "content": "", "completed": False})
+            _finish_cancelled()
         else:
             title, detail = _public_error(e)
             _emit(run_id, {"type": "status", "status": "error", "text": title})
@@ -1859,13 +2284,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                 "detail": detail,
                 "completed": False,
             })
-        _finish_run(run_id, None if _is_cancelled() else str(e))
+            _finish_run(run_id, str(e))
         return
 
     if _is_cancelled():
-        _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
-        _emit(run_id, {"type": "cleanup_think"})
-        _finish_run(run_id, None)
+        _finish_cancelled()
         return
 
     def _outcome():
@@ -1895,12 +2318,13 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         "tool_loop",
         "content_loop",
         "empty_response",
+        "no_plan",
         "max_iterations",
     }
     failed = outcome in fail_outcomes
     open_items = [
         item for item in plan_items
-        if isinstance(item, dict) and item.get("status") not in ("done", "skipped")
+        if isinstance(item, dict) and item.get("status") not in ("done", "skipped", "failed")
     ]
     handoff = (
         mode == "plan"
@@ -1912,44 +2336,42 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     if mode == "plan" and not auto_act and isinstance(result, str):
         result = _strip_draft(result)
     if handoff:
-        _emit(run_id, {"type": "plan", "items": [], "archive": [], "reset": True})
+        from Kerniq.core.runtime_flow import act_followup_task, handoff_archive, plan_research_record
+        research = handoff_archive(agent.last_context)
+        _emit(run_id, {"type": "plan", "items": [], "archive": research})
         _emit(run_id, {"type": "mode", "mode": "act"})
         _emit(run_id, {"type": "status", "status": "processing", "text": "Act", "iterations_reset": True})
-        draft = _extract_draft(result if isinstance(result, str) else "")
-        await _activate_act_model()
+        draft = plan_research_record(
+            agent.last_context.messages if agent.last_context is not None else [],
+            result if isinstance(result, str) else "",
+        )
+        await _await_cancel(_use_mode_model("act"))
+        if _is_cancelled():
+            _finish_cancelled()
+            return
         logger.info(
             "Act starts with a fresh iteration budget (%s). Plan iterations are not carried over.",
             agent.orchestrator.max_iterations,
         )
-        act_task = (
-            "You are in ACT. Plan mode is finished and its iteration budget does not carry over. "
-            "Yours starts at zero. Context compaction does not spend iterations.\n"
-            "The plan-mode transcript was cleared on purpose. "
-            "First write YOUR OWN action TODO with update_plan, from the original request and then from the draft. "
-            "You may search more. Insert new items only among the current item and the items after it. "
-            "Do not delete items or rename existing ones. "
-            "Statuses: pending, active, done, frozen, failed. "
-            "Frozen and failed items stay open: you may return to a frozen item at any time, "
-            "but you cannot finish, refuse, or abandon the task while any item is pending, active, frozen, or failed.\n\n"
-            "Draft from plan mode:\n"
-            + (draft or "(no draft)")
-            + "\n\nOriginal request:\n"
-            + user_task
+        act_task = act_followup_task(
+            user_task,
+            draft,
+            max_iterations=agent.orchestrator.max_iterations,
         )
+        if agent.last_context is not None:
+            prior_rows = transcript_rows(agent.last_context.messages)
         try:
-            act_result = await _one(act_task, None, "act", None, None)
+            act_result = await _one(act_task, None, "act", None, research or None)
         except Exception as e:
             if _is_cancelled():
-                _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
-                _finish_run(run_id, None)
+                _finish_cancelled()
                 return
             title, detail = _public_error(e)
             _emit(run_id, {"type": "assistant", "content": title, "error": True, "detail": detail, "completed": False})
             _finish_run(run_id, str(e))
             return
         if _is_cancelled():
-            _emit(run_id, {"type": "status", "status": "cancelled", "text": "Stopped"})
-            _finish_run(run_id, None)
+            _finish_cancelled()
             return
         plan_items = _plan_items() or []
         archive_now = list((agent.last_context.metadata or {}).get("plan_archive") or []) if agent.last_context else []
@@ -1964,17 +2386,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             act_result = act_result.replace("TASK_COMPLETED", "").rstrip()
         result = act_result
         failed = outcome in fail_outcomes
-    with STATE.chat_lock:
-        lst = STATE.chat_histories.setdefault(chat_id, [])
-        lst.append({"role": "user", "content": user_task})
-        if result:
-            lst.append({"role": "assistant", "content": result})
-        if len(lst) > 200:
-            STATE.chat_histories[chat_id] = lst[-200:]
+    _remember(getattr(agent, "last_context", None), cancelled=False)
     final_status = "error" if failed else "done"
     still_open = [
         item for item in (_plan_items() or plan_items)
-        if isinstance(item, dict) and item.get("status") not in ("done", "skipped")
+        if isinstance(item, dict) and item.get("status") not in ("done", "skipped", "failed")
     ]
     completed = (not failed) and not still_open
     _emit(run_id, {
@@ -2060,8 +2476,8 @@ class PluginImpl(Plugin):
                     label="UI language",
                     type=SettingType.SELECT,
                     default="en",
-                    description="en or ru — interface only; tools/plugins stay English",
-                    options=[{"value": "en", "label": "English"}, {"value": "ru", "label": "Русский"}],
+                    description="Interface language. English is built in. Other languages are imported packs.",
+                    options=[{"value": "en", "label": "English"}],
                 ),
                 SettingField(
                     key="log_level",

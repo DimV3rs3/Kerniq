@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import importlib
 import logging
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
+
+from Kerniq.sandbox.proc import hidden_run
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def install_package(pip_name: str) -> bool:
     cmd = [sys.executable, "-m", "pip", "install", pip_name]
     logger.info("Installing dependency: %s", pip_name)
     try:
-        result = subprocess.run(
+        result = hidden_run(
             cmd,
             capture_output=True,
             text=True,

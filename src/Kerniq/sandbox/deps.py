@@ -6,7 +6,7 @@ import ast
 import logging
 import os
 import re
-import subprocess
+from Kerniq.sandbox.proc import hidden_run
 import sys
 import tomllib
 from pathlib import Path
@@ -204,7 +204,7 @@ def _read_requirement_file(path: Path, found: dict[str, str]) -> None:
 
 
 def installed_names(python: str) -> set[str]:
-    result = subprocess.run(
+    result = hidden_run(
         [python, "-m", "pip", "freeze"],
         capture_output=True,
         text=True,
@@ -252,12 +252,12 @@ def install_specs(python: str, specs: list[str]) -> list[str]:
 
 def _pip_install(python: str, specs: list[str]) -> bool:
     cmd = [python, "-m", "pip", "install", *specs]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180, check=False)
+    result = hidden_run(cmd, capture_output=True, text=True, timeout=180, check=False)
     if result.returncode == 0:
         return True
     err = (result.stderr or "") + (result.stdout or "")
     if "externally-managed" in err:
-        retry = subprocess.run(
+        retry = hidden_run(
             [python, "-m", "pip", "install", "--break-system-packages", *specs],
             capture_output=True,
             text=True,

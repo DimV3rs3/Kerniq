@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import json
-import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
-
-logger = logging.getLogger(__name__)
 
 
 class ToolSettings(BaseModel):
@@ -66,37 +62,48 @@ class ToolSettings(BaseModel):
 
 
 class ToolSettingsStore:
-    """Load/save ToolSettings as JSON under state_dir."""
+    """Load and save tool toggles in state/tools.json.
 
-    FILENAME = "tool_settings.json"
+    Per-tool blocks live in the same file under ``components`` and are left
+    untouched here. Defaults are written when the file has no toggles yet.
+    User values already stored are kept.
+    """
+
+    FILENAME = "tools.json"
 
     def __init__(self, state_dir: Path | str):
-        self.state_dir = Path(state_dir)
-        self.state_dir.mkdir(parents=True, exist_ok=True)
+        from ..settings.file import state_root
+
+        self.state_dir = state_root(state_dir)
         self.path = self.state_dir / self.FILENAME
         self._settings: Optional[ToolSettings] = None
 
     def load(self) -> ToolSettings:
         if self._settings is not None:
             return self._settings
-        if self.path.exists():
-            try:
-                data = json.loads(self.path.read_text(encoding="utf-8"))
-                self._settings = ToolSettings(**data)
-                return self._settings
-            except Exception as e:
-                logger.warning("Failed to load tool settings, using defaults: %s", e)
-        self._settings = ToolSettings()
+        from ..settings.file import read_state_file, write_state_file
+
+        raw = read_state_file(self.state_dir, self.FILENAME)
+        known = {k: v for k, v in raw.items() if k in ToolSettings.model_fields}
+        self._settings = ToolSettings(**known)
+        if not self.state_dir.is_dir():
+            return self._settings
+        missing = [key for key in self._settings.model_dump() if key not in raw]
+        if missing:
+            raw.update(self._settings.model_dump())
+            write_state_file(self.state_dir, self.FILENAME, raw)
         return self._settings
 
     def save(self, settings: Optional[ToolSettings] = None) -> None:
+        from ..settings.file import read_state_file, write_state_file
+
         if settings is not None:
             self._settings = settings
         if self._settings is None:
             self._settings = ToolSettings()
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(self._settings.model_dump_json(indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+        raw = read_state_file(self.state_dir, self.FILENAME)
+        raw.update(self._settings.model_dump())
+        write_state_file(self.state_dir, self.FILENAME, raw)
 
     @property
     def settings(self) -> ToolSettings:
@@ -108,3 +115,4 @@ class ToolSettingsStore:
         self._settings = ToolSettings(**current)
         self.save()
         return self._settings
+

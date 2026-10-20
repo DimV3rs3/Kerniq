@@ -29,11 +29,23 @@ def _ensure_collapse(schema: SettingsSchema | None, tool_id: str, title: str) ->
 
 
 class FileSystemToolBase(Tool):
+    _PLAN_NAMES = frozenset({
+        "file_exists",
+        "read_file",
+        "list_directory",
+        "get_file_info",
+        "search_code",
+    })
+
     def __init__(self, workspace: pathlib.Path):
         self.workspace = pathlib.Path(workspace).resolve()
         self._cfg_keys: tuple = ()
         self.cfg_auto_accept = False
         self.cfg_collapsible = True
+        try:
+            self._include_in_plan = self.name in self._PLAN_NAMES
+        except Exception:
+            self._include_in_plan = False
 
     @property
     def category(self) -> str:
@@ -51,14 +63,35 @@ class FileSystemToolBase(Tool):
     def collapsible(self) -> bool:
         return bool(getattr(self, "cfg_collapsible", True))
 
-    def chat_label(self, count: int = 1, *, success: bool = True) -> str:
-        return f"{count} файловых операций"
+    @property
+    def display_phrase(self) -> str:
+        phrases = {
+            "file_exists": "existence checks",
+            "read_file": "files read",
+            "write_file": "files written",
+            "create_file": "files created",
+            "edit_file": "files edited",
+            "delete_file": "files deleted",
+            "create_directory": "dirs created",
+            "list_directory": "dirs listed",
+            "get_file_info": "info reads",
+            "search_code": "code searches",
+            "zip": "archives packed",
+            "unzip": "archives unpacked",
+            "move_file": "files moved",
+        }
+        return phrases.get(self.name, "file operations")
 
     def settings_schema(self) -> SettingsSchema | None:
         return None
 
     def apply_settings(self, values: dict) -> None:
-        for k, v in (values or {}).items():
+        values = values or {}
+        if "include_in_plan" in values:
+            self.cfg_include_in_plan = bool(values["include_in_plan"])
+        for k, v in values.items():
+            if k == "include_in_plan":
+                continue
             attr = f"cfg_{k}"
             if hasattr(self, attr) or k in getattr(self, "_cfg_keys", ()):
                 setattr(self, attr, v)
@@ -165,8 +198,9 @@ class ReadFileTool(FileSystemToolBase):
     @property
     def ui_icon(self) -> str:
         return "📄"
-    def chat_label(self, count: int = 1, *, success: bool = True) -> str:
-        return f"{count} файлов прочитано"
+    @property
+    def display_phrase(self) -> str:
+        return "files read"
     def __init__(self, workspace: pathlib.Path):
         super().__init__(workspace)
         self.cfg_max_bytes = 200000
@@ -585,8 +619,9 @@ class ListDirectoryTool(FileSystemToolBase):
     @property
     def ui_icon(self) -> str:
         return "📁"
-    def chat_label(self, count: int = 1, *, success: bool = True) -> str:
-        return f"{count} просмотров папок"
+    @property
+    def display_phrase(self) -> str:
+        return "dirs listed"
     def __init__(self, workspace: pathlib.Path):
         super().__init__(workspace)
         self.cfg_default_max_depth = 5
@@ -810,8 +845,9 @@ class SearchCodeTool(FileSystemToolBase):
     def ui_icon(self) -> str:
         return "🔎"
 
-    def chat_label(self, count: int = 1, *, success: bool = True) -> str:
-        return f"{count} поисков по коду"
+    @property
+    def display_phrase(self) -> str:
+        return "code searches"
 
     @property
     def input_schema(self) -> Dict[str, Any]:
@@ -834,7 +870,7 @@ class SearchCodeTool(FileSystemToolBase):
             title=self.name,
             fields=[
                 SettingField(key="max_matches", label="Max matches", type=SettingType.INT, default=50, minimum=1, maximum=500),
-                SettingField(key="collapsible", label="Объединять вызовы в чате", type=SettingType.BOOL, default=True),
+                SettingField(key="collapsible", label="Merge consecutive calls in chat", type=SettingType.BOOL, default=True),
             ],
         )
 
@@ -859,7 +895,13 @@ class SearchCodeTool(FileSystemToolBase):
             if root.is_file():
                 files = [root]
             else:
-                files = [f for f in root.rglob(glob_pat) if f.is_file()]
+                files = []
+                for found in root.rglob(glob_pat):
+                    if not found.is_file():
+                        continue
+                    files.append(found)
+                    if len(files) >= 4000:
+                        break
             matches = []
             skip_ext = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".exe", ".dll", ".so", ".bin", ".pyc", ".zip", ".gz"}
             for fp in files:
@@ -894,117 +936,6 @@ class SearchCodeTool(FileSystemToolBase):
             )
         except Exception as e:
             return self._create_error_result(call_id, str(e), "FS_ERROR")
-
-
-
-class ReadDocxTool(FileSystemToolBase):
-    """Read a .docx file into structured text (paragraphs + tables)."""
-
-    @property
-    def tool_id(self) -> str:
-        return "fs_read_docx"
-
-    @property
-    def name(self) -> str:
-        return "read_docx"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Read a Microsoft Word .docx file from the workspace. "
-            "Returns paragraphs and tables as plain structured text."
-        )
-
-    @property
-    def input_schema(self):
-        return {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Workspace-relative path to a .docx file"},
-                "max_chars": {
-                    "type": "integer",
-                    "description": "Truncate output after this many characters (default 100000)",
-                },
-            },
-            "required": ["path"],
-        }
-
-    def _extract_docx(self, path) -> str:
-        import zipfile
-        import xml.etree.ElementTree as ET
-
-        NS = {
-            "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-        }
-        parts: list[str] = []
-        with zipfile.ZipFile(path, "r") as zf:
-            # main document
-            xml = zf.read("word/document.xml")
-            root = ET.fromstring(xml)
-            for child in root.iter():
-                tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-                if tag == "p":
-                    texts = []
-                    for node in child.iter():
-                        nt = node.tag.split("}")[-1] if "}" in node.tag else node.tag
-                        if nt == "t" and node.text:
-                            texts.append(node.text)
-                        if nt == "tab":
-                            texts.append("\t")
-                    line = "".join(texts).strip()
-                    if line:
-                        parts.append(line)
-                elif tag == "tbl":
-                    parts.append("\n[Table]")
-                    for row in child.iter():
-                        rt = row.tag.split("}")[-1] if "}" in row.tag else row.tag
-                        if rt != "tr":
-                            continue
-                        cells = []
-                        for cell in row:
-                            ct = cell.tag.split("}")[-1] if "}" in cell.tag else cell.tag
-                            if ct != "tc":
-                                continue
-                            cell_texts = []
-                            for node in cell.iter():
-                                nt = node.tag.split("}")[-1] if "}" in node.tag else node.tag
-                                if nt == "t" and node.text:
-                                    cell_texts.append(node.text)
-                            cells.append("".join(cell_texts).strip())
-                        if any(cells):
-                            parts.append(" | ".join(cells))
-                    parts.append("[/Table]\n")
-        return "\n".join(parts)
-
-    async def execute(self, arguments, context):
-        call_id = arguments.get("tool_call_id", "unknown")
-        try:
-            path = self._safe_path(arguments["path"])
-            if not path.exists() or not path.is_file():
-                return self._create_error_result(call_id, f"File not found: {arguments.get('path')}", "FS_NOT_FOUND")
-            if path.suffix.lower() != ".docx":
-                return self._create_error_result(
-                    call_id,
-                    "Not a .docx file (use read_file for plain text)",
-                    "FS_BAD_TYPE",
-                )
-            text = self._extract_docx(path)
-            max_chars = int(arguments.get("max_chars") or 100_000)
-            truncated = False
-            if len(text) > max_chars:
-                text = text[:max_chars] + "\n…[truncated]"
-                truncated = True
-            return ToolResult(
-                tool_call_id=call_id,
-                tool_id=self.tool_id,
-                status="success",
-                output={"path": arguments["path"], "chars": len(text), "truncated": truncated, "text": text},
-                human_readable=text if len(text) < 2000 else text[:2000] + "…",
-            )
-        except KeyError as e:
-            return self._create_error_result(call_id, f"Invalid docx structure: {e}", "DOCX_ERROR")
-        except Exception as e:
-            return self._create_error_result(call_id, str(e), "DOCX_ERROR")
 
 
 
@@ -1217,11 +1148,9 @@ class MoveFileTool(FileSystemToolBase):
 class FileSystemTools:
     def __init__(self, workspace: str):
         self.workspace = pathlib.Path(workspace).resolve()
-        self.workspace.mkdir(parents=True, exist_ok=True)
         self._tools: List[Tool] = [
             FileExistsTool(self.workspace),
             ReadFileTool(self.workspace),
-            ReadDocxTool(self.workspace),
             WriteFileTool(self.workspace),
             CreateFileTool(self.workspace),
             EditFileTool(self.workspace),

@@ -1,6 +1,8 @@
 import asyncio
-import subprocess
+import contextlib
 import logging
+import subprocess
+import time
 from typing import Dict, Any, Optional
 from pathlib import Path
 from ....interfaces.tools import Tool, ToolResult
@@ -44,6 +46,57 @@ def _scrub_env(workspace: Path) -> dict:
     return env
 
 
+async def _stop_process(process, comm) -> None:
+    """Kill the child and let communicate() reap it. Do not wait() beside communicate()."""
+    try:
+        process.kill()
+    except ProcessLookupError:
+        pass
+    except Exception:
+        pass
+    if comm is not None and not comm.done():
+        try:
+            await asyncio.wait_for(comm, 2)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            comm.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await comm
+        except Exception:
+            pass
+    elif getattr(process, "returncode", None) is None:
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(process.wait(), 2)
+    transport = getattr(process, "_transport", None)
+    if transport is not None:
+        with contextlib.suppress(Exception):
+            transport.close()
+
+
+async def _wait_command(process, timeout: float, context, started: float):
+    """Wait for a shell. Returns (stdout, stderr), or None if the user stopped it.
+
+    Polls `context.cancelled` so Stop does not wait for the timeout.
+    """
+    comm = asyncio.create_task(process.communicate())
+    try:
+        while not comm.done():
+            if getattr(context, "cancelled", False):
+                await _stop_process(process, comm)
+                return None
+            remaining = float(timeout) - (time.monotonic() - started)
+            if remaining <= 0:
+                await _stop_process(process, comm)
+                raise asyncio.TimeoutError()
+            try:
+                await asyncio.wait_for(asyncio.shield(comm), timeout=min(0.25, remaining))
+            except asyncio.TimeoutError:
+                continue
+        return comm.result()
+    except asyncio.CancelledError:
+        await _stop_process(process, comm)
+        raise
+
+
 class TerminalTools(Tool):
     def __init__(self, workspace_root: Path, security_policy: SecurityPolicy):
         self._workspace_root = workspace_root
@@ -71,6 +124,9 @@ class TerminalTools(Tool):
     @property
     def risk_level(self) -> str:
         return "critical"
+
+    def plan_membership_default(self) -> bool:
+        return False
 
     @property
     def input_schema(self) -> Dict[str, Any]:
@@ -100,8 +156,9 @@ class TerminalTools(Tool):
     def collapsible(self) -> bool:
         return False
 
-    def chat_label(self, count: int = 1, *, success: bool = True) -> str:
-        return f"{count} команд"
+    @property
+    def display_phrase(self) -> str:
+        return "commands"
 
     def settings_schema(self):
         return SettingsSchema(
@@ -182,9 +239,9 @@ class TerminalTools(Tool):
             env=_scrub_env(self._workspace_root),
         )
         if sys.platform == "win32":
-            # Prevent interactive hangs from inheriting console input (e.g. bare `date`)
             kwargs["stdin"] = asyncio.subprocess.DEVNULL
-            kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            kwargs["creationflags"] = flags
 
         try:
             import shlex
@@ -202,13 +259,8 @@ class TerminalTools(Tool):
             else:
                 process = await asyncio.create_subprocess_shell(command, **kwargs)
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=float(timeout))
+                waited = await _wait_command(process, float(timeout), context, started)
             except asyncio.TimeoutError:
-                try:
-                    process.kill()
-                    await process.wait()
-                except Exception:
-                    pass
                 return ToolResult(
                     tool_call_id=call_id,
                     tool_id=self.tool_id,
@@ -220,6 +272,19 @@ class TerminalTools(Tool):
                     error=f"timeout after {timeout}s",
                     duration_seconds=time.monotonic() - started,
                 )
+            if waited is None:
+                return ToolResult(
+                    tool_call_id=call_id,
+                    tool_id=self.tool_id,
+                    status="error",
+                    success=False,
+                    stop_reason="cancelled",
+                    output="",
+                    human_readable="Stopped by user.",
+                    error="cancelled",
+                    duration_seconds=time.monotonic() - started,
+                )
+            stdout, stderr = waited
 
             exit_code = process.returncode
             def _decode_out(b: bytes) -> str:

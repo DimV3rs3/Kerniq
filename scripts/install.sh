@@ -119,9 +119,12 @@ if ! "$TARGET" -m pip install -e ".[dev,mcp]"; then
     exit 1
   fi
 fi
+echo "Creating the workspace sandbox..."
+"$TARGET" -c 'import pathlib,sys; from Kerniq.sandbox.venv import prepare_workspace_at_install; prepare_workspace_at_install(pathlib.Path(sys.argv[1]))' "$ROOT" \
+  || echo "Workspace sandbox was not created. Kerniq itself is installed."
 echo "Scanning plugins and tool packs for Python libraries..."
 "$TARGET" -c 'import pathlib,sys; from Kerniq.sandbox.deps import install_product_tree; install_product_tree(pathlib.Path(sys.argv[1]))' "$ROOT" \
-  || echo "Library scan failed. Kerniq itself is installed; a plugin can still install its own libraries on load."
+  || echo "Library scan failed. Kerniq itself is installed."
 "$TARGET" "$ROOT/scripts/env_manifest.py" commit "$META/install.json" "$TARGET" "$CREATED_VENV" "$CREATED_RUNTIME" "$META/before.json"
 rm -f "$META/before.json"
 

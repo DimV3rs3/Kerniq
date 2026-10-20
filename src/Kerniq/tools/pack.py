@@ -36,6 +36,15 @@ class ToolPack(ABC):
         """Default category for tools in this pack."""
         return self.pack_id
 
+    @property
+    def include_in_plan(self) -> bool:
+        """Default Plan-mode membership for tools that do not choose themselves.
+
+        False keeps a new pack out of Plan. A tool's own flag, then a saved
+        per-tool setting, both win over this.
+        """
+        return False
+
     def resources_dir(self) -> Optional[Path]:
         """Path to ``resources/`` next to the pack module, if present."""
         return None
@@ -58,6 +67,7 @@ class ToolPack(ABC):
             "version": self.version,
             "description": self.description,
             "category": self.category,
+            "include_in_plan": bool(self.include_in_plan),
         }
 
 

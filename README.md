@@ -1,4 +1,4 @@
-# Kerniq 0.1.4 — Modular Open Source AI Agent Platform
+# Kerniq 0.1.5 — Modular Open Source AI Agent Platform
 
 Local-first agent runtime with discovered tool packs, plugins, MCP, CLI, and
 pluggable model providers (LM Studio, Ollama, DeepSeek, OpenRouter, OpenAI,
@@ -6,7 +6,7 @@ Claude API, Claude Code CLI, Gemini, Groq, Mistral, Mock).
 
 ## What this build actually does
 
-Kerniq 0.1.4 runs a tool loop locally:
+Kerniq 0.1.5 runs a tool loop locally:
 
 1. `kerniq run --provider mock` answers from `MockProvider` and can call the
    built-in file and shell tools. The reply is marked `outcome=unverified`
@@ -61,7 +61,7 @@ When it was not, and a venv was created:
 
 Uninstall (`scripts\uninstall.bat`, `bash scripts/uninstall.sh`) resets settings, `sessions/`, `logs/`, and `state/`, then removes only the packages this install added. Deleting the project files as well is a separate wipe (`uninstall.bat --wipe-project`).
 
-The same scan runs again when a plugin or tool pack is loaded or installed, so you do not pip-install its libraries by hand. Shell commands inside the agent workspace use a private `.kerniq-venv` created in that workspace. That interpreter is not the host Python and not a project `.venv`. Docker is not required.
+The same scan runs when you install Kerniq, not when you save settings. Saving settings does not open consoles and does not download libraries. Shell commands inside the agent workspace use a private `.kerniq-venv` created in that workspace during install. If that venv is missing or its Python fails, Kerniq recreates it quietly. It is not the host Python and not a project `.venv`. Docker is not required. The UI launcher opens one console and closes it at once; the server itself has no window.
 
 From the repository root you can also install by hand:
 
@@ -104,14 +104,14 @@ Kerniq requires **Python 3.11 or newer** (`requires-python` in `pyproject.toml`)
 | Linux | Yes, on distributions that can install CPython 3.11 (glibc new enough for that build). |
 | macOS | Yes, with Python 3.11+. |
 
-The same settings file (`state/ui_settings.json`) is used by the CLI (`kerniq settings show`) and the Web UI. The UI does not own a private copy of agent settings. Stopping the UI does not stop a task that already started; the runtime keeps the session log.
+Settings are three files, shared by the CLI and the Web UI. `state/settings.json` holds agent, API, prompt, and chat. `state/tools.json` holds tool toggles and per-tool values. `state/plugins.json` holds per-plugin values. The first run writes the defaults. A later change from either side replaces those values in the same file. `kerniq settings set api.max_tokens null` leaves a single reply uncapped. Tool and plugin values are added when those components are validated. A component that is no longer installed is removed on the next validation. Keys that only affect the shell are `chat.send_key`, `chat.file_ops_only`, `chat.aggregate_tools`, and `chat.show_reasoning_live`. The UI plugin is optional. Its own settings hold the interface language. Extra languages are JSON packs imported from the Web UI plugin page. A pack is checked before it is stored: a broken file is refused, and a partial pack reports which interface strings are still English.
 
-### What changed in 0.1.4
+### What changed in 0.1.5
 
 - Context compaction keeps the last N messages and puts one compacted memory note above them. The note is preserved when the window is trimmed. The trigger is always a percent of the model window. The shrink target is a percent (strictly below the trigger) or a token count.
-- Plan and Act each keep their own TODO. Items cannot be deleted, only marked done or skipped. With automatic handoff, Act starts from a cleared transcript plus the plan draft. Without handoff, Plan answers the user directly.
+- Plan and Act each keep their own TODO. Items cannot be deleted, only marked done or skipped. With automatic handoff, Act starts from a cleared transcript plus the plan draft. The closed research list stays in the archive: Act does not redo it, and the UI keeps it visible. Without handoff, Plan answers the user directly.
 - A refused approval is reported as `USER_DENIED` for those exact arguments. Repeating the same call does not prompt again.
-- The footer uses red (unavailable), yellow (idle), orange (the model is generating), and green (the task is still running and the model is waiting). Tokens per second are hidden when streaming is off.
+- The footer uses red when the provider is unavailable, yellow when it is idle, orange while the model is working, and green when the selected model is loaded.
 - Chat titles look for LM Studio and an embedding model even if another provider is selected. If LM Studio or that model is missing, the title is the first three words.
 - Plan and Act can use different models. On a local provider the Plan model is unloaded and the Act model is loaded at handoff.
 
@@ -188,11 +188,12 @@ Example MCP client config (stdio):
 - Terminal: `run_command`
 - Web: `web_search`, `fetch_url`
 
-Settings persist in `state/tool_settings.json`:
+Tool toggles live in `state/tools.json`:
 
 ```bash
 kerniq tools settings
 kerniq tools set web_search_enabled true
+kerniq settings show
 ```
 
 ## Plugin Manager plugin

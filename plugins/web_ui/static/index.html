@@ -1,17 +1,26 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="color-scheme" content="dark"/>
+<meta name="theme-color" content="#13161b"/>
 <title>Kerniq</title>
-<link rel="stylesheet" href="/static/vendor/prism-tomorrow.min.css"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b9dff'/%3E%3Cpath d='M10 8v16M10 16l9-8M10 16l9 8' fill='none' stroke='%2307162e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"/>
+<script>try{document.documentElement.dataset.motion=localStorage.getItem('kerniq_motion')||'on';document.documentElement.dataset.layout=localStorage.getItem('kerniq_layout')==='agent'?'agent':'editor'}catch(e){document.documentElement.dataset.motion='on';document.documentElement.dataset.layout='editor'}</script>
 
 <link rel="stylesheet" href="/static/styles.css"/></head><body>
 <div class="topbar">
-  <button class="brand" id="nav-logo">Kerniq</button>
+  <div class="top-left">
+  <button class="brand" id="nav-logo" aria-label="Kerniq">
+    <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#5b9dff"/><path d="M10 8v16M10 16l9-8M10 16l9 8" fill="none" stroke="#07162e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>Kerniq</span>
+  </button>
+  <button type="button" class="mode-pill" id="mode-pill" title="Switch mode" aria-label="Switch mode"><span class="mode-pill-label">Agent</span></button>
+  </div>
   <button type="button" class="top-center" id="top-workspace">./workspace</button>
   <div class="top-actions">
-    <span class="panel-toggles" style="display:inline-flex;gap:6px">
-      <button class="icon-btn on" id="btn-toggle-explorer" title="Explorer" data-i18n-title="explorer">☰</button>
-      <button class="icon-btn on" id="btn-toggle-chat" title="Chat" data-i18n-title="chat" aria-label="Chat"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 3.5V6a2 2 0 0 1 2-2z"/></svg></button>
+    <span class="panel-toggles">
+      <button class="icon-btn on" id="btn-toggle-explorer" title="Explorer" data-i18n-title="explorer" aria-label="Explorer"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/></svg></button>
+      <button class="icon-btn on" id="btn-toggle-chat" title="Chat" data-i18n-title="chat" aria-label="Chat"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 3.5V6a2 2 0 0 1 2-2z"/></svg></button>
     </span>
     <button class="icon-btn" id="nav-settings" title="Settings" data-i18n-title="settings">⚙</button>
   </div>
@@ -21,6 +30,10 @@
   <aside class="panel" id="explorer">
     <h3><span class="grow">Explorer</span></h3>
     <div class="tree" id="tree"></div>
+    <div class="side-chats" id="side-chats">
+      <button type="button" class="side-new" id="side-new-chat"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="newChatLong">New chat</span></button>
+      <div class="side-list" id="side-list"></div>
+    </div>
   </aside>
   <div class="resizer" id="resizer-left" data-side="left"></div>
   <section id="editor-panel">
@@ -32,28 +45,28 @@
       <button class="ghost icon-tool" id="btn-redo" title="Redo" aria-label="Redo" disabled>
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/></svg>
       </button>
-      <span id="open-path" style="color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis"></span>
+      <span id="open-path" class="open-path"></span>
       <button class="ghost icon-tool" id="btn-save" title="Save" aria-label="Save" disabled>
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM6 5h9v4H6V5z"/></svg>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11l4 4v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8V3M7 21v-7h10v7"/></svg>
       </button>
       <button class="ghost" id="btn-close-tab" disabled>Close</button>
     </div>
-    <div class="code-wrap">
+    <div class="code-wrap" id="code-wrap">
       <div class="line-nums" id="line-nums"></div>
       <div class="hl-wrap">
-        <pre class="hl-pre" aria-hidden="true"><code id="hl-code" class="language-none"></code></pre>
+        <pre class="hl-pre" aria-hidden="true"><code id="hl-code"></code></pre>
         <textarea id="editor" spellcheck="false" placeholder="Open a file…" data-i18n-placeholder="openFile" disabled></textarea>
       </div>
     </div>
   </section>
   <div class="resizer" id="resizer-right" data-side="right"></div>
   <aside class="panel" id="chat-panel">
-    <h3><span class="grow">Chat</span>
+    <h3><span class="grow" id="chat-heading">Chat</span>
       <span class="mode-switch" id="mode-switch">
         <button type="button" id="mode-plan" data-mode="plan">Plan</button>
         <button type="button" id="mode-act" data-mode="act" class="on">Act</button>
       </span>
-      <button class="ghost" id="btn-new-chat" style="padding:2px 6px">+ New</button>
+      <button class="ghost" id="btn-new-chat">+ New</button>
     </h3>
     <div class="chat-hist" id="chat-hist"></div>
     <div class="msgs-wrap">
@@ -68,12 +81,12 @@
       <button type="button" id="btn-scroll-bottom" class="scroll-bottom" hidden title="Scroll to bottom" aria-label="Scroll to bottom">↓</button>
     </div>
     <div class="status-bar"><span class="spin" id="agent-spin"></span><span id="agent-status">Ready</span></div>
-    <div id="attach-chips" style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px 0 8px"></div>
-    <div class="composer">
-      <button type="button" id="btn-attach" class="ghost composer-plus" title="Attach" data-i18n-title="attach">+</button>
+    <div id="attach-chips"></div>
+    <div class="composer"><div class="composer-box">
+      <button type="button" id="btn-attach" class="ghost composer-plus" title="Attach" data-i18n-title="attach" aria-label="Attach">+</button>
       <div class="ta-wrap"><textarea id="prompt" rows="1" placeholder="Message agent…" data-i18n-placeholder="promptPh"></textarea></div>
       <button type="button" id="btn-action" class="send-btn is-send" disabled title="Send" aria-label="Send"><span class="send-ico" aria-hidden="true">↑</span></button>
-    </div>
+    </div></div>
   </aside>
 </div>
 <div id="view-settings">
@@ -83,11 +96,17 @@
       <div class="stab" data-tab="api">API & model</div>
       <div class="stab" data-tab="prompt">System prompt</div>
       <div class="stab" data-tab="chat">Chat</div>
+      <div class="stab" data-tab="interface">Interface</div>
       <div class="stab" data-tab="tools">Tools</div>
       <div class="stab" data-tab="plugins">Plugins</div>
       <div class="stab" data-tab="reset">Reset settings</div>
     </nav>
     <div class="settings-main">
+      <div class="run-note" id="run-note" role="status">
+        <span class="run-note-dot" aria-hidden="true"></span>
+        <span class="run-note-text" data-i18n="runNote">The agent is running. Settings are read-only until it finishes.</span>
+        <button type="button" class="danger-stop" id="btn-run-stop" data-keep-unlocked data-i18n="stopAgent">Stop agent</button>
+      </div>
       <div class="scard tabp" id="tab-agent">
         <h2 data-i18n="agentSettings">Agent settings</h2>
         <div class="field"><label class="lbl"><span data-i18n="workspace">Workspace</span><span class="info-tip" tabindex="0" data-tip="Working directory for file tools. Type a path or use Browse.">i</span></label>
@@ -96,12 +115,16 @@
             <button class="ghost" type="button" id="btn-pick-ws" data-i18n="browse">Browse…</button>
           </div>
         </div>
+        <div class="field-grid">
         <div class="field"><label class="lbl"><span data-i18n="maxIterations">Max iterations</span><span class="info-tip" tabindex="0" data-tip="Maximum agent steps per run. Leave empty for default (20).">i</span></label>
-          <input type="number" id="s-max-iter" min="1" placeholder="20"/>
+          <input type="number" id="s-max-iter" min="1" max="10000" step="1" placeholder="20"/>
+        </div>
+        <div class="field"><label class="lbl"><span data-i18n="loopRetries">Loop retries</span><span class="info-tip" tabindex="0" data-tip="How many repeated replies or identical tool calls to allow before stopping. Raise this if a real task is cut off as a loop.">i</span></label>
+          <input type="number" id="s-loop-retries" min="1" max="20" step="1" placeholder="4"/>
         </div>
         <div class="field"><label class="lbl"><span data-i18n="modelTimeout">Model response timeout</span><span class="info-tip" tabindex="0" data-tip="Maximum time to wait for one model response.">i</span></label>
           <div class="row">
-            <input type="number" id="s-timeout" min="1" style="flex:1" placeholder="120"/>
+            <input type="number" id="s-timeout" min="1" step="1" style="flex:1" placeholder="120"/>
             <select id="s-timeout-unit" style="width:110px">
               <option value="s">seconds</option>
               <option value="m">minutes</option>
@@ -110,10 +133,8 @@
           </div>
         </div>
         <div class="field"><label class="lbl"><span data-i18n="undoSize">Undo history size</span><span class="info-tip" tabindex="0" data-tip="How many editor actions to keep for Undo (edits, open, close).">i</span></label>
-          <input type="number" id="s-undo-size" min="10" max="1000" placeholder="100"/>
+          <input type="number" id="s-undo-size" min="10" max="1000" step="1" placeholder="100"/>
         </div>
-        <div class="field"><label class="lbl"><span data-i18n="loopRetries">Loop retries</span><span class="info-tip" tabindex="0" data-tip="How many repeated replies or identical tool calls to allow before stopping. Raise this if a real task is cut off as a loop.">i</span></label>
-          <input type="number" id="s-loop-retries" min="1" max="20" placeholder="4"/>
         </div>
       </div>
       <div class="scard tabp" id="tab-api" style="display:none">
@@ -140,9 +161,11 @@
             </div>
           </div>
         </div>
+        <div class="field-grid">
         <div class="field"><label class="lbl"><span data-i18n="temperature">Temperature</span><span class="info-tip" tabindex="0" data-i18n-tip="tempTip" data-tip="Higher temperature makes replies more varied. Lower keeps them closer to the most likely wording. Default is 0.7.">i</span></label><input type="number" id="s-api-temp" step="0.05" min="0" max="2" placeholder="0.7"/></div>
         <div class="field"><label class="lbl"><span data-i18n="maxTokens">Max tokens</span><span class="info-tip" tabindex="0" data-tip="Max tokens to generate. Empty = model maximum.">i</span></label>
-          <input type="number" id="s-api-max-tokens" min="1" placeholder="auto (model max)"/>
+          <input type="number" id="s-api-max-tokens" min="1" max="1000000" step="1" placeholder="auto (model max)"/>
+        </div>
         </div>
       </div>
       <div class="scard tabp" id="tab-prompt" style="display:none">
@@ -160,6 +183,7 @@
       </div>
       <div class="scard tabp" id="tab-chat" style="display:none">
         <h2 data-i18n="chatSettings">Chat settings</h2>
+        <div class="set-cols">
         <div class="set-group">
           <h3 data-i18n="groupOutput">Reply</h3>
         <div class="field field-check">
@@ -248,8 +272,9 @@
           </label>
         </div>
         </div>
-        <div class="set-group">
+        <div class="set-group span-2">
           <h3 data-i18n="groupSafety">Safety and language</h3>
+        <div class="field-grid">
         <div class="field">
           <label class="lbl"><span data-i18n="autoApprove">Auto-approve risk up to</span>
             <span class="info-tip" tabindex="0" data-tip="Tools at or below this risk run without a prompt. Critical always asks, unless developer mode selects all. A tool's own auto-accept skips the prompt except for critical. Blacklisted commands are still denied.">i</span>
@@ -280,8 +305,76 @@
           </select>
         </div>
         </div>
+        </div>
+        </div>
       </div>
-<div class="scard tabp" id="tab-tools" style="display:none">
+<div class="scard tabp" id="tab-interface" style="display:none">
+        <h2 data-i18n="interfaceSettings">Interface settings</h2>
+        <p class="hint" data-i18n="prefsLocal">These options apply immediately and are stored in this browser.</p>
+        <div class="set-cols">
+        <div class="set-group">
+          <h3 data-i18n="groupLayout">Layout</h3>
+          <div class="field">
+            <label class="lbl"><span data-i18n="workspaceLayout">Workspace layout</span><span class="info-tip" tabindex="0" data-i18n-tip="layoutTip" data-tip="Agent only hides the editor: chats on the left, the conversation in the centre.">i</span></label>
+            <div class="seg" id="seg-layout" role="radiogroup" aria-label="Workspace layout">
+              <button type="button" role="radio" data-v="editor" data-keep-unlocked data-i18n="layoutEditorOpt">Editor + chat</button>
+              <button type="button" role="radio" data-v="agent" data-keep-unlocked data-i18n="layoutAgentOpt">Agent only</button>
+            </div>
+          </div>
+        </div>
+        <div class="set-group">
+          <h3 data-i18n="groupMotion">Motion</h3>
+          <div class="field">
+            <label class="lbl"><span data-i18n="animations">Animations</span><span class="info-tip" tabindex="0" data-i18n-tip="animationsTip" data-tip="Transitions and motion effects.">i</span></label>
+            <div class="seg" id="seg-motion" role="radiogroup" aria-label="Animations">
+              <button type="button" role="radio" data-v="on" data-keep-unlocked data-i18n="motionOn">On</button>
+              <button type="button" role="radio" data-v="auto" data-keep-unlocked data-i18n="motionAuto">Follow system</button>
+              <button type="button" role="radio" data-v="off" data-keep-unlocked data-i18n="motionOff">Off</button>
+            </div>
+          </div>
+        </div>
+        <div class="set-group">
+          <h3 data-i18n="groupLanguage">Language</h3>
+          <div class="field">
+            <label class="lbl" for="ui-lang"><span data-i18n="uiLanguage">Interface language</span></label>
+            <div class="row">
+              <select id="ui-lang" class="fit" data-keep-unlocked></select>
+              <button type="button" class="ghost secondary" id="btn-lang-packs" data-keep-unlocked data-i18n="langPacksBtn">Language packs…</button>
+            </div>
+          </div>
+        </div>
+        <div class="set-group">
+          <h3 data-i18n="groupStatus">Status bar</h3>
+          <div class="field field-check">
+            <label class="check-line">
+              <input type="checkbox" id="ui-footer" class="soft-check" checked data-keep-unlocked/>
+              <span data-i18n="showFooter">Show status footer</span>
+            </label>
+          </div>
+        </div>
+        <div class="set-group">
+          <h3 data-i18n="groupReasoning">Reasoning</h3>
+          <div class="field field-check">
+            <label class="check-line">
+              <input type="checkbox" id="ui-auto-think" class="soft-check" data-keep-unlocked/>
+              <span data-i18n="autoThink">Auto-expand reasoning</span>
+              <span class="info-tip" tabindex="0" data-i18n-tip="autoThinkTip" data-tip="Open the reasoning block while the model is thinking.">i</span>
+            </label>
+          </div>
+        </div>
+        <div class="set-group">
+          <h3 data-i18n="groupEditor">Editor</h3>
+          <div class="field field-check">
+            <label class="check-line">
+              <input type="checkbox" id="ui-hl" class="soft-check" checked/>
+              <span data-i18n="syntaxHl">Syntax highlighting</span>
+              <span class="info-tip" tabindex="0" data-i18n-tip="syntaxHlTip" data-tip="Colour code in the editor.">i</span>
+            </label>
+          </div>
+        </div>
+        </div>
+      </div>
+      <div class="scard tabp" id="tab-tools" style="display:none">
         <h2 data-i18n="tools">Tools</h2>
         <div class="cat-row" id="s-cats"></div>
         <div class="tools-split">
@@ -338,7 +431,7 @@
 <div class="modal-bg" id="model-modal">
   <div class="modal">
     <h3>Another model is already loaded</h3>
-    <p id="model-modal-text" style="color:var(--muted);line-height:1.4"></p>
+    <p id="model-modal-text"></p>
     <div class="btn-row">
       <button id="mm-alongside">Load alongside</button>
       <button id="mm-replace" class="save-active">Unload all and load</button>
@@ -349,26 +442,35 @@
 <div class="modal-bg" id="approval-modal" style="display:none">
   <div class="modal">
     <h3>Approval required</h3>
-    <p id="approval-text" style="color:var(--muted);line-height:1.4;white-space:pre-wrap"></p>
-    <pre id="approval-args" style="max-height:180px;overflow:auto;font-size:12px"></pre>
-    <div class="row" style="gap:8px;margin-top:12px">
+    <p id="approval-text" style="white-space:pre-wrap"></p>
+    <pre id="approval-args" style="max-height:180px"></pre>
+    <div class="row">
       <button id="approval-deny" class="cancel-active" type="button">Deny</button>
       <button id="approval-allow" class="save-active" type="button">Allow</button>
     </div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="modal-bg" id="lang-modal">
+  <div class="modal lang-modal">
+    <button type="button" class="modal-x" id="lang-modal-close" aria-label="Close">×</button>
+    <h3 data-i18n="langPacks">Language packs</h3>
+    <div class="lang-list" id="lang-list"></div>
+    <div class="lang-foot"><button type="button" id="lang-modal-import">Import</button></div>
+  </div>
+</div>
+<input type="file" id="lang-pack-file" accept="application/json,.json" hidden/>
 <div class="ctx" id="ctx" style="display:none"></div>
 <input type="file" id="outside-picker" multiple style="display:none"/>
 
 <script src="/static/vendor/prism.min.js"></script>
-<script src="/static/vendor/prism-python.min.js"></script>
+<script src="/static/vendor/prism-markup.min.js"></script>
+<script src="/static/vendor/prism-css.min.js"></script>
 <script src="/static/vendor/prism-javascript.min.js"></script>
 <script src="/static/vendor/prism-typescript.min.js"></script>
 <script src="/static/vendor/prism-json.min.js"></script>
 <script src="/static/vendor/prism-bash.min.js"></script>
-<script src="/static/vendor/prism-markup.min.js"></script>
-<script src="/static/vendor/prism-css.min.js"></script>
+<script src="/static/vendor/prism-python.min.js"></script>
 <script src="/static/vendor/prism-yaml.min.js"></script>
 <script src="/static/vendor/prism-markdown.min.js"></script>
 <script src="/static/vendor/prism-powershell.min.js"></script>

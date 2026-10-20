@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 from Kerniq.sandbox.deps import imports_in_source, missing_specs, scan_tree
-from Kerniq.sandbox.venv import _is_other_venv_bin, sandbox_python_path
+from Kerniq.sandbox.venv import _is_other_venv_bin, _python_runs, sandbox_python_path
 
 
 def test_scan_reads_versions_and_skips_stdlib(tmp_path: Path):
@@ -34,3 +34,11 @@ def test_other_venv_is_hidden(tmp_path: Path):
     sandbox.mkdir(parents=True)
     assert _is_other_venv_bin(str(bindir), sandbox.resolve())
     assert not _is_other_venv_bin(str(sandbox), sandbox.resolve())
+
+
+def test_missing_python_does_not_count_as_a_sandbox(tmp_path: Path):
+    from Kerniq.sandbox.proc import hidden_kwargs
+
+    flags = hidden_kwargs()
+    assert flags == {} or "creationflags" in flags
+    assert _python_runs(tmp_path / "missing-python") is False

@@ -182,7 +182,8 @@ def apply_update(
     from pathlib import Path as _P
 
     def run(cmd):
-        p = subprocess.run(cmd, capture_output=True, text=True)
+        from Kerniq.sandbox.proc import hidden_run
+        p = hidden_run(cmd, capture_output=True, text=True)
         out = ((p.stdout or "") + (p.stderr or "")).strip()
         return p.returncode, out
 

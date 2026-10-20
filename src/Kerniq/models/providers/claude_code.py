@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -101,11 +103,15 @@ class ClaudeCodeProvider(ModelProvider):
             cmd.extend(["--model", self.model])
         prompt = self._prompt(request)
         try:
+            extra = {}
+            if sys.platform == "win32":
+                extra["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **extra,
             )
             out, err = await asyncio.wait_for(
                 proc.communicate(prompt.encode("utf-8")),

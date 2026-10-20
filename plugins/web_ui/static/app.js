@@ -39,11 +39,15 @@ const UI_I18N = {
     pluginsHeading: 'Plugins',
     stopUi: 'Stop UI',
     planTitle: 'Plan',
+    planArchive: 'Archive',
     modePlan: 'Plan',
     modeAct: 'Act',
     autoAct: 'After Plan, run Act automatically',
     modeAuto: 'Auto Plan / Act',
     planCompleted: 'Completed',
+    actDivider: 'Act',
+    contextCompacted: 'Context compacted. Older turns were replaced by a memory note.',
+    contextTrimmed: 'Context trimmed. Older turns were dropped. The latest turns were kept.',
     splitModels: 'Different model for Act',
     actModel: 'Act model',
     composePlan: 'Build a plan',
@@ -75,95 +79,90 @@ const UI_I18N = {
     pluginOff: 'off',
     pluginHidden: 'hidden',
     showHiddenPlugins: 'Show hidden plugins',
-  },
-  ru: {
-    explorer: 'Проводник', chat: 'Чат', newChat: 'Новый', settings: 'Настройки',
-    save: 'Сохранить', saved: 'Сохранено', cancel: 'Отмена', send: 'Отправить', stop: 'Стоп',
-    openFile: 'Откройте файл…', ready: 'Готово', done: 'Готово', error: 'Ошибка',
-    stopping: 'Остановка…', stopped: 'Остановлено',
-    processing: 'Обработка промпта…', thinking: 'Обдумывание…', generating: 'Генерация…',
-    aggHint: 'Объединять подряд идущие вызовы tools в один блок',
-    aggLabel: 'Объединять вызовы инструментов',
-    autoApprove: 'Автоподтверждение до уровня риска',
-    attach: 'Вложение', attachSearch: 'Поиск файлов проекта…',
-    createFile: 'Новый файл', createDir: 'Новая папка', reveal: 'Показать в проводнике',
-    delete: 'Удалить', rename: 'Переименовать', promptPh: 'Сообщение агенту…',
-    serverMode: 'Серверный режим',
-    chatSettings: 'Настройки чата', agentSettings: 'Настройки агента',
-    apiModel: 'API и модель', systemPrompt: 'Системный промпт',
-    tools: 'Инструменты', plugins: 'Плагины', resetSettings: 'Сброс настроек',
-    streamResponses: 'Поток ответа', showReasoning: 'Показывать рассуждения',
-    emptyStatus: 'Статус при пустом ответе', developerMode: 'Режим разработчика',
-    sendMessage: 'Отправка сообщения',
-    sendEnter: 'Enter — отправить, Shift+Enter — новая строка',
-    sendShift: 'Shift+Enter — отправить, Enter — новая строка',
-    fileOpsOnly: 'Только имена файловых операций', responseLang: 'Язык ответа',
-    baseUrl: 'Base URL', workspace: 'Workspace', undo: 'Отменить', redo: 'Повторить',
-    close: 'Закрыть', refresh: 'Обновить', provider: 'Провайдер', model: 'модель',
-    notLoaded: 'не загружена', loaded: 'загружена', loading: 'загрузка…', offline: 'офлайн',
-    available: 'доступно', ctx: 'контекст',
-    tabAgent: 'Агент', tabApi: 'API и модель', tabPrompt: 'Системный промпт',
-    tabChat: 'Чат', tabTools: 'Инструменты', tabPlugins: 'Плагины', tabReset: 'Сброс',
-    workspace: 'Workspace', browse: 'Обзор…', maxIterations: 'Макс. итераций',
-    modelTimeout: 'Таймаут ответа модели', undoSize: 'Размер истории отмены',
-    provider: 'Провайдер', model: 'модель', temperature: 'Temperature',
-    maxTokens: 'Макс. токенов', apiToken: 'API token', refresh: 'Обновить',
-    includeTools: 'Добавлять каталог tools в контекст',
-    factoryReset: 'Сбросить всё к заводским настройкам',
-    requiresDouble: 'Требуется двойное подтверждение',
-    toolsHeading: 'Инструменты',
-    pluginsHeading: 'Плагины',
-    stopUi: 'Выключить UI',
-    planTitle: 'План',
-    modePlan: 'План',
-    modeAct: 'Действие',
-    autoAct: 'После плана сразу выполнять',
-    modeAuto: 'Авто план / действие',
-    planCompleted: 'Завершено',
-    splitModels: 'Другая модель для действия',
-    actModel: 'Модель действия',
-    composePlan: 'Составлять план',
-    loopRetries: 'Повторы перед защитой от цикла',
-    providerDesc: 'Описание',
-    packAuto: 'Автоподтверждение всех инструментов пака',
-    packMerge: 'Объединять вызовы всех инструментов пака',
-    fromProject: 'Из проекта',
-    fromOutside: 'Извне',
-    scrollDown: 'Вниз чата',
-    tempTip: 'Выше температура — ответы разнообразнее и менее предсказуемы. Ниже — ближе к самому вероятному тексту. По умолчанию 0.7.',
-    providersEmpty: 'Список провайдеров не загрузился.',
-    toolsEmpty: 'Инструменты не найдены.',
-    pluginsEmpty: 'Плагины не найдены.',
-    attachBlocked: 'Фото, видео, аудио и архивы прикрепить нельзя.',
-    fileDialogFailed: 'Диалог выбора файла не открылся.',
-    settingsFailed: 'Настройки не загрузились.',
-
-    selectTool: 'Выберите инструмент', selectPlugin: 'Выберите плагин',
-    noMatches: 'Нет совпадений', typeToSearch: 'Введите запрос для поиска файлов',
-    seconds: 'сек', minutes: 'мин', hours: 'ч',
-    groupOutput: 'Ответ',
-    groupSend: 'Отправка',
-    groupChatTools: 'Инструменты в чате',
-    groupPlan: 'План и действие',
-    groupSafety: 'Безопасность и язык',
-    approveAll: 'все уровни — без запроса',
-    pluginOn: 'вкл',
-    pluginOff: 'выкл',
-    pluginHidden: 'скрыт',
-    showHiddenPlugins: 'Показывать скрытые плагины',
+    langPacks: 'Language packs',
+    fromProjectHint: 'Search files in the workspace',
+    fromOutsideHint: 'Pick files from your computer',
+    tabInterface: 'Interface',
+    interfaceSettings: 'Interface settings',
+    prefsLocal: 'These options apply immediately and are stored in this browser.',
+    groupMotion: 'Motion',
+    animations: 'Animations',
+    animationsTip: 'Transitions and motion effects. "Follow system" respects the reduce-motion setting of your operating system.',
+    motionOn: 'On',
+    motionAuto: 'Follow system',
+    motionOff: 'Off',
+    groupEditor: 'Editor',
+    syntaxHl: 'Syntax highlighting',
+    syntaxHlTip: 'Colour code in the editor. Turn it off for very large files.',
+    runNote: 'The agent is running. Settings are read-only until it finishes.',
+    stopAgent: 'Stop agent',
+    groupReasoning: 'Reasoning',
+    autoThink: 'Auto-expand reasoning',
+    autoThinkTip: 'Open the reasoning block while the model is thinking and fold it again when it finishes. A block you open or close yourself is left alone.',
+    groupLanguage: 'Language',
+    uiLanguage: 'Interface language',
+    langPacksBtn: 'Language packs…',
+    groupStatus: 'Status bar',
+    showFooter: 'Show status footer',
+    agentLabel: 'Agent',
+    chats: 'Chats',
+    newChatLong: 'New chat',
+    editorLabel: 'Editor',
+    modeToAgent: 'Switch to agent mode',
+    modeToEditor: 'Switch to editor mode',
+    groupLayout: 'Layout',
+    workspaceLayout: 'Workspace layout',
+    layoutTip: 'Agent only hides the editor: chats on the left, the conversation in the centre.',
+    layoutEditorOpt: 'Editor + chat',
+    layoutAgentOpt: 'Agent only',
   },
 };
+let autoThink = false;     // open reasoning while the model thinks, fold it when it is done
+try { autoThink = localStorage.getItem('kerniq_auto_think') === '1'; } catch (e) {}
+let layoutMode = 'editor';
+try { layoutMode = localStorage.getItem('kerniq_layout') === 'agent' ? 'agent' : 'editor'; } catch (e) {}
 let uiLocale = 'en';
+let langPacks = {};
+/* Counted phrases: a pack may give one form per plural category, separated by "|"
+   ("файл прочитан|файла прочитано|файлов прочитано"). The form is chosen with Intl.PluralRules
+   for the pack's language; a translation without "|" is used as is. */
+let _pluralRules = null, _pluralLocale = '';
+function pluralFormIndex(n, count) {
+  try {
+    if (!_pluralRules || _pluralLocale !== uiLocale) { _pluralRules = new Intl.PluralRules(uiLocale); _pluralLocale = uiLocale; }
+  } catch (_) {
+    _pluralRules = new Intl.PluralRules('en'); _pluralLocale = uiLocale;
+  }
+  const used = _pluralRules.resolvedOptions().pluralCategories;
+  const order = ['zero', 'one', 'two', 'few', 'many', 'other'].filter(c => used.indexOf(c) >= 0);
+  return Math.min(Math.max(order.indexOf(_pluralRules.select(n)), 0), count - 1);
+}
+function translatePlural(one, other, n) {
+  const base = translate(n === 1 ? one : other);
+  if (typeof base !== 'string' || base.indexOf('|') < 0) return base;
+  const forms = base.split('|').map(s => s.trim());
+  return forms[pluralFormIndex(n, forms.length)];
+}
+function translate(text) {
+  const source = String(text == null ? '' : text);
+  if (!source || uiLocale === 'en') return source;
+  const pack = langPacks[uiLocale];
+  const table = pack && pack.strings;
+  if (table && table[source]) return table[source];
+  return source;
+}
+function t(key) {
+  return translate((UI_I18N.en && UI_I18N.en[key]) || key);
+}
 let providerCatalog = [];
 let agentMode = 'act';
 let modeAuto = true;
+let liveModel = '';
+let runSawPlan = false;
 try { agentMode = localStorage.getItem('kerniq_agent_mode') || 'act'; } catch (e) { agentMode = 'act'; }
 if (agentMode !== 'plan' && agentMode !== 'act') agentMode = 'act';
-function t(key) {
-  return (UI_I18N[uiLocale] && UI_I18N[uiLocale][key]) || (UI_I18N.en[key] || key);
-}
 function applyUiLocale(locale) {
-  uiLocale = (locale === 'ru') ? 'ru' : 'en';
+  uiLocale = (locale && locale !== 'en' && langPacks[locale]) ? locale : 'en';
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const k = el.getAttribute('data-i18n');
     if (k) el.textContent = t(k);
@@ -183,16 +182,17 @@ function applyUiLocale(locale) {
   // settings tabs
   const tabMap = {
     agent: 'tabAgent', api: 'tabApi', prompt: 'tabPrompt', chat: 'tabChat',
-    tools: 'tabTools', plugins: 'tabPlugins', reset: 'tabReset',
+    tools: 'tabTools', plugins: 'tabPlugins', reset: 'tabReset', interface: 'tabInterface',
   };
   document.querySelectorAll('.stab').forEach(el => {
     const k = tabMap[el.dataset.tab];
     if (k) el.textContent = t(k);
   });
   const ex = document.querySelector('#explorer h3 .grow');
-  if (ex) ex.textContent = t('explorer');
-  const ch = document.querySelector('#chat-panel h3 .grow');
-  if (ch) ch.textContent = t('chat');
+  if (ex) ex.textContent = t(layoutMode === 'agent' ? 'chats' : 'explorer');
+  if (typeof refreshLayoutLabels === 'function') refreshLayoutLabels();
+  if (typeof refreshInterfaceControls === 'function') refreshInterfaceControls();
+  refreshChatHeading();
   const nc = document.getElementById('btn-new-chat');
   if (nc) nc.textContent = '+ ' + t('newChat');
   const pr = document.getElementById('prompt');
@@ -269,9 +269,14 @@ let chats = [];
 let activeChatId = null;
 const MAX_CHATS = 3;
 let running = false;
+let sendLock = false;
+let sendAbort = false;
 function setRunLock(on) {
   document.body.classList.toggle('run-locked', !!on);
+  if (typeof applyModeSwitch === 'function') applyModeSwitch();
   document.querySelectorAll('#view-settings input, #view-settings select, #view-settings textarea, #view-settings button').forEach(el => {
+    if (el.id === 'btn-stop-ui' || el.closest('nav') || el.hasAttribute('data-keep-unlocked') ||
+        el.classList.contains('twist') || el.closest('#tab-interface')) return;
     if (on) {
       if (el.dataset.lockPrev == null) el.dataset.lockPrev = el.disabled ? '1' : '0';
       el.disabled = true;
@@ -335,142 +340,520 @@ function uid() { return Math.random().toString(36).slice(2) + Date.now().toStrin
 function encodePath(p) {
   return String(p).split('/').map(encodeURIComponent).join('/');
 }
-function inlineMd(s) {
-  s = esc(String(s || ''));
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-  s = s.replace(/(^|[^\*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
-  s = s.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  s = s.replace(/&lt;(https?:[^&\s]+)&gt;/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+/* ---------- markdown ----------
+   Block parser + inline parser. Everything user-visible goes through esc(),
+   links are scheme-checked, and renderMarkdown() never throws: on any
+   internal error it falls back to escaped plain text. */
+const MD_MAX_DEPTH = 6;
+const MD_BULLET = '[-*+•·▪◦\\u2010-\\u2015\\u2212]';
+const MD_LIST_RE = new RegExp('^(\\s*)(' + MD_BULLET + '|\\d{1,9}[.)])\\s+(.*)$');
+const MD_HR_RE = /^\s{0,3}([-*_\u2010-\u2015\u2212])(?:\s*\1){2,}\s*$/;
+const MD_HEAD_RE = /^\s{0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
+const MD_FENCE_RE = /^(\s{0,3})(`{3,}|~{3,})\s*([^\s`]*)[^`]*$/;
+const MD_TSEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+const MD_QUOTE_RE = /^\s{0,3}>/;
+
+function mdSafeUrl(u) {
+  const s = String(u || '').trim();
+  return /^(?:https?:\/\/|mailto:|#|\/|\.\.?\/)/i.test(s) ? s : '';
+}
+
+const PRISM_ALIAS = {
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', node: 'javascript',
+  ts: 'typescript', tsx: 'typescript',
+  py: 'python', python3: 'python',
+  sh: 'bash', shell: 'bash', zsh: 'bash', console: 'bash',
+  ps1: 'powershell', pwsh: 'powershell',
+  html: 'markup', xml: 'markup', svg: 'markup', vue: 'markup',
+  yml: 'yaml', md: 'markdown', jsonc: 'json', json5: 'json',
+  'c++': 'cpp', cxx: 'cpp', cc: 'cpp', 'c#': 'csharp', cs: 'csharp',
+  rs: 'rust', golang: 'go', scss: 'css', less: 'css',
+};
+function highlightCode(text, lang) {
+  const src = String(text == null ? '' : text);
+  let l = String(lang || '').toLowerCase();
+  l = PRISM_ALIAS[l] || l;
+  try {
+    const P = window.Prism;
+    if (P && P.languages && P.languages[l] && src.length < 200000 && !/[^\n]{4000}/.test(src)) {
+      return P.highlight(src, P.languages[l], l);
+    }
+  } catch (_) { /* fall through to plain text */ }
+  return esc(src);
+}
+
+function mdInlineEmph(s) {
+  s = s.replace(/\*\*\*(?=\S)([\s\S]*?\S)\*\*\*/g, '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^\w])__(?=\S)([\s\S]*?\S)__(?!\w)/g, '$1<strong>$2</strong>');
+  s = s.replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<del>$1</del>');
+  s = s.replace(/(^|[^\w*])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?!\*)/g, '$1<em>$2</em>');
+  s = s.replace(/(^|[^\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?!\w)/g, '$1<em>$2</em>');
   return s;
 }
-function mdTable(rows) {
-  if (!rows.length) return '';
-  const parse = (r) => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
-  let html = '<table class="md-table"><tbody>';
-  let isHeader = true;
-  for (const r of rows) {
-    if (/^\s*\|?[\s|:.-]+\|?\s*$/.test(r)) { isHeader = false; continue; }
-    const cells = parse(r);
-    if (!cells.some(c => c)) continue;
-    const tag = isHeader ? 'th' : 'td';
-    html += '<tr>' + cells.map(c => '<' + tag + '>' + inlineMd(c) + '</' + tag + '>').join('') + '</tr>';
-    isHeader = false;
+function mdFileRef(p) {
+  const path = String(p).trim();
+  return '<a href="#" class="file-ref" data-path="' + esc(path) + '">' + esc(path) + '</a>';
+}
+function inlineMd(src) {
+  const stash = [];
+  const keep = (html) => '\u0000' + (stash.push(html) - 1) + '\u0001';
+  let s = String(src == null ? '' : src).replace(/[\u0000\u0001]/g, '');
+  // 1. things that must not be touched by emphasis: code spans, file refs
+  s = s.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, (m, ticks, body) =>
+    keep('<code>' + esc(body.replace(/^ (.*) $/, '$1')) + '</code>'));
+  s = s.replace(/\[\[file:([^\]]+)\]\]/g, (m, p) => keep(mdFileRef(p)));
+  s = esc(s);
+  // 2. links, images (shown as links), autolinks, bare urls
+  s = s.replace(/!?\[([^\]\n]+)\]\(([^)\s]+)(?:\s+&quot;[^)]*&quot;)?\)/g, (m, text, url) => {
+    const u = mdSafeUrl(url);
+    const inner = mdInlineEmph(text);
+    if (!u) return inner;
+    return keep('<a href="' + u + '" target="_blank" rel="noopener noreferrer">' + inner + '</a>');
+  });
+  s = s.replace(/&lt;(https?:\/\/(?:(?!&gt;)\S)+)&gt;/g, (m, url) =>
+    keep('<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>'));
+  s = s.replace(/(^|[\s(])(https?:\/\/[^\s<]+)/g, (m, pre, url) => {
+    let tail = '';
+    const tm = url.match(/(?:[.,;:!?)\]]|&quot;|&#39;|&gt;|&lt;)+$/);
+    if (tm) { tail = tm[0]; url = url.slice(0, url.length - tail.length); }
+    if (!url) return m;
+    return pre + keep('<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>') + tail;
+  });
+  // 3. emphasis
+  s = mdInlineEmph(s);
+  // 4. restore
+  for (let n = 0; n < 4 && s.indexOf('\u0000') >= 0; n++) {
+    s = s.replace(/\u0000(\d+)\u0001/g, (m, i) => stash[+i] != null ? stash[+i] : '');
   }
-  return html + '</tbody></table>';
+  return s;
+}
+
+function mdSplitRow(row) {
+  let s = row.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|') && !s.endsWith('\\|')) s = s.slice(0, -1);
+  const cells = [];
+  let cur = '', inCode = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '\\' && s[i + 1] === '|') { cur += '|'; i++; }
+    else if (ch === '`') { inCode = !inCode; cur += ch; }
+    else if (ch === '|' && !inCode) { cells.push(cur.trim()); cur = ''; }
+    else cur += ch;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+function mdTable(rows) {
+  const list = rows.filter(r => r.trim());
+  if (!list.length) return '';
+  const hasSep = list.length > 1 && MD_TSEP_RE.test(list[1]) && /-/.test(list[1]);
+  const align = hasSep ? mdSplitRow(list[1]).map(c => {
+    const l = c.startsWith(':'), r = c.endsWith(':');
+    return l && r ? 'center' : r ? 'right' : l ? 'left' : '';
+  }) : [];
+  const cols = Math.max.apply(null, list.map(r => mdSplitRow(r).length));
+  const cell = (tag, text, idx) => {
+    const a = align[idx] ? ' style="text-align:' + align[idx] + '"' : '';
+    return '<' + tag + a + '>' + inlineMd(text || '') + '</' + tag + '>';
+  };
+  const row = (tag, r) => {
+    const cells = mdSplitRow(r);
+    while (cells.length < cols) cells.push('');
+    return '<tr>' + cells.slice(0, cols).map((c, i) => cell(tag, c, i)).join('') + '</tr>';
+  };
+  let html = '<div class="table-wrap"><table class="md-table">';
+  let bodyRows = list;
+  if (hasSep) {
+    html += '<thead>' + row('th', list[0]) + '</thead>';
+    bodyRows = list.slice(2);
+  }
+  html += '<tbody>' + bodyRows.filter(r => !(MD_TSEP_RE.test(r) && /-/.test(r))).map(r => row('td', r)).join('') + '</tbody></table></div>';
+  return html;
 }
 function parseFileLinks(html) {
-  return html.replace(/\[\[file:([^\]]+)\]\]/g, (_, p) => {
-    const path = p.trim();
-    return `<a href="#" class="file-ref" data-path="${esc(path)}">${esc(path)}</a>`;
-  });
+  return html.replace(/\[\[file:([^\]]+)\]\]/g, (_, p) => mdFileRef(p));
 }
-function renderMarkdown(text) {
 
-  let raw = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  raw = raw.replace(/[\u2010-\u2015\u2212]/g, '-').replace(/\u00a0/g, ' ');
-  const lines = raw.split('\n');
+function mdCodeBlock(body, lang) {
+  const l = String(lang || '').toLowerCase();
+  const lines = body.split('\n');
+  // models often wrap a plain table in a code fence: render it as a table
+  if ((!l || l === 'md' || l === 'markdown' || l === 'text' || l === 'table') &&
+      lines.some(x => MD_TSEP_RE.test(x) && /-/.test(x) && x.indexOf('|') >= 0) &&
+      lines.every(x => !x.trim() || /^\s*\|.*\|\s*$/.test(x))) {
+    return mdTable(lines);
+  }
+  return '<div class="code-block"><div class="code-head"><span class="code-lang">' + esc(lang || '') + '</span>' +
+    '<button type="button" class="copy-btn" data-copy>' + esc(translate('Copy')) + '</button></div>' +
+    '<pre class="md-code"><code>' + highlightCode(body, lang) + '</code></pre></div>';
+}
+
+function mdIsBlockStart(L) {
+  return MD_FENCE_RE.test(L) || MD_HEAD_RE.test(L) || MD_HR_RE.test(L) ||
+    MD_QUOTE_RE.test(L) || MD_LIST_RE.test(L) || /^\s*\|.+\|/.test(L);
+}
+const mdTabs = (L) => L.replace(/^\t+/, (m) => '    '.repeat(m.length));
+function mdMinIndent(lines) {
+  let min = Infinity;
+  for (const L of lines) {
+    if (!L.trim()) continue;
+    const n = L.match(/^ */)[0].length;
+    if (n < min) min = n;
+  }
+  return min === Infinity ? 0 : min;
+}
+
+function mdList(lines, start, depth) {
+  const first = mdTabs(lines[start]).match(MD_LIST_RE);
+  const base = first[1].length;
+  const ordered = /\d/.test(first[2][0]);
+  const startNum = ordered ? parseInt(first[2], 10) : 1;
+  const items = [];
+  let cur = null, inFence = false, fenceCh = '', fenceLen = 0;
+  let j = start;
+  while (j < lines.length) {
+    const L = mdTabs(lines[j]);
+    if (inFence) {
+      cur.body.push(L);
+      const cm = L.match(/^\s*(`{3,}|~{3,})\s*$/);
+      if (cm && cm[1][0] === fenceCh && cm[1].length >= fenceLen) inFence = false;
+      j++; continue;
+    }
+    if (!L.trim()) {
+      let k = j + 1;
+      while (k < lines.length && !lines[k].trim()) k++;
+      if (k >= lines.length) break;
+      const N = mdTabs(lines[k]);
+      const nm = N.match(MD_LIST_RE);
+      const nIndent = N.match(/^ */)[0].length;
+      const sameKind = nm && (/\d/.test(nm[2][0]) === ordered);
+      if (nIndent > base + 1 || (sameKind && nIndent <= base + 1 && nIndent >= base)) {
+        if (cur) cur.body.push('');
+        j++; continue;
+      }
+      break;
+    }
+    const m = L.match(MD_LIST_RE);
+    const indent = L.match(/^ */)[0].length;
+    if (m && indent <= base + 1) {
+      if (/\d/.test(m[2][0]) !== ordered) break;
+      cur = { text: m[3], body: [] };
+      items.push(cur);
+      j++; continue;
+    }
+    if (!cur) break;
+    if (indent > base + 1) {
+      const fm = L.match(/^\s*(`{3,}|~{3,})/);
+      if (fm) { inFence = true; fenceCh = fm[1][0]; fenceLen = fm[1].length; }
+      cur.body.push(L);
+      j++; continue;
+    }
+    // un-indented, non-item line: lazy continuation unless it starts a block
+    const prevBlank = cur.body.length && !cur.body[cur.body.length - 1].trim();
+    if (prevBlank || mdIsBlockStart(L)) break;
+    cur.body.push('  ' + L.trim());
+    j++;
+  }
+  const tag = ordered ? 'ol' : 'ul';
+  let html = '<' + tag + (ordered && startNum !== 1 ? ' start="' + startNum + '"' : '') + '>';
+  for (const it of items) {
+    let text = it.text, cls = '';
+    const task = text.match(/^\[( |x|X)\]\s+/);
+    if (task) {
+      cls = ' class="task"';
+      text = '\u0003' + (task[1] === ' ' ? 'todo' : 'done') + '\u0003' + text.slice(task[0].length);
+    }
+    const bodyLines = it.body.slice();
+    const cut = mdMinIndent(bodyLines);
+    const dedented = bodyLines.map(x => x.slice(Math.min(cut, x.match(/^ */)[0].length)));
+    let inner = mdBlocks([text].concat(dedented), depth + 1);
+    inner = inner.replace(/^<p>([\s\S]*?)<\/p>/, '$1');
+    inner = inner.replace(/\u0003(todo|done)\u0003/, '<span class="task-box $1" aria-hidden="true"></span>');
+    html += '<li' + cls + '>' + inner + '</li>';
+  }
+  return { html: html + '</' + tag + '>', next: j };
+}
+
+function mdBlocks(lines, depth) {
+  if (depth > MD_MAX_DEPTH) {
+    return '<p>' + lines.map(inlineMd).join('<br/>') + '</p>';
+  }
   const out = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-    // fenced code
-    const fence = line.match(/^```([\w-]*)\s*$/);
-    if (fence) {
+    if (!line.trim()) { i++; continue; }
+
+    // fenced code (unclosed fences run to the end: friendly to streaming)
+    const fm = line.match(MD_FENCE_RE);
+    if (fm) {
+      const indent = fm[1].length, ch = fm[2][0], len = fm[2].length, lang = fm[3] || '';
       const buf = [];
       i++;
-      while (i < lines.length && !/^```\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
-      i++; // closing fence
-      const body = buf.join('\n');
-      if (buf.some(l => /^\s*\|.+\|/.test(l))) out.push(mdTable(buf));
-      else out.push('<pre class="md-code"><code>' + esc(body) + '</code></pre>');
-      continue;
-    }
-    // table block
-    if (/^\s*\|.+\|/.test(line)) {
-      const buf = [];
-      while (i < lines.length && (/^\s*\|/.test(lines[i]) || /^\s*\|?[\s|:.-]+\|?\s*$/.test(lines[i]))) {
-        buf.push(lines[i]); i++;
+      while (i < lines.length) {
+        const cm = lines[i].match(/^\s{0,3}(`{3,}|~{3,})\s*$/);
+        if (cm && cm[1][0] === ch && cm[1].length >= len) { i++; break; }
+        buf.push(indent ? lines[i].replace(new RegExp('^ {0,' + indent + '}'), '') : lines[i]);
+        i++;
       }
-      out.push(mdTable(buf));
+      out.push(mdCodeBlock(buf.join('\n'), lang));
       continue;
     }
-    // hr
-    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { out.push('<hr/>'); i++; continue; }
-    // headings
-    let hm = line.match(/^(#{1,4})\s+(.+)$/);
+    // horizontal rule (before lists: "- - -", "***")
+    if (MD_HR_RE.test(line)) { out.push('<hr/>'); i++; continue; }
+    // heading
+    const hm = line.match(MD_HEAD_RE);
     if (hm) {
-      const lvl = Math.min(hm[1].length + 2, 5); // h3-h5 visual
+      const lvl = Math.min(hm[1].length + 2, 6);
       out.push('<h' + lvl + '>' + inlineMd(hm[2]) + '</h' + lvl + '>');
       i++; continue;
     }
-    // ul
-    if (/^\s*[-*•]\s+/.test(line)) {
-      const items = [];
-      while (i < lines.length && /^\s*[-*•]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*[-*•]\s+/, ''));
-        i++;
-      }
-      out.push('<ul>' + items.map(t => '<li>' + inlineMd(t) + '</li>').join('') + '</ul>');
+    // table
+    const next = lines[i + 1];
+    if (line.indexOf('|') >= 0 && next !== undefined && MD_TSEP_RE.test(next) && /-/.test(next) && next.indexOf('|') >= 0 ||
+        /^\s*\|.+\|/.test(line)) {
+      const buf = [];
+      while (i < lines.length && lines[i].trim() && lines[i].indexOf('|') >= 0) { buf.push(lines[i]); i++; }
+      out.push(mdTable(buf));
       continue;
     }
-    // ol
-    if (/^\s*\d+\.\s+/.test(line)) {
-      const items = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
-        i++;
-      }
-      out.push('<ol>' + items.map(t => '<li>' + inlineMd(t) + '</li>').join('') + '</ol>');
+    // blockquote
+    if (MD_QUOTE_RE.test(line)) {
+      const buf = [];
+      while (i < lines.length && MD_QUOTE_RE.test(lines[i])) { buf.push(lines[i].replace(/^\s{0,3}>\s?/, '')); i++; }
+      out.push('<blockquote>' + mdBlocks(buf, depth + 1) + '</blockquote>');
       continue;
     }
-    // blank
-    if (!line.trim()) { i++; continue; }
-    // paragraph: merge consecutive plain lines
-    const para = [];
-    while (i < lines.length) {
-      const L = lines[i];
-      if (!L.trim()) break;
-      if (/^```/.test(L) || /^\s*\|/.test(L) || /^\s*#{1,4}\s/.test(L) ||
-          /^\s*[-*•]\s+/.test(L) || /^\s*\d+\.\s+/.test(L) ||
-          /^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(L)) break;
-      para.push(L);
-      i++;
+    // lists (nested, ordered, tasks)
+    if (MD_LIST_RE.test(mdTabs(line))) {
+      const r = mdList(lines, i, depth);
+      out.push(r.html);
+      i = Math.max(r.next, i + 1);
+      continue;
     }
-    out.push('<p>' + para.map(inlineMd).join('<br/>') + '</p>');
+    // paragraph
+    const para = [lines[i]];
+    i++;
+    while (i < lines.length && lines[i].trim() && !mdIsBlockStart(lines[i])) { para.push(lines[i]); i++; }
+    out.push('<p>' + para.map(l => inlineMd(l.replace(/\s+$/, ''))).join('<br/>') + '</p>');
   }
-  return parseFileLinks(out.join('\n') || '');
+  return out.join('\n');
+}
+
+function renderMarkdown(text) {
+  const src = String(text == null ? '' : text);
+  try {
+    const raw = src.replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ');
+    return mdBlocks(raw.split('\n'), 0);
+  } catch (err) {
+    try { console.error('markdown render failed:', err); } catch (_) {}
+    return '<p style="white-space:pre-wrap">' + esc(src) + '</p>';
+  }
 }
 
 
 /* ---------- syntax highlight (Prism) ---------- */
 function langFromPath(path) {
-  const ext = (path || '').split('.').pop().toLowerCase();
+  const name = String(path || '').split(/[\\/]/).pop().toLowerCase();
+  if (name === '.env' || name.startsWith('.env.')) return 'bash';
+  if (name === 'dockerfile' || name === 'makefile') return 'bash';
+  const ext = name.indexOf('.') >= 0 ? name.split('.').pop() : '';
   const map = {
     py: 'python', pyw: 'python',
-    js: 'javascript', mjs: 'javascript', cjs: 'javascript',
+    js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
     ts: 'typescript', tsx: 'typescript',
     json: 'json', jsonc: 'json',
-    sh: 'bash', bash: 'bash', zsh: 'bash',
+    sh: 'bash', bash: 'bash', zsh: 'bash', env: 'bash',
     ps1: 'powershell', psm1: 'powershell',
-    html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup',
-    css: 'css', scss: 'css',
+    html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup', vue: 'markup',
+    css: 'css', scss: 'css', less: 'css',
     md: 'markdown', markdown: 'markdown',
     yml: 'yaml', yaml: 'yaml',
-    toml: 'markup', ini: 'markup',
     rs: 'rust', go: 'go', java: 'java',
-    c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', hpp: 'cpp',
+    c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp',
     cs: 'csharp', sql: 'sql',
   };
   return map[ext] || 'none';
 }
-function updateHighlight() {
+
+/* ---------- editor: one scroll container + windowed syntax highlight ----------
+   .code-wrap is the only scroller. The gutter is sticky inside it, the textarea
+   is sized to its content and shows through a transparent text layer, and a <pre>
+   behind it paints Prism-highlighted HTML for the visible lines only. Nothing is
+   synchronised from scroll events, so the gutter cannot lag behind the text. */
+const ED = {
+  lineH: 20, padY: 12, padX: 12, gutter: 56,
+  lines: 1, maxCols: 0, offsets: [0], charW: 7.8,
+  lang: 'none', path: null, hl: true, hlActive: true,
+  winFrom: -1, winTo: -1, scrollByPath: {},
+};
+try { ED.hl = localStorage.getItem('kerniq_hl') !== '0'; } catch (_) {}
+
+function measureEditorChar() {
   const ed = document.getElementById('editor');
-  const code = document.getElementById('hl-code');
-  if (ed) ed.classList.add('no-hl');
-  if (code) { code.textContent = ''; code.className = 'language-none'; }
+  if (!ed) return;
+  const cs = getComputedStyle(ed);
+  const ctx = measureEditorChar._c || (measureEditorChar._c = document.createElement('canvas').getContext('2d'));
+  ctx.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+  const w = ctx.measureText('0'.repeat(64)).width / 64;
+  if (w > 0) ED.charW = w;
 }
+function layoutEditor() {
+  const wrap = document.getElementById('code-wrap');
+  if (!wrap) return;
+  wrap.style.setProperty('--code-h', (ED.lines * ED.lineH + ED.padY * 2 + ED.lineH) + 'px');
+  wrap.style.setProperty('--code-w', Math.ceil(ED.maxCols * ED.charW + ED.padX + 56) + 'px');
+}
+function renderCodeWindow(force) {
+  const ed = document.getElementById('editor');
+  const wrap = document.getElementById('code-wrap');
+  const pre = document.querySelector('.hl-pre');
+  const code = document.getElementById('hl-code');
+  if (!ed || !wrap || !pre || !code) return;
+  if (ed.disabled || !activeTab) { code.innerHTML = ''; ED.winFrom = -1; return; }
+  const total = ED.lines;
+  const first = Math.max(0, Math.floor((wrap.scrollTop - ED.padY) / ED.lineH));
+  const last = Math.min(total - 1, first + Math.ceil((wrap.clientHeight || 700) / ED.lineH) + 1);
+  const margin = 24;
+  if (!force && ED.winFrom >= 0 &&
+      (ED.winFrom === 0 || first >= ED.winFrom + margin) &&
+      (ED.winTo >= total - 1 || last <= ED.winTo - margin)) return;
+  const BUF = 90;
+  const from = Math.max(0, first - BUF);
+  const to = Math.min(total - 1, last + BUF);
+  const text = ed.value;
+  const a = ED.offsets[from];
+  const b = to + 1 < total ? ED.offsets[to + 1] - 1 : text.length;
+  const slice = text.slice(a, b);
+  code.innerHTML = ED.hlActive ? highlightCode(slice, ED.lang) : esc(slice);
+  pre.style.top = (ED.padY + from * ED.lineH) + 'px';
+  ED.winFrom = from; ED.winTo = to;
+}
+function updateHighlight() { renderCodeWindow(true); }
+
+function updateLineNumbers() {
+  const ed = document.getElementById('editor');
+  const ln = document.getElementById('line-nums');
+  const wrap = document.getElementById('code-wrap');
+  if (!ed || !ln || !wrap) return;
+  if (ed.disabled || !activeTab) {
+    ln.textContent = ''; ln.dataset.n = '';
+    ED.lines = 1; ED.path = null; ED.winFrom = -1;
+    renderCodeWindow(true);
+    wrap.style.setProperty('--code-h', '0px');
+    wrap.style.setProperty('--code-w', '0px');
+    return;
+  }
+  const text = ed.value || '';
+  // one pass: line starts + widest line (tabs counted as 4 columns)
+  const offs = [0];
+  let cur = 0, max = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c === 10) { offs.push(i + 1); if (cur > max) max = cur; cur = 0; }
+    else if (c === 9) cur += 4;
+    else cur++;
+  }
+  if (cur > max) max = cur;
+  ED.offsets = offs; ED.maxCols = max;
+  ED.lines = offs.length;
+  if (ln.dataset.n !== String(ED.lines)) {          // rebuild gutter only when the line count changes
+    const parts = new Array(ED.lines);
+    for (let i = 0; i < ED.lines; i++) parts[i] = i + 1;
+    ln.textContent = parts.join('\n');
+    ln.dataset.n = String(ED.lines);
+  }
+  ED.lang = langFromPath(activeTab);
+  ED.hlActive = ED.hl && ED.lang !== 'none' && text.length < 1500000;
+  measureEditorChar();
+  layoutEditor();
+  if (ED.path !== activeTab) {                      // another file: restore its scroll position
+    ED.path = activeTab;
+    const sp = ED.scrollByPath[activeTab];
+    wrap.scrollTop = sp ? sp.top : 0;
+    wrap.scrollLeft = sp ? sp.left : 0;
+    ED.winFrom = -1;
+  }
+  renderCodeWindow(true);
+}
+
+function ensureCaretVisible() {
+  const ed = document.getElementById('editor');
+  const wrap = document.getElementById('code-wrap');
+  if (!ed || !wrap || document.activeElement !== ed) return;
+  const pos = ed.selectionEnd;
+  let lo = 0, hi = ED.offsets.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (ED.offsets[mid] <= pos) lo = mid; else hi = mid - 1; }
+  const lineText = ed.value.slice(ED.offsets[lo], pos);
+  const cols = lineText.length + (lineText.split('\t').length - 1) * 3;
+  const top = ED.padY + lo * ED.lineH, bottom = top + ED.lineH;
+  const viewH = wrap.clientHeight, viewW = wrap.clientWidth;
+  if (top < wrap.scrollTop) wrap.scrollTop = Math.max(0, top - ED.lineH);
+  else if (bottom > wrap.scrollTop + viewH - 14) wrap.scrollTop = bottom - viewH + ED.lineH * 2;
+  const x = ED.gutter + ED.padX + cols * ED.charW;
+  if (x < wrap.scrollLeft + ED.gutter + 8) wrap.scrollLeft = Math.max(0, x - ED.gutter - 40);
+  else if (x > wrap.scrollLeft + viewW - 24) wrap.scrollLeft = x - viewW + 48;
+}
+
+(function setupEditor() {
+  const ed = document.getElementById('editor');
+  const wrap = document.getElementById('code-wrap');
+  if (!ed || !wrap) return;
+  wrap.addEventListener('scroll', () => {
+    if (activeTab) ED.scrollByPath[activeTab] = { top: wrap.scrollTop, left: wrap.scrollLeft };
+    renderCodeWindow(false);
+  }, { passive: true });
+  // the textarea itself must never scroll: that would detach it from the highlight layer
+  ed.addEventListener('scroll', () => { if (ed.scrollTop || ed.scrollLeft) { ed.scrollTop = 0; ed.scrollLeft = 0; } });
+  ed.addEventListener('keyup', (e) => {
+    if (/^(Arrow|Page|Home|End)/.test(e.key)) ensureCaretVisible();
+  });
+  if (window.ResizeObserver) {
+    let raf = 0;
+    new ResizeObserver(() => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; renderCodeWindow(true); });
+    }).observe(wrap);
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measureEditorChar(); layoutEditor(); });
+
+  // Tab / Shift+Tab indent, Enter keeps indentation
+  const IND = '    ';
+  const fire = () => ed.dispatchEvent(new Event('input', { bubbles: true }));
+  ed.addEventListener('keydown', (e) => {
+    if (ed.disabled || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+    const v = ed.value, s = ed.selectionStart, en = ed.selectionEnd;
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (s === en && !e.shiftKey) { ed.setRangeText(IND, s, en, 'end'); fire(); return; }
+      const ls = v.lastIndexOf('\n', s - 1) + 1;
+      const endAdj = (en > s && v[en - 1] === '\n') ? en - 1 : en;
+      let le = v.indexOf('\n', endAdj); if (le < 0) le = v.length;
+      const out = v.slice(ls, le).split('\n')
+        .map(l => e.shiftKey ? l.replace(/^( {1,4}|\t)/, '') : IND + l).join('\n');
+      ed.setRangeText(out, ls, le, 'select');
+      fire();
+    } else if (e.key === 'Enter' && !e.shiftKey && s === en) {
+      const ls = v.lastIndexOf('\n', s - 1) + 1;
+      const indent = v.slice(ls, s).match(/^[ \t]*/)[0];
+      const prev = v[s - 1], nextCh = v[s];
+      const codey = ED.lang !== 'none' && ED.lang !== 'markdown';
+      const colon = ED.lang === 'python' || ED.lang === 'yaml';
+      const opens = prev !== undefined && ((codey && '{(['.indexOf(prev) >= 0) || (colon && prev === ':'));
+      e.preventDefault();
+      if (opens && prev !== ':' && nextCh !== undefined && '})]'.indexOf(nextCh) >= 0) {
+        ed.setRangeText('\n' + indent + IND + '\n' + indent, s, en, 'preserve');
+        const caret = s + 1 + indent.length + IND.length;
+        ed.setSelectionRange(caret, caret);
+      } else {
+        ed.setRangeText('\n' + indent + (opens ? IND : ''), s, en, 'end');
+      }
+      fire();
+    }
+  });
+})();
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -586,16 +969,24 @@ let _toolsSchemaTokens = 400; // approx when tool catalog enabled
 
 
 let footerActivity = 'idle';
+let modelLoaded = false;
+let providerReachable = null;
 function setFooterActivity(mode) {
   footerActivity = mode || 'idle';
   const dot = document.getElementById('footer-dot');
   if (!dot) return;
   const cls = footerActivity === 'err' ? 'err'
-    : footerActivity === 'work' ? 'work'
-    : footerActivity === 'wait' ? 'wait'
+    : footerActivity === 'work' || footerActivity === 'wait' ? 'work'
+    : footerActivity === 'loaded' ? 'loaded'
     : footerActivity === 'loading' ? 'loading'
     : 'idle';
   dot.className = 'dot ' + cls;
+}
+function settleFooter() {
+  if (running) return;
+  if (providerReachable === false) setFooterActivity('err');
+  else if (modelLoaded) setFooterActivity('loaded');
+  else setFooterActivity('idle');
 }
 function setFooterState(mode) {
   setFooterActivity(mode);
@@ -603,9 +994,9 @@ function setFooterState(mode) {
 function setFooterProvider(name, ok) {
   const el = document.getElementById('footer-provider');
   if (el) el.textContent = t('provider') + ': ' + (name || '—');
-  if (running) return;
-  if (ok === false) setFooterActivity('err');
-  else if (footerActivity === 'err' || footerActivity === 'loading') setFooterActivity('idle');
+  if (ok === false) providerReachable = false;
+  else if (ok === true) providerReachable = true;
+  if (!running) settleFooter();
 }
 
 function setFooterContext(used, limit) {
@@ -735,11 +1126,15 @@ function setFooterModelStatus(text, ok) {
   el.classList.toggle('ok', ok === true);
 }
 
+function settingsOpen() { return document.body.classList.contains('settings-mode'); }
 function showView(n) {
-  document.getElementById('view-main').style.display = n === 'main' ? 'flex' : 'none';
-  document.getElementById('view-settings').style.display = n === 'settings' ? 'block' : 'none';
-  document.querySelector('.settings-actions').style.display = n === 'settings' ? 'flex' : 'none';
-  document.body.classList.toggle('settings-mode', n === 'settings');
+  const open = n === 'settings';
+  const bar = document.querySelector('.settings-actions');
+  if (open) bar.style.display = 'flex';
+  else setTimeout(() => { if (!settingsOpen()) bar.style.display = 'none'; }, 420);   // after the slide-up
+  document.body.classList.toggle('settings-mode', open);
+  const mainView = document.getElementById('view-main');
+  if (mainView) mainView.inert = open;
   const btn = document.getElementById('nav-settings');
   if (btn && n === 'main') {
     btn.classList.remove('active-settings');
@@ -758,29 +1153,53 @@ function setPanelContentWidth(panel, w) {
 }
 function loadPanelWidths() {
   try {
-    const p = JSON.parse(localStorage.getItem(LS_PANEL) || '{}');
-    const ex = document.getElementById('explorer');
-    const ch = document.getElementById('chat-panel');
-    if (p.left) {
-      ex.style.width = p.left + 'px';
-      ex.style.minWidth = p.left + 'px';
-      setPanelContentWidth(ex, p.left);
-    } else setPanelContentWidth(ex, 280);
-    if (p.right) {
-      ch.style.width = p.right + 'px';
-      ch.style.minWidth = p.right + 'px';
-      setPanelContentWidth(ch, p.right);
-    } else setPanelContentWidth(ch, 360);
+    applyStoredPanelSizes();
+    const p = readPanelStore();
     if (p.explorerCollapsed) setExplorerCollapsed(true, true);
     if (p.chatCollapsed) setChatCollapsed(true, true);
   } catch {}
 }
+const LS_SIDE = 'kerniq_side_open';
+const sideOpen = { editor: true, agent: true };
+function loadSideOpen() {
+  try {
+    const s = JSON.parse(localStorage.getItem(LS_SIDE) || 'null');
+    if (s && typeof s === 'object') { sideOpen.editor = s.editor !== false; sideOpen.agent = s.agent !== false; return; }
+    const p = JSON.parse(localStorage.getItem(LS_PANEL) || '{}');
+    sideOpen.editor = !p.explorerCollapsed;
+  } catch (_) {}
+}
+function saveSideOpen() { try { localStorage.setItem(LS_SIDE, JSON.stringify(sideOpen)); } catch (_) {} }
+loadSideOpen();
+function clampPanelSize(side, v) {
+  const n = Number(v);
+  if (!isFinite(n) || n <= 0 || n > window.innerWidth * 0.8) return side === 'left' ? 280 : 380;   // absurd value: start over
+  const max = Math.floor(window.innerWidth * 0.5);
+  return Math.max(side === 'left' ? 250 : 280, Math.min(max, Math.round(n)));
+}
+function readPanelStore() {
+  try { return JSON.parse(localStorage.getItem(LS_PANEL) || '{}') || {}; } catch (_) { return {}; }
+}
+function storedPanelSizes() {
+  const p = readPanelStore();
+  return { left: clampPanelSize('left', p.left), right: clampPanelSize('right', p.right) };
+}
+function applyStoredPanelSizes() {
+  const s = storedPanelSizes();
+  const ex = document.getElementById('explorer'), ch = document.getElementById('chat-panel');
+  ex.style.width = s.left + 'px'; ex.style.minWidth = 'min(' + s.left + 'px, 50%)'; setPanelContentWidth(ex, s.left);
+  ch.style.width = s.right + 'px'; ch.style.minWidth = 'min(' + s.right + 'px, 50%)'; setPanelContentWidth(ch, s.right);
+}
 function savePanelWidths() {
-  const left = document.getElementById('explorer').offsetWidth;
-  const right = document.getElementById('chat-panel').offsetWidth;
+  const prev = readPanelStore();
+  const animating = document.getElementById('view-main').classList.contains('layout-anim');
+  const exW = document.getElementById('explorer').offsetWidth;
+  const chW = document.getElementById('chat-panel').offsetWidth;
+  // the chat only has "its own" width in the editor layout; in agent mode it spans the window
+  const left = (explorerCollapsed || animating) ? prev.left : exW;
+  const right = (chatCollapsed || animating || layoutMode === 'agent') ? prev.right : chW;
   localStorage.setItem(LS_PANEL, JSON.stringify({
-    left: explorerCollapsed ? (JSON.parse(localStorage.getItem(LS_PANEL) || '{}').left || 280) : left,
-    right: chatCollapsed ? (JSON.parse(localStorage.getItem(LS_PANEL) || '{}').right || 360) : right,
+    left: clampPanelSize('left', left), right: clampPanelSize('right', right),
     explorerCollapsed, chatCollapsed,
   }));
 }
@@ -788,7 +1207,7 @@ function setExplorerCollapsed(v, skipSave) {
   explorerCollapsed = v;
   document.getElementById('explorer').classList.toggle('collapsed', v);
   document.getElementById('btn-toggle-explorer').classList.toggle('on', !v);
-  if (!skipSave) savePanelWidths();
+  if (!skipSave) { sideOpen[layoutMode] = !v; saveSideOpen(); savePanelWidths(); }
 }
 function setChatCollapsed(v, skipSave) {
   chatCollapsed = v;
@@ -799,58 +1218,55 @@ function setChatCollapsed(v, skipSave) {
 function bindResizer(id, side) {
   const el = document.getElementById(id);
   if (!el) return;
-  let dragging = false;
-  let startX = 0;
-  let startW = 0;
-  let panel = null;
+  let drag = null;                       // { startX, startW, panel, pointerId }
 
-  const onMove = (ev) => {
-    if (!dragging || !panel) return;
-    ev.preventDefault();
+  const stop = () => {
+    if (!drag) return;
+    const pid = drag.pointerId;
+    drag = null;
+    document.body.classList.remove('resizing-panels');
+    el.classList.remove('active', 'at-limit');
+    try { if (el.hasPointerCapture(pid)) el.releasePointerCapture(pid); } catch (_) {}
+    savePanelWidths();
+  };
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || layoutBusy) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const panel = document.getElementById(side === 'left' ? 'explorer' : 'chat-panel');
+    if (side === 'left' && explorerCollapsed) setExplorerCollapsed(false, true);
+    if (side === 'right' && chatCollapsed) setChatCollapsed(false, true);
+    // capture: moves and the release keep coming to this element even outside the window
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    drag = { startX: e.clientX, startW: panel.getBoundingClientRect().width || (side === 'left' ? 280 : 380), panel, pointerId: e.pointerId };
+    document.body.classList.add('resizing-panels');
+    el.classList.add('active');
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (e.buttons === 0) { stop(); return; }          // the release was lost somewhere: end the drag
+    e.preventDefault();
     const max = Math.floor(window.innerWidth * 0.5);
-    let w = side === 'left' ? startW + (ev.clientX - startX) : startW - (ev.clientX - startX);
-    if (w < 40) {
-      if (side === 'left') setExplorerCollapsed(true);
-      else setChatCollapsed(true);
+    const min = side === 'left' ? 250 : 280;
+    const raw = side === 'left' ? drag.startW + (e.clientX - drag.startX) : drag.startW - (e.clientX - drag.startX);
+    if (raw < 40) {
+      if (side === 'left') setExplorerCollapsed(true); else setChatCollapsed(true);
+      el.classList.add('at-limit');
       return;
     }
     if (side === 'left' && explorerCollapsed) setExplorerCollapsed(false, true);
     if (side === 'right' && chatCollapsed) setChatCollapsed(false, true);
-    const min = side === 'left' ? 250 : 280;
-    w = Math.max(min, Math.min(max, w));
-    panel.style.width = w + 'px';
-    panel.style.minWidth = w + 'px';
-    setPanelContentWidth(panel, w);
-  };
-
-  const endDrag = () => {
-    if (!dragging) return;
-    dragging = false;
-    document.body.classList.remove('resizing-panels');
-    el.classList.remove('active');
-    window.removeEventListener('mousemove', onMove, true);
-    window.removeEventListener('mouseup', endDrag, true);
-    window.removeEventListener('blur', endDrag);
-    document.removeEventListener('mouseleave', endDrag);
-    savePanelWidths();
-  };
-
-  el.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    panel = side === 'left' ? document.getElementById('explorer') : document.getElementById('chat-panel');
-    if (side === 'left' && explorerCollapsed) setExplorerCollapsed(false, true);
-    if (side === 'right' && chatCollapsed) setChatCollapsed(false, true);
-    dragging = true;
-    document.body.classList.add('resizing-panels');
-    el.classList.add('active');
-    startX = e.clientX;
-    startW = panel.getBoundingClientRect().width || (side === 'left' ? 280 : 360);
-    window.addEventListener('mousemove', onMove, true);
-    window.addEventListener('mouseup', endDrag, true);
-    window.addEventListener('blur', endDrag);
+    const w = Math.max(min, Math.min(max, raw));
+    el.classList.toggle('at-limit', w !== raw);       // the line turns amber at the size limit
+    drag.panel.style.width = w + 'px';
+    drag.panel.style.minWidth = w + 'px';
+    setPanelContentWidth(drag.panel, w);
   });
+  el.addEventListener('pointerup', stop);
+  el.addEventListener('pointercancel', stop);
+  el.addEventListener('lostpointercapture', stop);
+  window.addEventListener('blur', stop);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
 }
 
 /* undo/redo */
@@ -909,31 +1325,6 @@ function applyInverse(e) {
   }
 }
 
-/* line numbers */
-function updateLineNumbers() {
-  const ed = document.getElementById('editor');
-  const ln = document.getElementById('line-nums');
-  if (!ln) return;
-  if (ed.disabled || !activeTab) {
-    ln.textContent = '';
-    updateHighlight();
-    return;
-  }
-  const text = ed.value || '';
-  const n = text.length === 0 ? 1 : text.split('\n').length;
-  const parts = [];
-  for (let i = 1; i <= n; i++) parts.push(String(i));
-  ln.textContent = parts.join('\n');
-  ln.scrollTop = ed.scrollTop;
-  updateHighlight();
-}
-document.getElementById('editor').addEventListener('scroll', () => {
-  const ed = document.getElementById('editor');
-  document.getElementById('line-nums').scrollTop = ed.scrollTop;
-  const pre = document.querySelector('.hl-pre');
-  if (pre) { pre.scrollTop = ed.scrollTop; pre.scrollLeft = ed.scrollLeft; }
-});
-
 /* tree */
 function buildTree(entries) {
   const root = { name: '', path: '', type: 'dir', children: {} };
@@ -951,7 +1342,7 @@ function buildTree(entries) {
   return root;
 }
 async function refreshTree(silent) {
-  const data = await api('/api/fs/tree');
+  const data = await api('/api/fs/tree' + (silent ? '' : '?fresh=1'));   // the poll may be served from a short server cache
   if (data.error) { if (!silent) document.getElementById('tree').textContent = data.error; return; }
   const key = JSON.stringify(data.entries || []);
   if (silent && key === refreshTree._last) return;
@@ -959,6 +1350,12 @@ async function refreshTree(silent) {
   treeData = data.entries || [];
   if (data.workspace) document.getElementById('top-workspace').textContent = data.workspace;
   renderTree();
+}
+const TWIST_SVG = '<svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M4 2.5 7.5 6 4 9.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const DIR_SVG = '<svg class="fi dir" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>';
+function fileSvg(name) {
+  const ext = (String(name).split('.').pop() || '').toLowerCase();
+  return '<svg class="fi" data-ext="' + esc(ext) + '" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
 }
 function renderTree() {
   const root = buildTree(treeData);
@@ -981,13 +1378,15 @@ function renderTree() {
       row.style.paddingLeft = (4 + depth * 14) + 'px';
       const open = expanded.has(ch.path);
       if (ch.type === 'dir') {
-        row.innerHTML = `<span class="twist">${open ? '▼' : '▶'}</span><span style="opacity:${ch.hidden?0.45:1}">📁</span><span style="opacity:${ch.hidden?0.55:1}">${esc(ch.name)}</span>`;
+        row.innerHTML = `<span class="twist${open ? ' open' : ''}">${TWIST_SVG}</span>${DIR_SVG}<span class="fname">${esc(ch.name)}</span>`;
+        if (ch.hidden) row.classList.add('hidden-entry');
         row.onclick = () => { if (expanded.has(ch.path)) expanded.delete(ch.path); else expanded.add(ch.path); renderTree(); };
         row.oncontextmenu = ev => { ev.preventDefault(); showCtx(ev, ch.path, true); };
         el.appendChild(row);
         if (open) walk(ch, depth + 1);
       } else {
-        row.innerHTML = `<span class="twist"></span><span style="opacity:${ch.hidden?0.45:1}">${ch.type==='dir'?'📁':'📄'}</span><span style="opacity:${ch.hidden?0.55:1}">${esc(ch.name)}</span>`;
+        row.innerHTML = `<span class="twist"></span>${fileSvg(ch.name)}<span class="fname">${esc(ch.name)}</span>`;
+        if (ch.hidden) row.classList.add('hidden-entry');
         row.onclick = () => openFile(ch.path);
         row.oncontextmenu = ev => { ev.preventDefault(); showCtx(ev, ch.path, false); };
         el.appendChild(row);
@@ -1002,7 +1401,10 @@ function stopTreePoll() { if (treePoll) clearInterval(treePoll); treePoll = null
 
 function showCtx(ev, path, isDir, isRoot) {
   const ctx = document.getElementById('ctx');
+  ctx.className = 'ctx';
   ctx.style.display = 'block';
+  ctx.style.bottom = 'auto';
+  ctx.style.maxHeight = '';
   ctx.style.left = ev.clientX + 'px';
   ctx.style.top = ev.clientY + 'px';
   const parent = isDir ? path : (path ? path.split('/').slice(0, -1).join('/') : '');
@@ -1016,6 +1418,9 @@ function showCtx(ev, path, isDir, isRoot) {
     html += `<button data-a="delete" style="color:var(--err)">${t('delete')}</button>`;
   }
   ctx.innerHTML = html;
+  // keep the menu inside the window (right-click near an edge used to clip it)
+  ctx.style.left = Math.max(8, Math.min(ev.clientX, window.innerWidth - ctx.offsetWidth - 8)) + 'px';
+  ctx.style.top = Math.max(8, Math.min(ev.clientY, window.innerHeight - ctx.offsetHeight - 8)) + 'px';
   ctx.querySelectorAll('button').forEach(b => {
     b.onclick = async () => {
       hideCtx();
@@ -1102,7 +1507,8 @@ function renderTabs() {
     const name = t.path.split(/[/\\]/).pop();
     d.innerHTML = `<span class="dirty">${t.dirty ? '•' : ''}</span><span class="name"></span><span class="x">×</span>`;
     d.querySelector('.name').textContent = name;
-    d.querySelector('.name').onclick = () => openFile(t.path);
+    d.title = t.path;
+    d.onclick = () => openFile(t.path);
     d.querySelector('.x').onclick = ev => { ev.stopPropagation(); closeTab(t.path, false); };
     el.appendChild(d);
   });
@@ -1141,10 +1547,12 @@ document.getElementById('editor').addEventListener('input', () => {
   if (!t || document.getElementById('editor').disabled) return;
   if (editBefore === null) editBefore = t.content;
   t.content = document.getElementById('editor').value;
+  const wasDirty = t.dirty;
   t.dirty = true;
   document.getElementById('btn-save').disabled = false;
-  renderTabs();
+  if (!wasDirty) renderTabs();
   updateLineNumbers();
+  ensureCaretVisible();
   clearTimeout(editTimer);
   editTimer = setTimeout(() => {
     if (editBefore !== null && editBefore !== t.content) {
@@ -1203,6 +1611,40 @@ function chatTitleFromPrompt(text) {
   }
   return out.join(' ') || 'Chat';
 }
+const SIDE_ICON = {
+  chat: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 3.5V6a2 2 0 0 1 2-2z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+};
+function renderSideChats() {
+  const el = document.getElementById('side-list');
+  if (!el) return;
+  el.innerHTML = '';
+  chats.slice().reverse().forEach(c => {
+    const locked = !!running && c.id !== activeChatId;     // no chat switching mid-run
+    const d = document.createElement('div');
+    d.className = 'side-item' + (c.id === activeChatId ? ' active' : '') + (locked ? ' disabled' : '');
+    d.innerHTML = '<span class="side-ico">' + SIDE_ICON.chat + '</span><span class="title"></span>' +
+      '<button type="button" class="x" aria-label="Delete">' + SIDE_ICON.trash + '</button>';
+    const title = d.querySelector('.title');
+    title.textContent = chatTitleText(c);
+    d.title = chatTitleText(c);
+    d.addEventListener('click', () => {
+      if (locked || c.id === activeChatId) return;
+      activeChatId = c.id;
+      applyStoredMode();
+      applyChatContextFooter();
+      renderChatList(); renderMessages();
+    });
+    d.querySelector('.x').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (running) return;
+      chats = chats.filter(x => x.id !== c.id);
+      if (activeChatId === c.id) activeChatId = chats.length ? chats[chats.length - 1].id : null;
+      saveChats(); applyChatContextFooter(); renderChatList(); renderMessages();
+    });
+    el.appendChild(d);
+  });
+}
 function renderChatList() {
   const el = document.getElementById('chat-hist');
   if (!el) return;
@@ -1211,6 +1653,8 @@ function renderChatList() {
     chats = chats.slice(-MAX_CHATS);
     saveChats();
   }
+  renderSideChats();
+  refreshChatHeading();
   // Collapse strip when 0 or 1 chat
   if (chats.length <= 1) {
     el.classList.add('hidden-hist');
@@ -1229,6 +1673,7 @@ function renderChatList() {
     d.querySelector('.title').textContent = c.title || 'Chat';
     d.querySelector('.title').onclick = () => {
       activeChatId = c.id;
+      applyStoredMode();
       applyChatContextFooter();
       renderChatList(); renderMessages();
     };
@@ -1275,26 +1720,16 @@ function toolIcon(name) {
   if (t && t.ui_icon && t.ui_icon !== '⚙' && t.ui_icon !== 'tool') return t.ui_icon;
   return HAMMER_SVG;
 }
+function toolStatePhrase(name, count) {
+  const tool = (componentsCache.tools || []).find(x => x.name === name || x.id === name);
+  let phrase = String((tool && tool.display_phrase) || '').trim();
+  if (!phrase) return count + ' ' + translatePlural('call', 'calls', count);
+  return count + ' ' + translatePlural(phrase, phrase, count);
+}
 function toolAggLabel(name, count) {
-  const t = (componentsCache.tools || []).find(x => x.name === name || x.id === name);
-  if (t && count > 1) {
-    // prefer dynamic plural from tool if available via simple pattern
-  }
-  const base = AGG_LABEL[name] || name;
-  return count + ' ' + base;
+  return toolStatePhrase(name, count);
 }
 const MERGEABLE = new Set(['web_search','fetch_url','search_code','read_file','list_directory','file_exists','get_file_info']);
-const TOOL_ICON = {
-  web_search: '🔍', fetch_url: '🔗', search_code: '🔎',
-  list_directory: '📁', read_file: '📄', write_file: '✍️',
-  create_file: '＋', edit_file: '✎', delete_file: '🗑',
-  create_directory: '📂', run_command: '💻',
-};
-const AGG_LABEL = {
-  web_search: 'searches', fetch_url: 'fetches', search_code: 'code searches',
-  read_file: 'files read', list_directory: 'dirs listed',
-  file_exists: 'checks', get_file_info: 'info',
-};
 
 function retainOnlyLatestThought(messages) {
   let last = -1;
@@ -1369,7 +1804,164 @@ function updateScrollBtn() {
   btn.hidden = !!stickToBottom;
   btn.title = t('scrollDown');
 }
+// Streaming fires an update per token; rebuilding the whole chat each time is what made it stutter.
+// Calls are coalesced so the DOM is rebuilt at most once per frame.
+let _renderRaf = 0;
 function renderMessages() {
+  if (_renderRaf) return;
+  _renderRaf = requestAnimationFrame(() => {
+    _renderRaf = 0;
+    try { renderMessagesNow(); } catch (err) { console.error('renderMessages failed:', err); }
+  });
+}
+
+/* ---------- message actions: copy raw text, collapsible prompts and reasoning ---------- */
+const MSG_ICON = {
+  copy: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>',
+  check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  chev: '<svg class="think-chev" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M4 2.5 7.5 6 4 9.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
+async function copyPlainText(text) {
+  const value = String(text == null ? '' : text);
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(value); return true; }
+  } catch (_) { /* fall back below */ }
+  const ta = document.createElement('textarea');
+  ta.value = value; ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (_) {}
+  ta.remove();
+  return ok;
+}
+function makeCopyButton(getText) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'msg-copy';
+  b.title = translate('Copy');
+  b.setAttribute('aria-label', translate('Copy'));
+  b.innerHTML = MSG_ICON.copy;
+  b.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    const ok = await copyPlainText(getText());
+    b.classList.toggle('done', ok);
+    b.innerHTML = ok ? MSG_ICON.check : MSG_ICON.copy;
+    b.title = translate(ok ? 'Copied' : 'Copy');
+    clearTimeout(b._t);
+    b._t = setTimeout(() => { b.classList.remove('done'); b.innerHTML = MSG_ICON.copy; b.title = translate('Copy'); }, 1400);
+  });
+  return b;
+}
+const THINK_TAIL_LINES = 6;      // how many reasoning lines stay visible
+const USER_HEAD_LINES = 4;       // how many lines of a long prompt stay visible
+// bottom row of a finished assistant message: "done" tick + copy (raw markdown source, not rendered HTML)
+function appendBotTools(d, m, done) {
+  const row = document.createElement('div');
+  row.className = 'msg-tools';
+  if (done) {
+    const ok = document.createElement('span');
+    ok.className = 'msg-done';
+    ok.innerHTML = MSG_ICON.check;
+    row.appendChild(ok);
+  }
+  row.appendChild(makeCopyButton(() => m.content || ''));
+  d.appendChild(row);
+}
+function buildUserMessage(d, m) {
+  d.className = 'msg user';
+  const text = m.content || '';
+  const bubble = document.createElement('div');
+  bubble.className = 'user-bubble';
+  const body = document.createElement('div');
+  body.className = 'user-body';
+  body.textContent = text;
+  bubble.appendChild(body);
+  if (m._expanded) d.classList.add('expanded');
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'expand-btn';
+  more.textContent = translate(m._expanded ? 'Show less' : 'Show more');
+  more.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    m._expanded = !m._expanded;
+    d.classList.toggle('expanded', !!m._expanded);
+    more.textContent = translate(m._expanded ? 'Show less' : 'Show more');
+    updateScrollBtn();
+  });
+  bubble.appendChild(more);
+  d.appendChild(bubble);
+  const row = document.createElement('div');
+  row.className = 'msg-tools';
+  row.appendChild(makeCopyButton(() => text));
+  d.appendChild(row);
+  d.dataset.clamp = '1';
+}
+// with auto-expand on, a finished block folds itself unless the user touched it
+function foldFinishedThink(m) {
+  if (autoThink && !m._userToggled) { m.open = false; m.full = false; }
+}
+function buildThinkBlock(d, m) {
+  const live = m.kind === 'think_live';
+  const text = String(m.text || '');
+  d.className = 'msg think' + (live ? ' live' : '') + (m.open ? ' open' : '');
+  const head = document.createElement('button');
+  head.type = 'button';
+  head.className = 'think-head';
+  head.setAttribute('aria-expanded', m.open ? 'true' : 'false');
+  const lines = text.split('\n').filter(l => l.trim()).length;
+  head.innerHTML = MSG_ICON.chev + '<span class="think-title"></span><span class="think-meta"></span>';
+  head.querySelector('.think-title').textContent = translate(live ? 'Thinking…' : 'Thought');
+  head.querySelector('.think-meta').textContent = lines > 0 ? lines + ' ' + translatePlural('line', 'lines', lines) : '';
+  head.addEventListener('click', () => {
+    m.open = !m.open;
+    m._userToggled = true;
+    renderMessages();
+  });
+  d.appendChild(head);
+  if (m.open) {
+    const body = document.createElement('div');
+    body.className = 'think-body' + (m.full ? ' full' : '') + (live ? ' live-body' : '');
+    body.textContent = text.replace(/\n{3,}/g, '\n\n').trim() || '…';
+    if (!live) {
+      body.title = translate(m.full ? 'Show less' : 'Show all');
+      body.addEventListener('click', () => { m.full = !m.full; renderMessages(); });
+    }
+    const box = document.createElement('div');
+    box.className = 'think-box';
+    const ell = document.createElement('span');
+    ell.className = 'think-ellipsis';
+    ell.textContent = '…';
+    ell.setAttribute('aria-hidden', 'true');
+    box.appendChild(ell);
+    box.appendChild(body);
+    d.appendChild(box);
+    d.dataset.thinkTail = '1';
+  }
+}
+// run after the messages are attached: layout is needed to know what overflows
+function settleMessageClamps(root) {
+  root.querySelectorAll('.msg.user[data-clamp]').forEach(d => {
+    const body = d.querySelector('.user-body');
+    const more = d.querySelector('.expand-btn');
+    if (!body || !more) return;
+    const was = d.classList.contains('expanded');
+    d.classList.remove('expanded');
+    const clipped = body.scrollHeight > body.clientHeight + 2;
+    if (was) d.classList.add('expanded');
+    d.classList.toggle('clippable', clipped);
+    more.hidden = !clipped;
+  });
+  root.querySelectorAll('.msg.think[data-think-tail]').forEach(d => {
+    const body = d.querySelector('.think-body');
+    const box = d.querySelector('.think-box');
+    if (!body || !box) return;
+    if (body.classList.contains('full')) { box.classList.remove('clipped'); return; }
+    box.classList.toggle('clipped', body.scrollHeight > body.clientHeight + 2);
+    body.scrollTop = body.scrollHeight;          // newest lines stay at the bottom
+  });
+}
+
+function renderMessagesNow() {
   if (document.body.classList.contains('settings-mode')) {
     window._renderPaused = true;
     return;
@@ -1377,17 +1969,22 @@ function renderMessages() {
   const el = document.getElementById('msgs');
   if (!el) return;
   const c = currentChat(); if (!c) return;
+  const prevTop = el.scrollTop;
+  // every rebuild creates new elements; starting their animations at the shared clock's phase keeps
+  // the shimmer / pulse running instead of restarting on each update
+  const clock = (document.timeline && document.timeline.currentTime != null) ? document.timeline.currentTime : performance.now();
+  el.style.setProperty('--shimmer-delay', '-' + ((clock % 1900) / 1000).toFixed(3) + 's');
+  el.style.setProperty('--pulse-delay', '-' + ((clock % 1200) / 1000).toFixed(3) + 's');
   el.innerHTML = '';
   aggregateMessages(c.messages).filter(m => !(m.kind === 'think_collapsed' && !(m.text || '').trim())).forEach(m => {
     const d = document.createElement('div');
-    if (m.kind === 'think_collapsed') {
-      d.className = 'msg system'; d.innerHTML = '<span style="color:var(--think)">▸ Thought</span>';
-    } else if (m.kind === 'think_live') {
-      d.className = 'msg system'; d.innerHTML = '<span style="color:var(--muted);font-size:12px">' + esc(m.text || '…') + '</span>';
+    try {
+    if (m.kind === 'think_collapsed' || m.kind === 'think_live') {
+      buildThinkBlock(d, m);
     } else if (m.kind === 'assistant_live') {
       d.className = 'msg bot assistant'; d.innerHTML = renderMarkdown(m.content || '');
     } else if (m.role === 'user') {
-      d.className = 'msg user'; d.textContent = m.content || '';
+      buildUserMessage(d, m);
     } else if (m.role === 'assistant' && (m.kind === 'error' || m.error)) {
       d.className = 'msg error-card';
       const debug = !!(settings && settings.chat && settings.chat.developer_mode);
@@ -1403,41 +2000,49 @@ function renderMessages() {
     } else if (m.role === 'assistant') {
       d.className = 'msg bot assistant' + (m.completed ? ' completed' : '');
       d.innerHTML = renderMarkdown(m.content || '');
+      appendBotTools(d, m, !!m.completed);
     } else if (m.kind === 'tool_agg') {
-      const labels = {
-        web_search: 'searches',
-        fetch_url: 'links',
-        search_code: 'code searches',
-        read_file: 'files read',
-        list_directory: 'folder views',
-        file_exists: 'file checks',
-        get_file_info: 'file info',
-      };
-      const label = labels[m.name] || m.name;
-      d.className = 'msg tool ' + (m.errors ? 'err' : 'ok');
-      d.innerHTML = '<b>' + HAMMER_SVG + ' ' + esc(m.name) + '</b> — ' + m.count + ' ' + label
-        + (m.errors ? ' <span class="muted">(' + m.errors + ' failed)</span>' : '');
+      const failed = m.errors || 0;
+      d.className = 'msg tool ' + (failed ? 'err' : 'ok');
+      d.innerHTML = '<span class="tool-ico">' + HAMMER_SVG + '</span><span class="tool-name">' + esc(m.name) + '</span>'
+        + '<span class="tool-state">' + esc(toolStatePhrase(m.name, m.count)) + '</span>'
+        + (failed ? '<span class="muted">(' + failed + ' ' + esc(translate('failed')) + ')</span>' : '');
     } else if (m.kind === 'tool') {
       const ok = m.success !== false && m.status !== 'error';
       const pending = m.status === 'pending';
       d.className = 'msg tool ' + (pending ? '' : (ok ? 'ok' : 'err'));
       const debug = !!(settings && settings.chat && settings.chat.developer_mode);
-      let body = '<b>' + HAMMER_SVG + ' ' + esc(m.name) + '</b> — ' + (pending ? '…' : (ok ? 'ok' : 'error'));
-      if (!pending && m.stop_reason && m.stop_reason !== 'completed') body += ' <span class="muted">(' + esc(m.stop_reason) + ')</span>';
-      if (debug && m.args && !pending) body += '<br/><span class="muted">' + esc(typeof m.args === 'string' ? m.args : JSON.stringify(m.args)) + '</span>';
-      if (!pending && m.summary) body += '<br/><span class="muted">' + esc(m.summary) + '</span>';
+      let body = '<span class="tool-ico">' + HAMMER_SVG + '</span><span class="tool-name">' + esc(m.name) + '</span>'
+        + '<span class="tool-state">' + (pending ? '…' : (ok ? esc(toolStatePhrase(m.name, 1)) : 'error')) + '</span>';
+      if (!pending && m.stop_reason && m.stop_reason !== 'completed') body += '<span class="muted">(' + esc(m.stop_reason) + ')</span>';
+      if (debug && m.args && !pending) body += '<span class="tool-detail">' + esc(typeof m.args === 'string' ? m.args : JSON.stringify(m.args)) + '</span>';
+      if (!pending && m.summary) body += '<span class="tool-detail">' + esc(m.summary) + '</span>';
       d.innerHTML = body;
     } else if (m.kind === 'file_op') {
       const col = m.op === 'create' ? 'var(--ok)' : m.op === 'delete' ? 'var(--err)' : 'var(--warn)';
       d.className = 'msg system';
       d.innerHTML = `<span style="color:${col}">${m.op === 'create' ? '＋' : m.op === 'delete' ? '✕' : '✎'} ${esc(m.path || '')}${m.added != null ? ` (+${m.added}/-${m.removed || 0})` : ''}</span>`;
+    } else if (m.kind === 'divider') {
+      d.className = 'msg divider';
+      d.textContent = m.content || t('actDivider');
+    } else if (m.kind === 'notice') {
+      d.className = 'msg notice';
+      d.textContent = m.content || '';
     } else { d.className = 'msg system'; d.textContent = m.content || ''; }
+    } catch (err) {
+      console.error('message render failed:', err, m);
+      d.className = 'msg system';
+      d.textContent = String(m && (m.content || m.text) || '');
+    }
     el.appendChild(d);
   });
+  settleMessageClamps(el);
   if (stickToBottom) {
     programmaticScroll = true;
     el.scrollTop = el.scrollHeight;
     setTimeout(() => { programmaticScroll = false; }, 40);
+  } else {
+    el.scrollTop = prevTop;   // a rebuild must not throw the reader back to the top
   }
   updateScrollBtn();
   renderPlan();
@@ -1479,6 +2084,7 @@ function autoGrow() {
   promptEl.style.overflowY = promptEl.scrollHeight > max ? 'auto' : 'hidden';
 }
 function updateActionBtn() {
+  if (typeof applyModeSwitch === 'function') applyModeSwitch();
   const btn = document.getElementById('btn-action');
   if (!btn) return;
   btn.classList.toggle('is-stop', !!running);
@@ -1548,7 +2154,8 @@ async function ensureModelReady() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: selected, alongside: false }),
     });
-    setFooterActivity('idle');
+    modelLoaded = !(l && l.error);
+    settleFooter();
     setStatus(t('ready'), false);
     if (l && l.error) {
       toast('Load failed: ' + l.error, true);
@@ -1557,7 +2164,8 @@ async function ensureModelReady() {
     await refreshModelFooter().catch(() => {});
     return true;
   } catch (e) {
-    setFooterActivity('idle');
+    modelLoaded = false;
+    settleFooter();
     setStatus(t('ready'), false);
     toast('Model load error: ' + e, true);
     return false;
@@ -1568,32 +2176,47 @@ async function ensureModelReady() {
 
 actionBtn.onclick = async () => {
   if (running) {
+    if (sendLock && !currentRunId) {
+      sendAbort = true;
+      setStatus(t('stopping') || 'Stopping…', true);
+      return;
+    }
     setStatus(t('stopping') || 'Stopping…', true);
     updateActionBtn();
+    approvalQueue = [];
+    const approval = document.getElementById('approval-modal');
+    if (approval) approval.style.display = 'none';
     const rid = currentRunId;
-    if (rid) {
-      try {
-        await api('/api/chat/cancel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ run_id: rid }),
-        });
-      } catch (e) { /* ignore */ }
-    }
+    try {
+      await api('/api/chat/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_id: rid || '', chat_id: activeChatId || '' }),
+      });
+    } catch (e) { /* ignore */ }
     return;
   }
+  if (sendLock) return;
+  const text = promptEl.value;
+  if (!hasMeaningfulText(text)) return;
+  sendLock = true;
+  sendAbort = false;
+  running = true;
+  updateActionBtn();
   try {
-    const text = promptEl.value;
-    if (!hasMeaningfulText(text)) return;
     const ok = await ensureModelReady();
-    if (!ok) {
-      toast(uiLocale === 'ru' ? 'Модель не готова — отправка отменена' : 'Model not ready — send cancelled', true);
+    if (sendAbort || !ok) {
+      if (!ok && !sendAbort) toast(translate('Model not ready — send cancelled'), true);
+      running = false;
+      updateActionBtn();
       return;
     }
     if (!activeChatId) newChat(true);
     const c = currentChat();
     if (!c) {
       toast('No active chat', true);
+      running = false;
+      updateActionBtn();
       return;
     }
     let taskToSend = text.trim();
@@ -1624,12 +2247,16 @@ actionBtn.onclick = async () => {
     setRunLock(false);
     setStatus(t('error') || 'Error', false);
     updateActionBtn();
+  } finally {
+    sendLock = false;
+    sendAbort = false;
   }
 };
 async function runAgent(task) {
   running = true;
   setRunLock(true);
   setFooterActivity('work');
+  runSawPlan = false;
   currentRunId = null;
   updateActionBtn();
   streamingEnabled = !(settings && settings.chat && settings.chat.streaming === false);
@@ -1640,7 +2267,9 @@ async function runAgent(task) {
   const chat = currentChat();
   if (chat) {
     for (const m of chat.messages) {
-      if (m.kind) continue;
+      if (!m || m.kind === 'status' || m.kind === 'notice' || m.kind === 'divider') continue;
+      if (m.kind === 'think_live' || m.kind === 'think_collapsed') continue;
+      if (m.kind === 'tool' || m.kind === 'tool_agg' || m.kind === 'file_op') continue;
       if (m.role === 'user' && m.content) hist.push({ role: 'user', content: String(m.content) });
       if (m.role === 'assistant' && m.content) hist.push({ role: 'assistant', content: String(m.content) });
     }
@@ -1663,6 +2292,7 @@ async function runAgent(task) {
           ? document.getElementById('s-auto-act').checked
           : !(settings && settings.chat && settings.chat.auto_act_after_plan === false),
         plan: (chat && chat.plan) || [],
+        archive: (chat && chat.planArchive) || [],
         attachments: (chat && chat.messages || []).slice().reverse().find(m => m.role === 'user')?.attachments || chatAttachments,
       }),
     });
@@ -1685,7 +2315,7 @@ async function runAgent(task) {
   currentRunId = null;
   running = false;
   setRunLock(false);
-  setFooterActivity('idle');
+  settleFooter();
   updateActionBtn();
   try { await refreshModelFooter(); } catch (_) {}
 }
@@ -1801,6 +2431,7 @@ function finalizeLiveMessages() {
     }
     if (m.kind === 'think_live') {
       m.kind = 'think_collapsed';
+      foldFinishedThink(m);
     }
   }
   saveChats();
@@ -1858,8 +2489,44 @@ function handleEvent(e) {
     return;
   }
   if (e.type === 'mode' && (e.mode === 'plan' || e.mode === 'act')) {
-    agentMode = e.mode;
-    applyModeSwitch();
+    if (e.mode === 'plan') runSawPlan = true;
+    if (e.mode === 'act' && runSawPlan) {
+      const c = currentChat();
+      if (c) c.messages.push({ kind: 'divider', content: t('actDivider') });
+      runSawPlan = false;
+      saveChats();
+      renderMessages();
+    }
+    rememberMode(e.mode);
+    return;
+  }
+  if (e.type === 'model') {
+    if (e.model) liveModel = String(e.model);
+    const limit = Number(e.context_limit || 0);
+    if (limit) {
+      _modelContextLimit = limit;
+      const ch = currentChat();
+      if (ch) ch.context_limit = limit;
+    }
+    _lastPromptTokens = null;
+    setFooterContext(null, _modelContextLimit);
+    if (liveModel) setFooterModelStatus(t('model') + ': ' + liveModel, true);
+    modelLoaded = !!liveModel;
+    setFooterActivity(modelLoaded ? 'loaded' : 'err');
+    saveChats();
+    return;
+  }
+  if (e.type === 'notice') {
+    const c = currentChat();
+    if (!c) return;
+    const label = e.kind === 'compacted'
+      ? t('contextCompacted')
+      : e.kind === 'trimmed'
+        ? t('contextTrimmed')
+        : (e.text || '');
+    c.messages.push({ kind: 'notice', content: label });
+    saveChats();
+    renderMessages();
     return;
   }
   if (e.type === 'plan') {
@@ -1909,19 +2576,27 @@ function handleEvent(e) {
       }
     } else if (st === 'done' || st === 'cancelled') {
       generatingTokens = false;
-      setFooterActivity('idle');
+      settleFooter();
       setStatus(statusLabel(st, e.text), false);
     } else if (st === 'error') {
       generatingTokens = false;
       setFooterActivity('err');
       setStatus(statusLabel(st, e.text || 'Error'), false);
-    } else if (st === 'generating' || st === 'thinking' || st === 'processing' || st === 'loading_model') {
+    } else if (st === 'loading_model') {
+      setFooterActivity('loading');
+      if (e.text) {
+        liveModel = String(e.text);
+        setFooterModelStatus(t('model') + ': ' + liveModel, null);
+      }
+      generatingTokens = false;
+      setStatus(statusLabel(st, e.text), true);
+    } else if (st === 'generating' || st === 'thinking' || st === 'processing') {
       setFooterActivity('work');
       generatingTokens = st === 'generating';
       setStatus(statusLabel(st, e.text), true);
     } else if (st === 'tool' || st === 'waiting_tool') {
       generatingTokens = false;
-      setFooterActivity('wait');
+      setFooterActivity('work');
       setStatus(statusLabel(st, e.text), true);
     } else {
       setStatus(e.text || statusLabel(st), true);
@@ -1933,7 +2608,7 @@ function handleEvent(e) {
     setStatus(statusLabel('thinking'), true);
     c.messages = c.messages.filter(m => m.kind !== 'think_collapsed');
     let live = c.messages.find(m => m.kind === 'think_live');
-    if (!live) { live = { kind: 'think_live', text: '' }; c.messages.push(live); }
+    if (!live) { live = { kind: 'think_live', text: '', open: autoThink }; c.messages.push(live); }
     live.text = (live.text || '') + (e.text || '');
     scheduleRender();
   } else if (e.type === 'content_delta') {
@@ -1957,7 +2632,7 @@ function handleEvent(e) {
     const text = (e.text || '').trim();
     const tl = c.messages.find(m => m.kind === 'think_live');
     if (tl) {
-      if (text) { tl.kind = 'think_collapsed'; tl.text = text; }
+      if (text) { tl.kind = 'think_collapsed'; tl.text = text; foldFinishedThink(tl); }
       else c.messages = c.messages.filter(m => m !== tl);
     } else if (text) {
       c.messages.push({ kind: 'think_collapsed', text });
@@ -2020,6 +2695,7 @@ function handleEvent(e) {
       }
       if (m.kind === 'think_live') {
         m.kind = 'think_collapsed';
+        foldFinishedThink(m);
         break;
       }
     }
@@ -2092,17 +2768,27 @@ function renderPlan() {
   if (!box || !body) return;
   const chat = typeof currentChat === 'function' ? currentChat() : null;
   const shown = coercePlan((chat && Array.isArray(chat.plan)) ? chat.plan : []);
+  const liveIds = new Set(shown.map(item => String(item.id || '')));
+  const archived = coercePlan((chat && Array.isArray(chat.planArchive)) ? chat.planArchive : [])
+    .filter(item => item.title && item.id && !liveIds.has(String(item.id)))
+    .map(item => ({
+      id: item.id,
+      title: item.title,
+      status: item.status === 'skipped' ? 'skipped' : 'done',
+    }));
   const open = shown.filter(item => item.status !== 'done' && item.status !== 'skipped');
   const finished = shown.length > 0 && open.length === 0;
-  if (!shown.length) {
+  if (!shown.length && !archived.length) {
     box.hidden = true;
     box.classList.remove('all-done');
     return;
   }
   box.hidden = false;
-  box.classList.toggle('all-done', finished);
+  box.classList.toggle('all-done', finished || !shown.length);
   const title = document.getElementById('plan-title');
-  if (title) title.textContent = finished ? t('planCompleted') : t('planTitle');
+  if (title) {
+    title.textContent = !shown.length ? t('planArchive') : (finished ? t('planCompleted') : t('planTitle'));
+  }
   const collapsed = planCollapsed();
   box.classList.toggle('collapsed', collapsed);
   if (chev) chev.textContent = '';
@@ -2114,11 +2800,41 @@ function renderPlan() {
     row.querySelector('.plan-title').textContent = raw.title;
     body.appendChild(row);
   });
+  if (archived.length && shown.length) {
+    const label = document.createElement('div');
+    label.className = 'plan-archive-label';
+    label.textContent = t('planArchive');
+    body.appendChild(label);
+  }
+  archived.forEach(raw => {
+    const row = document.createElement('div');
+    row.className = 'plan-item ' + raw.status + ' archived';
+    row.innerHTML = '<span class="plan-dot"></span><span class="plan-title"></span>';
+    row.querySelector('.plan-title').textContent = raw.title;
+    body.appendChild(row);
+  });
+}
+function rememberMode(mode) {
+  if (mode !== 'plan' && mode !== 'act') return;
+  agentMode = mode;
+  try { localStorage.setItem('kerniq_agent_mode', mode); } catch (e) {}
+  const c = currentChat();
+  if (c && c.mode !== mode) {
+    c.mode = mode;
+    saveChats();
+  }
+  applyModeSwitch();
+}
+function applyStoredMode() {
+  const c = currentChat();
+  if (c && (c.mode === 'plan' || c.mode === 'act')) agentMode = c.mode;
+  applyModeSwitch();
 }
 function applyModeSwitch() {
   const plan = document.getElementById('mode-plan');
   const act = document.getElementById('mode-act');
-  const locked = !!modeAuto;
+  const busy = !!running;
+  const locked = !!modeAuto || busy;
   if (plan) {
     plan.classList.toggle('on', agentMode === 'plan');
     plan.disabled = locked;
@@ -2130,15 +2846,18 @@ function applyModeSwitch() {
     act.tabIndex = locked ? -1 : 0;
   }
   const box = document.getElementById('mode-switch');
-  if (box) box.classList.toggle('locked', locked);
+  if (box) {
+    box.classList.toggle('locked', locked);
+    box.classList.toggle('busy', busy);
+    box.title = busy ? translate('Mode cannot be changed while the agent is working') : '';
+  }
 }
 document.getElementById('mode-switch')?.addEventListener('click', (ev) => {
-  if (modeAuto) return;
+  if (modeAuto || running) return;
   const btn = ev.target.closest('button');
   if (!btn || !btn.dataset.mode || btn.disabled) return;
   agentMode = btn.dataset.mode === 'plan' ? 'plan' : 'act';
-  try { localStorage.setItem('kerniq_agent_mode', agentMode); } catch (e) {}
-  applyModeSwitch();
+  rememberMode(agentMode);
 });
 document.getElementById('plan-toggle')?.addEventListener('click', () => {
   const next = !planCollapsed();
@@ -2157,9 +2876,8 @@ function collectProviderDraft() {
   };
 }
 function fieldText(f, key) {
-  if (uiLocale === 'ru' && f[key + '_ru']) return f[key + '_ru'];
-  if (key === 'help') return f.help || '';
-  return f[key] || '';
+  if (key === 'help') return translate(f.help || '');
+  return translate(f[key] || '');
 }
 function renderProviderFields(draft) {
   const sel = document.getElementById('s-provider');
@@ -2168,8 +2886,7 @@ function renderProviderFields(draft) {
   if (!sel || !box) return;
   const spec = providerCatalog.find(p => p.id === sel.value) || null;
   if (blurb) {
-    const fallback = spec ? (uiLocale === 'ru' ? (spec.blurb_ru || spec.blurb) : (spec.blurb || '')) : '';
-    blurb.textContent = fallback || '';
+    blurb.textContent = spec ? translate(spec.blurb || '') : '';
   }
   const values = draft || collectProviderDraft();
   box.innerHTML = '';
@@ -2181,7 +2898,7 @@ function renderProviderFields(draft) {
     label.textContent = fieldText(f, 'label');
     wrap.appendChild(label);
     let input;
-    if (f.type === 'model') {
+    if (f.type === 'model' || f.key === 'model') {
       const row = document.createElement('div');
       row.className = 'row';
       const combo = document.createElement('div');
@@ -2298,20 +3015,40 @@ async function refreshModelFooter() {
     resetTps(!streamingEnabled);
     const modelsData = await fetchModels().catch(() => ({}));
     const reachable = !(modelsData && modelsData.error) && modelsData.reachable !== false;
-    setFooterProvider(prov, prov === 'mock' ? true : reachable);
-    const label = selected || (prov === 'mock' ? 'mock' : 'auto');
+    providerReachable = prov === 'mock' ? true : reachable;
+    const rows = modelsData.models || [];
+    const selectedRow = rows.find(m => {
+      const mid = String(m.id || m.name || '');
+      return selected && (mid === selected || mid.indexOf(selected) >= 0 || selected.indexOf(mid) >= 0);
+    });
+    const reportsLoad = rows.some(m => m && (Array.isArray(m.loaded_instances) || m.loaded_context_length));
+    const loadedRow = rows.find(m => m && ((m.loaded_instances || []).length || m.loaded_context_length));
+    const loadedId = loadedRow ? String(loadedRow.id || loadedRow.name || '') : '';
+    if (prov === 'mock') modelLoaded = true;
+    else if (!reachable) modelLoaded = false;
+    else if (reportsLoad) {
+      const row = loadedRow || selectedRow || null;
+      modelLoaded = !!(row && ((row.loaded_instances || []).length || row.loaded_context_length));
+      if (!selected && !loadedId) modelLoaded = false;
+    } else {
+      modelLoaded = !!(selected || rows.length);
+    }
+    setFooterProvider(prov, providerReachable);
+    const label = loadedId || liveModel || selected || (prov === 'mock' ? 'mock' : 'auto');
+    if (loadedId) liveModel = loadedId;
     if (!reachable && prov !== 'mock') {
       setFooterModelStatus(t('model') + ': ' + label, false);
     } else {
-      setFooterModelStatus(t('model') + ': ' + label, prov === 'mock' ? true : null);
+      setFooterModelStatus(t('model') + ': ' + label, modelLoaded || prov === 'mock' ? true : null);
     }
     let limit = null;
-    for (const m of (modelsData.models || [])) {
+    const limitRow = loadedRow || rows.find(m => {
       const mid = String(m.id || m.name || '');
-      if (!selected || mid === selected) {
-        const lim = m.loaded_context_length || m.context_length || m.max_context_length || m.context || null;
-        if (lim) { limit = Number(lim); break; }
-      }
+      return label && (mid === label || mid.indexOf(label) >= 0 || label.indexOf(mid) >= 0);
+    });
+    if (limitRow) {
+      const lim = limitRow.loaded_context_length || limitRow.context_length || limitRow.max_context_length || limitRow.context || null;
+      if (lim) limit = Number(lim);
     }
     if (limit) _modelContextLimit = limit;
     setFooterContext(_lastPromptTokens, _modelContextLimit);
@@ -2382,6 +3119,7 @@ function bindSettingsDirty() {
   if (!root || root.dataset.dirtyDelegated) return;
   root.dataset.dirtyDelegated = '1';
   const onEdit = (ev) => {
+    if (ev.target && ev.target.closest && ev.target.closest('#tab-interface')) return;   // local prefs, not part of Save
     if (settingsHydrating || document.body.classList.contains('run-locked')) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -2666,7 +3404,7 @@ async function loadComponents() {
   if (ui && ui.values && ui.values.show_footer === false) {
     footerEnabled = false;
     document.getElementById('app-footer').classList.add('hidden');
-  }
+  }  refreshInterfaceControls();
 }
 
 let expandedPacks = {};
@@ -2779,7 +3517,7 @@ function renderToolDetail(id) {
       html += `<label class="field-row-check"><input type="checkbox" class="soft-check" data-fk="${esc(f.key)}" ${val ? 'checked' : ''}/><span>${esc(f.label)}</span></label>`;
     } else {
       html += `<div class="field"><label class="lbl">${esc(f.label)}</label>`;
-      html += `<input type="${f.type === 'int' || f.type === 'float' ? 'number' : 'text'}" data-fk="${esc(f.key)}" value="${esc(val ?? '')}"/>`;
+      html += `<input type="${f.type === 'int' || f.type === 'float' ? 'number' : 'text'}"${numAttrs(f)} data-fk="${esc(f.key)}" value="${esc(val ?? '')}"/>`;
       html += `</div>`;
     }
   });
@@ -2848,29 +3586,45 @@ function renderPluginDetail(id) {
   const fields = (p.schema && p.schema.fields) || [];
   if (!fields.length) html += '<div class="empty">No settings</div>';
   else fields.forEach(f => {
+    if (f.key === 'ui_locale') {
+      const opts = [{ value: 'en', label: 'English' }];
+      Object.keys(langPacks).forEach(pid => {
+        const pack = langPacks[pid];
+        opts.push({ value: pid, label: (pack && (pack.name_native || pack.name_en)) || pid });
+      });
+      f = Object.assign({}, f, { options: opts });
+    }
     const val = draft.values[f.key] !== undefined ? draft.values[f.key] : f.default;
+    const label = translate(f.label || '');
+    const tip = translate(f.description || '');
     if (f.type === 'bool') {
-      html += `<div class="field field-check"><label class="check-line"><input type="checkbox" class="soft-check" data-fk="${esc(f.key)}" ${val ? 'checked' : ''}/><span>${esc(f.label)}</span>`;
-      if (f.description) html += `<span class="info-tip" tabindex="0" data-tip="${esc(f.description)}">i</span>`;
+      html += `<div class="field field-check"><label class="check-line"><input type="checkbox" class="soft-check" data-fk="${esc(f.key)}" ${val ? 'checked' : ''}/><span>${esc(label)}</span>`;
+      if (tip) html += `<span class="info-tip" tabindex="0" data-tip="${esc(tip)}">i</span>`;
       html += `</label></div>`;
     } else if (f.type === 'select' && f.options && f.options.length) {
-      html += `<div class="field"><label class="lbl">${esc(f.label)}`;
-      if (f.description) html += `<span class="info-tip" tabindex="0" data-tip="${esc(f.description)}">i</span>`;
+      html += `<div class="field"><label class="lbl">${esc(label)}`;
+      if (tip) html += `<span class="info-tip" tabindex="0" data-tip="${esc(tip)}">i</span>`;
       html += `</label><select data-fk="${esc(f.key)}" class="input-std">`;
       f.options.forEach(o => {
         const ov = o.value != null ? o.value : o;
-        const ol = o.label != null ? o.label : String(ov);
+        const ol = translate(o.label != null ? o.label : String(ov));
         html += `<option value="${esc(ov)}" ${String(val) === String(ov) ? 'selected' : ''}>${esc(ol)}</option>`;
       });
       html += `</select></div>`;
     } else {
-      html += `<div class="field"><label class="lbl">${esc(f.label)}`;
-      if (f.description) html += `<span class="info-tip" tabindex="0" data-tip="${esc(f.description)}">i</span>`;
+      html += `<div class="field"><label class="lbl">${esc(label)}`;
+      if (tip) html += `<span class="info-tip" tabindex="0" data-tip="${esc(tip)}">i</span>`;
       html += `</label>`;
-      html += `<input class="input-std" type="${f.type === 'int' || f.type === 'float' ? 'number' : 'text'}" data-fk="${esc(f.key)}" value="${esc(val ?? '')}"/>`;
+      html += `<input class="input-std" type="${f.type === 'int' || f.type === 'float' ? 'number' : 'text'}"${numAttrs(f)} data-fk="${esc(f.key)}" value="${esc(val ?? '')}"/>`;
       html += `</div>`;
     }
   });
+  if (id === 'plugin_web_ui') {
+    html += '<div class="set-group"><h3>' + esc(translate('Language packs')) + '</h3><div class="row">';
+    html += '<button type="button" id="btn-lang-import">' + esc(translate('Import')) + '</button>';
+    html += '<button type="button" class="ghost" id="btn-lang-remove">' + esc(translate('Remove')) + '</button>';
+    html += '</div></div>';
+  }
   panel.innerHTML = html;
   syncCompactLimit(panel);
   if (!draftPlugins[id]) draftPlugins[id] = { values: {} };
@@ -2887,6 +3641,10 @@ function renderPluginDetail(id) {
       markSettingsDirty();
     });
   });
+  const importBtn = document.getElementById('btn-lang-import');
+  const removeBtn = document.getElementById('btn-lang-remove');
+  if (importBtn) importBtn.onclick = () => document.getElementById('lang-pack-file').click();
+  if (removeBtn) removeBtn.onclick = () => openLangModal();
 }
 function syncCompactLimit(panel) {
   if (!panel) return;
@@ -3156,7 +3914,7 @@ function flashSetting(el) {
 async function openSettingsAt(tab, focusId) {
   const view = document.getElementById('view-settings');
   const btn = document.getElementById('nav-settings');
-  const already = view && view.style.display === 'block';
+  const already = settingsOpen();
   showView('settings');
   if (btn) {
     btn.classList.add('active-settings');
@@ -3193,7 +3951,7 @@ document.getElementById('nav-logo').onclick = () => {
 };
 document.getElementById('nav-settings').onclick = () => {
   const btn = document.getElementById('nav-settings');
-  const open = document.getElementById('view-settings').style.display === 'block';
+  const open = settingsOpen();
   if (open) {
     showView('main');
     btn.classList.remove('active-settings');
@@ -3212,7 +3970,7 @@ document.getElementById('footer-provider').onclick = () => { openSettingsAt('api
 document.getElementById('footer-model').onclick = () => { openSettingsAt('api', 's-model'); };
 document.getElementById('footer-ctx').onclick = () => { openContextSettings(); };
 document.getElementById('top-workspace').onclick = () => { openSettingsAt('agent', 's-workspace'); };
-document.getElementById('btn-toggle-explorer').onclick = () => setExplorerCollapsed(!explorerCollapsed);
+document.getElementById('btn-toggle-explorer').onclick = () => { if (!layoutBusy) setExplorerCollapsed(!explorerCollapsed); };
 document.getElementById('btn-toggle-chat').onclick = () => setChatCollapsed(!chatCollapsed);
 const refreshTreeBtn = document.getElementById('btn-refresh-tree');
 if (refreshTreeBtn) refreshTreeBtn.onclick = () => refreshTree();
@@ -3282,6 +4040,7 @@ loadChats();
 try { applyChatContextFooter(); } catch (_) {}
 if (!chats.length) newChat(true);
 else { activeChatId = chats[chats.length - 1].id; renderChatList(); renderMessages(); }
+applyStoredMode();
 resumeServerChat();
 clearEditor();
 refreshTree();
@@ -3332,26 +4091,422 @@ autoGrow();
 startTreePoll();
 document.querySelector('.settings-actions').style.display = 'none';
 
-/* editor scrollbar: default cursor when over scrollbar */
-(function() {
-  const ed = document.getElementById('editor');
-  if (!ed) return;
-  ed.addEventListener('mousemove', (e) => {
-    const r = ed.getBoundingClientRect();
-    const bar = 14; // approx scrollbar width
-    const onV = e.clientX >= r.right - bar;
-    const onH = e.clientY >= r.bottom - bar;
-    ed.style.cursor = (onV || onH) ? 'default' : 'text';
+
+
+/* ---------- layout: editor + chat, or agent only (chats | conversation) ---------- */
+// the default title is stored in English; show it in the interface language
+function chatTitleText(c) { return (!c || !c.title || c.title === 'New chat') ? t('newChatLong') : c.title; }
+function refreshChatHeading() {
+  const el = document.getElementById('chat-heading');
+  if (!el) return;
+  if (layoutMode === 'agent') {
+    const c = typeof currentChat === 'function' ? currentChat() : null;
+    const title = chatTitleText(c);
+    el.textContent = title; el.title = title; el.classList.add('is-title');
+  } else {
+    el.textContent = t('chat'); el.title = ''; el.classList.remove('is-title');
+  }
+}
+/* the label is erased and typed again when the mode changes */
+function typePillLabel(text) {
+  const pill = document.getElementById('mode-pill');
+  const el = pill && pill.querySelector('.mode-pill-label');
+  if (!el) return Promise.resolve();
+  const token = (el._tok = (el._tok || 0) + 1);
+  if (!motionMs(1)) { el.textContent = text; el.classList.remove('typing'); return Promise.resolve(); }
+  el.classList.add('typing');
+  return (async () => {
+    let cur = el.textContent;
+    while (cur.length && el._tok === token) { cur = cur.slice(0, -1); el.textContent = cur; await wait(40); }
+    for (let i = 1; i <= text.length && el._tok === token; i++) { el.textContent = text.slice(0, i); await wait(55); }
+    if (el._tok === token) { el.textContent = text; el.classList.remove('typing'); }
+  })();
+}
+function refreshLayoutLabels() {
+  refreshChatHeading();
+  const pill = document.getElementById('mode-pill');
+  if (pill) {
+    const label = pill.querySelector('.mode-pill-label');
+    if (label && !label.classList.contains('typing')) label.textContent = t(layoutMode === 'agent' ? 'agentLabel' : 'editorLabel');
+    const tip = t(layoutMode === 'agent' ? 'modeToEditor' : 'modeToAgent');
+    pill.title = tip; pill.setAttribute('aria-label', tip);
+  }
+  const heading = document.querySelector('#explorer h3 .grow');
+  if (heading && !document.getElementById('view-main').classList.contains('layout-anim')) {
+    heading.textContent = t(layoutMode === 'agent' ? 'chats' : 'explorer');
+  }
+}
+/* sets data-layout, labels and the switch state; does not touch panel sizes */
+function applyLayoutAttrs(mode, persist) {
+  layoutMode = mode === 'agent' ? 'agent' : 'editor';
+  document.documentElement.dataset.layout = layoutMode;
+  if (persist !== false) { try { localStorage.setItem('kerniq_layout', layoutMode); } catch (e) {} }
+  const sideBtn = document.getElementById('btn-toggle-explorer');
+  if (sideBtn) { const lbl = t(layoutMode === 'agent' ? 'chats' : 'explorer'); sideBtn.title = lbl; sideBtn.setAttribute('aria-label', lbl); }
+  document.querySelectorAll('#seg-layout button').forEach(b => {
+    const on = b.dataset.v === layoutMode;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
-  ed.addEventListener('mouseleave', () => { ed.style.cursor = 'text'; });
+  refreshLayoutLabels();
+}
+/* instant version: used on start-up and whenever motion is off */
+function applyLayout(mode, persist) {
+  applyLayoutAttrs(mode, persist);
+  setExplorerCollapsed(!sideOpen[layoutMode], true);
+  renderChatList();
+  requestAnimationFrame(() => { if (typeof updateScrollBtn === 'function') updateScrollBtn(); });
+}
+
+/* animated switch.
+   editor -> agent: the chat grows leftwards over the explorer and editor (they squeeze, contents do not
+                    re-wrap); when it fills the window the chat list slides in if it was open.
+   agent -> editor: the chat list folds away, the chat shrinks to the right while the editor takes the whole
+                    window; then the explorer and the chat slide in if they were open. */
+let layoutBusy = false;
+const LAYOUT_EASE = 'cubic-bezier(.65, 0, .35, 1)';
+const wait = (ms) => new Promise(r => setTimeout(r, ms));
+function motionMs(ms) {
+  const m = document.documentElement.dataset.motion || 'on';
+  if (m === 'off') return 0;
+  if (m === 'auto' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return 0;
+  return ms;
+}
+function layoutPanels() {
+  return { ex: document.getElementById('explorer'), ed: document.getElementById('editor-panel'),
+           ch: document.getElementById('chat-panel'), view: document.getElementById('view-main') };
+}
+function freezePanels(w) {
+  const P = layoutPanels();
+  [['ex', P.ex], ['ed', P.ed], ['ch', P.ch]].forEach(([k, el]) => {
+    el.style.setProperty('transition', 'none', 'important');
+    el.style.setProperty('width', w[k] + 'px', 'important');
+    el.style.setProperty('flex', '0 0 auto', 'important');
+  });
+  void P.view.offsetWidth;             // commit the start widths before animating away from them
+}
+async function layoutPhase(target, ms, pins) {
+  const P = layoutPanels();
+  const dur = motionMs(ms);
+  [['ex', P.ex], ['ed', P.ed], ['ch', P.ch]].forEach(([k, el]) => {
+    if (pins && pins[k] != null) { el.classList.add('pin'); el.style.setProperty('--pin', pins[k] + 'px'); }
+    else { el.classList.remove('pin'); el.style.removeProperty('--pin'); }
+  });
+  void P.view.offsetWidth;
+  [['ex', P.ex], ['ed', P.ed], ['ch', P.ch]].forEach(([k, el]) => {
+    el.style.setProperty('transition', dur ? 'width ' + dur + 'ms ' + LAYOUT_EASE : 'none', 'important');
+    el.style.setProperty('width', Math.max(0, Math.round(target[k])) + 'px', 'important');
+  });
+  await wait(dur + 60);
+}
+function finishLayoutAnim() {
+  const P = layoutPanels();
+  P.view.classList.add('layout-settle');
+  [P.ex, P.ed, P.ch].forEach(el => {
+    ['width', 'flex', 'transition', '--pin'].forEach(prop => el.style.removeProperty(prop));
+    el.classList.remove('pin');
+  });
+  P.view.classList.remove('layout-anim', 'keep-tree', 'keep-chats');
+  applyStoredPanelSizes();
+  setExplorerCollapsed(!sideOpen[layoutMode], true);
+  setChatCollapsed(chatCollapsed, true);
+  refreshLayoutLabels();
+  renderChatList();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    P.view.classList.remove('layout-settle');
+    if (typeof updateScrollBtn === 'function') updateScrollBtn();
+    if (typeof renderCodeWindow === 'function') renderCodeWindow(true);
+  }));
+}
+async function switchLayout(next) {
+  next = next === 'agent' ? 'agent' : 'editor';
+  if (layoutBusy || next === layoutMode) return;
+  if (!motionMs(1) || settingsOpen()) { applyLayout(next); return; }
+  layoutBusy = true;
+  const P = layoutPanels();
+  try {
+    const W = P.view.clientWidth;
+    const sizes = storedPanelSizes();
+    const S = Math.min(sizes.left, Math.floor(W * 0.5));
+    const C = Math.min(sizes.right, Math.floor(W * 0.5));
+    const start = { ex: P.ex.offsetWidth, ed: P.ed.offsetWidth, ch: P.ch.offsetWidth };
+    P.view.classList.add('layout-anim');
+    P.ex.classList.remove('collapsed'); P.ch.classList.remove('collapsed');
+    freezePanels(start);
+    if (next === 'agent') {
+      typePillLabel(t('agentLabel'));                            // "Editor" is erased, "Agent" is typed
+      // 1. the chat folds away to the right; the editor takes its place
+      if (start.ch > 0) await layoutPhase({ ex: start.ex, ed: start.ed + start.ch, ch: 0 }, 340, { ch: start.ch });
+      // 2. now invisible, the chat switches to the agent styling, then grows over everything
+      P.view.classList.add('keep-tree');                         // the explorer keeps its tree while it squeezes
+      applyLayoutAttrs('agent');
+      await layoutPhase({ ex: 0, ed: 0, ch: W }, 520, { ex: S, ed: start.ed + start.ch });
+      P.view.classList.remove('keep-tree');
+      refreshLayoutLabels();
+      renderChatList();
+      // 3. the chat list slides in if it was open
+      if (sideOpen.agent) await layoutPhase({ ex: S, ed: 0, ch: W - S }, 380, { ex: S });
+    } else {
+      typePillLabel(t('editorLabel'));
+      P.view.classList.add('keep-chats');                        // the chat list folds away with its contents
+      if (start.ex > 0) await layoutPhase({ ex: 0, ed: 0, ch: W }, 380, { ex: start.ex });
+      await layoutPhase({ ex: 0, ed: W, ch: 0 }, 560, { ch: W });  // chat leaves to the right, editor fills the window
+      P.view.classList.remove('keep-chats');
+      applyLayoutAttrs('editor');
+      const E = sideOpen.editor ? S : 0;
+      const Cw = chatCollapsed ? 0 : C;
+      if (E || Cw) await layoutPhase({ ex: E, ed: W - E - Cw, ch: Cw }, 420, { ex: E || null, ch: Cw || null });
+    }
+  } finally {
+    finishLayoutAnim();
+    layoutBusy = false;
+  }
+}
+document.getElementById('mode-pill')?.addEventListener('click', () => switchLayout(layoutMode === 'agent' ? 'editor' : 'agent'));
+document.querySelectorAll('#seg-layout button').forEach(b => b.addEventListener('click', () => switchLayout(b.dataset.v)));
+document.getElementById('side-new-chat')?.addEventListener('click', () => document.getElementById('btn-new-chat')?.click());
+
+
+
+/* min / max / step for generated number fields: use the spec when it has them, sane defaults otherwise */
+function numAttrs(f) {
+  if (!(f.type === 'int' || f.type === 'float')) return '';
+  const num = (v) => (v !== undefined && v !== null && v !== '' && isFinite(Number(v))) ? Number(v) : null;
+  let min = num(f.minimum != null ? f.minimum : f.min), max = num(f.maximum != null ? f.maximum : f.max);
+  const step = num(f.step) || (f.type === 'int' ? 1 : 0.01);
+  if (f.key === 'port') { min = Math.max(min == null ? 1 : min, 1); max = Math.min(max == null ? 65535 : max, 65535); }
+  if (f.type === 'int' && min == null && /(count|size|limit|retries|iterations|timeout|tokens)/i.test(f.key || '')) min = 0;
+  return (min != null ? ' min="' + min + '"' : '') + (max != null ? ' max="' + max + '"' : '') + ' step="' + step + '"';
+}
+
+/* ---------- numeric limits for settings ---------- */
+(function setupNumberLimits() {
+  const root = document.getElementById('view-settings');
+  if (!root) return;
+  const LIMITS = { port: [1, 65535] };           // keys of generated plugin fields
+  const decimals = (step) => { const s = String(step); return s.indexOf('.') >= 0 ? s.split('.')[1].length : 0; };
+  function limitsFor(el) {
+    let min = el.min !== '' ? Number(el.min) : -Infinity;
+    let max = el.max !== '' ? Number(el.max) : Infinity;
+    const key = el.dataset.fk || '';
+    if (LIMITS[key]) { min = Math.max(min, LIMITS[key][0]); max = Math.min(max, LIMITS[key][1]); }
+    if (el.id === 's-timeout') {
+      const unit = (document.getElementById('s-timeout-unit') || {}).value;
+      max = unit === 'h' ? 24 : unit === 'm' ? 1440 : 86400;
+    }
+    return [min, max];
+  }
+  function clamp(el) {
+    if (!el || el.type !== 'number' || el.value === '') return;
+    let v = Number(el.value);
+    if (!isFinite(v)) { el.value = ''; return; }
+    const [min, max] = limitsFor(el);
+    const step = el.step && el.step !== 'any' ? Number(el.step) : 1;
+    if (step > 0) v = Math.round(v / step) * step;
+    v = Math.min(max, Math.max(min, v));
+    const out = Number(v.toFixed(decimals(step)));
+    if (String(out) !== el.value) {
+      el.value = String(out);
+      el.classList.remove('clamped');
+      void el.offsetWidth;
+      el.classList.add('clamped');                 // brief amber flash: "we corrected this"
+      setTimeout(() => el.classList.remove('clamped'), 900);
+    }
+  }
+  root.addEventListener('change', (ev) => {
+    if (ev.target && ev.target.id === 's-timeout-unit') clamp(document.getElementById('s-timeout'));
+    else clamp(ev.target);
+  }, true);                                        // capture: runs before the dirty-tracking listener
+})();
+
+/* ---------- info tooltips ----------
+   One floating element on <body>: it cannot be clipped by overflow containers and does not
+   add scrollable width. Clicking the "i" shows/pins the tip and never reaches the control it labels. */
+(function setupInfoTips() {
+  let tip = null, owner = null, pinned = false;
+  const ensure = () => {
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.className = 'tooltip';
+      tip.setAttribute('role', 'tooltip');
+      document.body.appendChild(tip);
+    }
+    return tip;
+  };
+  const find = (n) => (n && n.closest) ? n.closest('.info-tip') : null;
+  function show(el) {
+    const text = el.getAttribute('data-tip');
+    if (!text) return;
+    const t = ensure();
+    t.textContent = text;
+    t.style.left = '0px'; t.style.top = '0px';
+    t.classList.add('on');
+    owner = el;
+    const r = el.getBoundingClientRect();
+    const w = t.offsetWidth, h = t.offsetHeight;
+    const left = Math.min(Math.max(8, r.left - 10), window.innerWidth - w - 8);
+    let top = r.bottom + 8;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 8);
+    t.style.left = left + 'px';
+    t.style.top = top + 'px';
+  }
+  function hide() {
+    if (tip) tip.classList.remove('on');
+    owner = null; pinned = false;
+  }
+  document.addEventListener('mouseover', (e) => { const el = find(e.target); if (el && !pinned) show(el); });
+  document.addEventListener('mouseout', (e) => {
+    const el = find(e.target);
+    if (el && !pinned && !(e.relatedTarget && el.contains(e.relatedTarget))) hide();
+  });
+  document.addEventListener('focusin', (e) => { const el = find(e.target); if (el) show(el); });
+  document.addEventListener('focusout', (e) => { if (find(e.target) && !pinned) hide(); });
+  document.addEventListener('click', (e) => {
+    const el = find(e.target);
+    if (el) {
+      e.preventDefault();      // a <label> would otherwise toggle its checkbox
+      e.stopPropagation();     // and row / panel click handlers must not fire
+      if (owner === el && pinned) hide(); else { show(el); pinned = true; }
+      return;
+    }
+    if (pinned) hide();
+  }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+  window.addEventListener('scroll', () => { if (owner) hide(); }, true);
+  window.addEventListener('resize', hide);
+})();
+
+/* the plan floats over the messages: keep its height reserved at the top of the list */
+(function trackPlanHeight() {
+  const box = document.getElementById('plan-float');
+  const wrap = document.querySelector('.msgs-wrap');
+  if (!box || !wrap) return;
+  const update = () => wrap.style.setProperty('--plan-h', box.hidden ? '0px' : (box.offsetHeight + 10) + 'px');
+  if (window.ResizeObserver) new ResizeObserver(update).observe(box);
+  new MutationObserver(update).observe(box, { attributes: true, attributeFilter: ['hidden', 'class'] });
+  update();
+})();
+
+
+/* ---------- interface language + status footer (kept in the Web UI plugin settings) ---------- */
+function webUiSaved() {
+  const p = (componentsCache.plugins || []).find(x => x.id === 'plugin_web_ui');
+  return (p && p.values) || {};
+}
+async function setWebUiValue(key, value) {
+  const draft = draftPlugins['plugin_web_ui'] || (draftPlugins['plugin_web_ui'] = { values: {} });
+  draft.values[key] = value;                                   // Save in the Plugins tab must not undo this
+  const merged = Object.assign({}, webUiSaved(), { [key]: value });
+  const p = (componentsCache.plugins || []).find(x => x.id === 'plugin_web_ui');
+  if (p) p.values = merged;
+  const r = await api('/api/component/settings', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'plugin', id: 'plugin_web_ui', values: merged }),
+  });
+  if (r && r.error) toast(String(r.error), true);
+  if (typeof selectedPluginId !== 'undefined' && selectedPluginId === 'plugin_web_ui') renderPluginDetail('plugin_web_ui');
+}
+function refreshInterfaceControls() {
+  const sel = document.getElementById('ui-lang');
+  if (sel) {
+    sel.innerHTML = '';
+    const add = (v, label) => { const o = document.createElement('option'); o.value = v; o.textContent = label; sel.appendChild(o); };
+    add('en', 'English');
+    Object.keys(langPacks).forEach(id => {
+      const pk = langPacks[id];
+      if (pk && pk.valid !== false) add(id, pk.name_native || pk.name_en || id);
+    });
+    sel.value = [...sel.options].some(o => o.value === uiLocale) ? uiLocale : 'en';
+  }
+  const f = document.getElementById('ui-footer');
+  const foot = document.getElementById('app-footer');
+  if (f && foot) f.checked = !foot.classList.contains('hidden');
+}
+document.getElementById('ui-lang')?.addEventListener('change', async (e) => {
+  const v = e.target.value;
+  applyUiLocale(v);
+  await setWebUiValue('ui_locale', v);
+});
+document.getElementById('ui-footer')?.addEventListener('change', async (e) => {
+  footerEnabled = !!e.target.checked;
+  document.getElementById('app-footer').classList.toggle('hidden', !e.target.checked);
+  await setWebUiValue('show_footer', !!e.target.checked);
+});
+document.getElementById('ui-auto-think')?.addEventListener('change', (e) => {
+  autoThink = !!e.target.checked;
+  try { localStorage.setItem('kerniq_auto_think', autoThink ? '1' : '0'); } catch (_) {}
+});
+(function () { const b = document.getElementById('ui-auto-think'); if (b) b.checked = autoThink; })();
+document.getElementById('btn-lang-packs')?.addEventListener('click', () => openLangModal());
+document.getElementById('lang-modal-import')?.addEventListener('click', () => document.getElementById('lang-pack-file')?.click());
+refreshInterfaceControls();
+
+/* interface preferences: applied at once, stored in this browser only */
+applyLayout(layoutMode, false);
+(function setupInterfacePrefs() {
+  const root = document.documentElement;
+  const seg = document.getElementById('seg-motion');
+  const hlBox = document.getElementById('ui-hl');
+  const syncMotion = () => {
+    const cur = root.dataset.motion || 'on';
+    if (!seg) return;
+    seg.querySelectorAll('button').forEach(b => {
+      const on = b.dataset.v === cur;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+  };
+  if (seg) {
+    seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      root.dataset.motion = b.dataset.v;
+      try { localStorage.setItem('kerniq_motion', b.dataset.v); } catch (_) {}
+      syncMotion();
+    }));
+    syncMotion();
+  }
+  if (hlBox) {
+    hlBox.checked = ED.hl;
+    hlBox.addEventListener('change', () => {
+      ED.hl = hlBox.checked;
+      try { localStorage.setItem('kerniq_hl', ED.hl ? '1' : '0'); } catch (_) {}
+      updateLineNumbers();
+    });
+  }
+  const stop = document.getElementById('btn-run-stop');
+  if (stop) stop.addEventListener('click', () => {
+    const b = document.getElementById('btn-action');
+    if (b && !b.disabled) b.click();
+  });
 })();
 
 document.getElementById('msgs')?.addEventListener('click', (e) => {
+  const b = e.target.closest('.copy-btn');
+  if (!b) return;
+  const code = b.closest('.code-block') && b.closest('.code-block').querySelector('pre code');
+  if (!code) return;
+  const text = code.textContent;
+  const done = () => {
+    b.textContent = translate('Copied');
+    b.classList.add('done');
+    setTimeout(() => { b.textContent = translate('Copy'); b.classList.remove('done'); }, 1400);
+  };
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (_) {}
+    ta.remove(); done();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+  else fallback();
+});
+document.getElementById('msgs')?.addEventListener('click', async (e) => {
   const a = e.target.closest('a.file-ref');
   if (!a) return;
   e.preventDefault();
   const path = a.dataset.path;
   if (!path) return;
+  if (layoutMode === 'agent') await switchLayout('editor');   // the file opens in the editor
   // expand tree to path
   const parts = path.split('/');
   let acc = '';
@@ -3372,42 +4527,39 @@ function attachBlocked(name) {
   if (dot < 0) return false;
   return BLOCKED_ATTACH.has(raw.slice(dot + 1).toLowerCase());
 }
+const CTX_ICON = {
+  folder: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>',
+  search: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
+  chev: '<svg class="ci-chev" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M4 2.5 7.5 6 4 9.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
 function placeCtx(anchor, opts) {
   const ctx = document.getElementById('ctx');
   if (!ctx || !anchor) return ctx;
   const above = !!(opts && opts.above);
   const r = anchor.getBoundingClientRect();
+  const gap = 8, edge = 8;
   ctx.style.display = 'block';
   ctx.style.visibility = 'hidden';
-  ctx.style.maxHeight = 'none';
-  ctx.style.overflow = 'auto';
+  ctx.style.maxHeight = '';
   ctx.style.top = '0px';
+  ctx.style.bottom = 'auto';
   ctx.style.left = '0px';
-  const gap = 6;
-  const height = ctx.offsetHeight || ctx.scrollHeight || 0;
-  const width = Math.min(420, Math.max(220, ctx.offsetWidth || 280));
+  const width = ctx.offsetWidth, height = ctx.offsetHeight;
   let left = r.left;
-  if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
-  let top = r.bottom + gap;
-  if (above) {
-    const bottom = r.top - gap;
-    top = bottom - height;
-    if (top < 8) {
-      top = 8;
-      ctx.style.maxHeight = Math.max(72, bottom - 8) + 'px';
-    }
-  } else if (top + height > window.innerHeight - 8) {
-    const bottom = r.top - gap;
-    top = Math.max(8, bottom - height);
-    if (top < 8) {
-      top = 8;
-      ctx.style.maxHeight = Math.max(72, bottom - 8) + 'px';
-    }
+  if (left + width > window.innerWidth - edge) left = Math.max(edge, window.innerWidth - width - edge);
+  const spaceAbove = r.top - gap - edge;
+  const spaceBelow = window.innerHeight - r.bottom - gap - edge;
+  if (above || (height > spaceBelow && spaceAbove > spaceBelow)) {
+    // pinned by its bottom edge: results that arrive later grow upwards instead of over the anchor
+    ctx.style.top = 'auto';
+    ctx.style.bottom = (window.innerHeight - r.top + gap) + 'px';
+    ctx.style.maxHeight = Math.max(120, spaceAbove) + 'px';
+  } else {
+    ctx.style.top = (r.bottom + gap) + 'px';
+    ctx.style.maxHeight = Math.max(120, spaceBelow) + 'px';
   }
   ctx.style.left = left + 'px';
-  ctx.style.top = top + 'px';
-  ctx.style.minWidth = '220px';
-  ctx.style.maxWidth = '420px';
   ctx.style.visibility = '';
   return ctx;
 }
@@ -3496,25 +4648,73 @@ function renderAttachChips() {
     el.appendChild(d);
   });
 }
+function hitMarkup(path) {
+  const norm = String(path).replace(/\\/g, '/');
+  const i = norm.lastIndexOf('/');
+  const name = i >= 0 ? norm.slice(i + 1) : norm;
+  const dir = i >= 0 ? norm.slice(0, i + 1) : '';
+  return fileSvg(name) + '<span class="hit-name">' + esc(name) + '</span>' +
+    (dir ? '<span class="hit-dir">' + esc(dir) + '</span>' : '');
+}
 function fillFileHits(hits, onPick) {
   hits.innerHTML = '';
+  let seq = 0;
   return async (query) => {
+    const mine = ++seq;
     const data = await api('/api/fs/search?q=' + encodeURIComponent(query || ''));
+    if (mine !== seq) return;              // a newer query is already on its way
     hits.innerHTML = '';
-    (data.hits || []).forEach(h => {
-      if (attachBlocked(h.path)) return;
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = h.path;
-      b.title = h.path;
-      b.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); onPick(h.path); };
-      hits.appendChild(b);
-    });
-    if (!hits.children.length) {
+    const list = (data.hits || []).filter(h => !attachBlocked(h.path));
+    let shown = 0;
+    const CHUNK = 120;                       // no cap on results: they are added as the list is scrolled
+    const more = () => {
+      const frag = document.createDocumentFragment();
+      list.slice(shown, shown + CHUNK).forEach(h => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'hit';
+        b.title = h.path;
+        b.innerHTML = hitMarkup(h.path);
+        b.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); onPick(h.path); };
+        frag.appendChild(b);
+      });
+      shown = Math.min(list.length, shown + CHUNK);
+      hits.appendChild(frag);
+    };
+    hits.onscroll = () => {
+      if (shown < list.length && hits.scrollTop + hits.clientHeight >= hits.scrollHeight - 60) more();
+    };
+    more();
+    if (!list.length) {
       const empty = document.createElement('div');
-      empty.style.cssText = 'padding:8px 12px;color:var(--muted);font-size:12px';
+      empty.className = 'attach-empty';
       empty.textContent = (query || '').trim() ? t('noMatches') : t('typeToSearch');
       hits.appendChild(empty);
+    } else {
+      hits.firstElementChild.classList.add('active');
+    }
+  };
+}
+function bindHitKeys(input, hits) {
+  input.onkeydown = (ev) => {
+    const items = [...hits.querySelectorAll('.hit')];
+    const cur = items.findIndex(x => x.classList.contains('active'));
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      if (!items.length) return;
+      const n = (cur + (ev.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items.forEach(x => x.classList.remove('active'));
+      items[n].classList.add('active');
+      items[n].scrollIntoView({ block: 'nearest' });
+    } else if (ev.key === 'Enter') {
+      ev.preventDefault();
+      const target = items[cur >= 0 ? cur : 0];
+      if (target) target.click();
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      hideCtx();
+      const pr = document.getElementById('prompt');
+      if (pr) pr.focus();
     }
   };
 }
@@ -3522,18 +4722,31 @@ function showAttachMenu(anchor) {
   const ctx = document.getElementById('ctx');
   if (!ctx) return;
   mentionOpen = false;
-  ctx.innerHTML = '<div class="attach-sections"><button type="button" class="section" id="attach-project"></button><button type="button" class="section" id="attach-outside"></button></div><div id="attach-project-box" hidden><input id="attach-q" style="width:100%;margin:4px 0;box-sizing:border-box"/><div id="attach-hits" class="attach-hits"></div></div>';
-  document.getElementById('attach-project').textContent = t('fromProject');
-  document.getElementById('attach-outside').textContent = t('fromOutside');
-  document.getElementById('attach-q').placeholder = t('attachSearch');
+  ctx.className = 'ctx ctx-attach';
+  const item = (id, icon, chev) => '<button type="button" class="ctx-item" id="' + id + '"><span class="ci-ico">' + icon +
+    '</span><span class="ci-text"><span class="ci-label"></span><span class="ci-hint"></span></span>' + (chev || '') + '</button>';
+  ctx.innerHTML = item('attach-project', CTX_ICON.folder, CTX_ICON.chev) +
+    '<div id="attach-project-box" hidden><div class="ctx-search">' + CTX_ICON.search +
+    '<input id="attach-q" autocomplete="off" spellcheck="false"/></div><div id="attach-hits" class="attach-hits"></div></div>' +
+    item('attach-outside', CTX_ICON.upload, '');
+  const setText = (id, label, hint) => {
+    const el = document.getElementById(id);
+    el.querySelector('.ci-label').textContent = label;
+    el.querySelector('.ci-hint').textContent = hint;
+  };
+  setText('attach-project', t('fromProject'), t('fromProjectHint'));
+  setText('attach-outside', t('fromOutside'), t('fromOutsideHint'));
   const box = document.getElementById('attach-project-box');
   const q = document.getElementById('attach-q');
   const hits = document.getElementById('attach-hits');
+  q.placeholder = t('attachSearch');
   const search = fillFileHits(hits, (path) => { addAttachment(path, true, false); hideCtx(); });
+  bindHitKeys(q, hits);
   const reposition = () => placeCtx(anchor, { above: true });
   document.getElementById('attach-project').onclick = (ev) => {
     ev.stopPropagation();
     box.hidden = !box.hidden;
+    document.getElementById('attach-project').classList.toggle('open', !box.hidden);
     reposition();
     if (!box.hidden) { q.focus(); search(q.value || ''); }
   };
@@ -3550,7 +4763,7 @@ function showAttachMenu(anchor) {
     (r.paths || []).forEach(p => addAttachment(p, true, true));
     if (r && r.blocked && r.blocked.length) toast(t('attachBlocked'), true);
   };
-  q.oninput = () => { clearTimeout(q._t); q._t = setTimeout(() => search(q.value || ''), 200); };
+  q.oninput = () => { clearTimeout(q._t); q._t = setTimeout(() => search(q.value || ''), 160); };
   q.onclick = (ev) => ev.stopPropagation();
   reposition();
   bindCtxHide(anchor);
@@ -3580,12 +4793,14 @@ function insertMention(path) {
 }
 function showMentionMenu(query) {
   const fresh = !mentionOpen;
-  const ctx = placeCtx(promptEl);
+  const ctx = document.getElementById('ctx');
   if (!ctx) return;
   mentionOpen = true;
   if (!document.getElementById('attach-hits') || !fresh) {
-    ctx.innerHTML = '<input id="attach-q" style="width:100%;margin-bottom:4px;box-sizing:border-box"/><div id="attach-hits" class="attach-hits"></div>';
+    ctx.className = 'ctx ctx-attach';
+    ctx.innerHTML = '<div class="ctx-search">' + CTX_ICON.search + '<input id="attach-q" autocomplete="off" spellcheck="false"/></div><div id="attach-hits" class="attach-hits"></div>';
   }
+  placeCtx(promptEl, { above: true });
   const q = document.getElementById('attach-q');
   q.placeholder = t('attachSearch');
   if (document.activeElement !== q) q.value = query || '';
@@ -3640,8 +4855,98 @@ setInterval(() => { setFooterContext(_lastPromptTokens, _modelContextLimit); }, 
 document.addEventListener('DOMContentLoaded', () => { setTimeout(() => refreshModelFooter().catch(() => {}), 500); });
 
 
+async function loadLangPacks() {
+  const data = await api('/api/ui/languages').catch(() => ({ packs: [] }));
+  langPacks = {};
+  (data.packs || []).forEach(pack => {
+    if (pack && pack.id) langPacks[pack.id] = pack;
+  });
+  const loc = (draftPlugins['plugin_web_ui'] && draftPlugins['plugin_web_ui'].values && draftPlugins['plugin_web_ui'].values.ui_locale)
+    || (settings && settings.plugins && settings.plugins.ui_locale)
+    || uiLocale;
+  applyUiLocale(loc);
+}
+function openLangModal() {
+  const modal = document.getElementById('lang-modal');
+  const list = document.getElementById('lang-list');
+  if (!modal || !list) return;
+  const imp = document.getElementById('lang-modal-import');
+  if (imp) imp.textContent = translate('Import');
+  list.innerHTML = '';
+  const ids = Object.keys(langPacks);
+  if (!ids.length) {
+    list.innerHTML = '<div class="empty">' + esc(translate('No language packs installed.')) + '</div>';
+  }
+  ids.forEach(id => {
+    const pack = langPacks[id];
+    const row = document.createElement('div');
+    row.className = 'lang-row';
+    const name = document.createElement('span');
+    const broken = pack.valid === false;
+    name.textContent = broken
+      ? ((pack.name_en || id) + ' — ' + ((pack.errors && pack.errors[0]) || 'Invalid'))
+      : ((pack.name_native || pack.name_en || id) + ' · ' + (pack.name_en || id));
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'lang-x';
+    btn.setAttribute('aria-label', translate('Remove'));
+    btn.textContent = '×';
+    btn.title = translate('Remove');
+    btn.onclick = async () => {
+      await api('/api/ui/languages/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id }),
+      });
+      const draft = draftPlugins['plugin_web_ui'];
+      if (draft && draft.values && draft.values.ui_locale === id) {
+        draft.values.ui_locale = 'en';
+        await api('/api/component/settings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: 'plugin', id: 'plugin_web_ui', values: draft.values }),
+        });
+      }
+      if (uiLocale === id) uiLocale = 'en';
+      await loadLangPacks();
+      if (selectedPluginId) renderPluginDetail(selectedPluginId);
+      openLangModal();
+    };
+    row.appendChild(name);
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+  modal.classList.add('on');
+  document.body.classList.add('modal-open');
+}
+function closeLangModal() {
+  const modal = document.getElementById('lang-modal');
+  if (modal) modal.classList.remove('on');
+  document.body.classList.remove('modal-open');
+}
+document.getElementById('lang-modal-close')?.addEventListener('click', closeLangModal);
+document.getElementById('lang-modal')?.addEventListener('click', (ev) => {
+  if (ev.target && ev.target.id === 'lang-modal') closeLangModal();
+});
+document.getElementById('lang-pack-file')?.addEventListener('change', async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!file) return;
+  let pack;
+  try { pack = JSON.parse(await file.text()); }
+  catch (_) { toast(translate('Language pack is not valid JSON.'), true); return; }
+  const res = await api('/api/ui/languages/import', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pack: pack }),
+  });
+  if (res && res.error) { toast(res.error, true); return; }
+  await loadLangPacks();
+  if (selectedPluginId) renderPluginDetail(selectedPluginId);
+  if (res && res.warnings && res.warnings.length) toast(res.warnings.join(' '));
+  else toast(translate('Language pack imported.'));
+});
+loadLangPacks();
+
 async function shutdownUi() {
-  if (!confirm(uiLocale === 'ru' ? 'Остановить Web UI и закрыть страницу?' : 'Stop Web UI server and close this page?')) return;
+  if (!confirm(translate('Stop the Web UI and close this page?'))) return;
   try {
     await api('/api/shutdown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   } catch (_) {}

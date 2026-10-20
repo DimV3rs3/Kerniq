@@ -15,12 +15,15 @@ def category(self) -> str:  # tools only
 
 ## Storage
 
-Per-component JSON files (not one giant config):
+Three files, shared by the console and the shell:
 
-- `state/tools/<tool_id>.json`
-- `state/plugins/<plugin_id>.json`
+- `state/settings.json` — agent, API, prompt, chat
+- `state/tools.json` — tool toggles and per-tool values
+- `state/plugins.json` — per-plugin values
 
-Loaded via `ComponentSettingsStore`.
+The first run writes defaults. A change from either side replaces those values in the same file. Validation adds a missing component with its schema defaults. A component that is no longer installed is removed from its file.
+
+`kerniq plugins validate` and tool loading both run that reconciliation. Deleting a plugin also drops its block immediately.
 
 ## UI
 

@@ -18,6 +18,7 @@ from ...interfaces.models import (
     ToolCall,
 )
 from ...interfaces.providers import ModelProvider
+from ..cancel import StreamCancelled, await_unless_cancelled, cancelled_response
 
 logger = logging.getLogger(__name__)
 
@@ -193,9 +194,16 @@ class AnthropicProvider(ModelProvider):
         if tools:
             payload["tools"] = tools
         url = f"{self.base_url}/v1/messages"
+        cancel_check = (request.metadata or {}).get("cancel_check")
         try:
             async with self._client() as client:
-                response = await client.post(url, json=payload, headers=self._headers())
+                try:
+                    response = await await_unless_cancelled(
+                        client.post(url, json=payload, headers=self._headers()),
+                        cancel_check,
+                    )
+                except StreamCancelled:
+                    return cancelled_response()
         except httpx.RequestError as exc:
             raise ProviderError(
                 ErrorCode.PROVIDER_UNAVAILABLE,

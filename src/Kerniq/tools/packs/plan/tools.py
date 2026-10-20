@@ -13,8 +13,9 @@ _SKIP = {"skipped", "skip", "cancelled", "canceled", "wont_do"}
 _FROZEN = {"frozen", "freeze", "paused", "pause", "hold", "on_hold"}
 _FAILED = {"failed", "fail", "failure"}
 
-# Closed items do not block the end of the task. Frozen and failed do.
-CLOSED_PLAN_STATUSES = frozenset({"done", "skipped"})
+# Closed items do not block the end of the task. Frozen still does.
+# Failed is a recorded miss: it stays visible and the next item becomes current.
+CLOSED_PLAN_STATUSES = frozenset({"done", "skipped", "failed"})
 
 
 def normalize_status(value: Any) -> str:
@@ -67,10 +68,10 @@ def _first_open_index(items: List[Dict[str, str]]) -> int | None:
 
 
 def _single_active(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """One item in progress: the first that is not done or skipped.
+    """One item in progress: the first that is not done, skipped, or failed.
 
-    Later items stay pending until that one is done. A frozen or failed cursor
-    stays as it is, and nothing after it may be active, done, frozen, or failed.
+    Later items stay pending until that one is done or failed. A frozen cursor
+    stays frozen, and nothing after it may be active, done, frozen, or failed.
     """
     cursor = _first_open_index(items)
     if cursor is None:
@@ -111,7 +112,12 @@ def _order_numeric(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return [item for _index, item in paired]
 
 
-def merge_plan(previous: Any, incoming: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def merge_plan(
+    previous: Any,
+    incoming: List[Dict[str, str]],
+    *,
+    seal_when_closed: bool = False,
+) -> List[Dict[str, str]]:
     """Keep every existing item. New items may be inserted only from the current one down.
 
     If 1–3 are done, 4 is active, and 5–7 follow, a new id may land between 4, 5, 6, 7
@@ -119,11 +125,22 @@ def merge_plan(previous: Any, incoming: List[Dict[str, str]]) -> List[Dict[str, 
     after the active item. Existing titles are not rewritten. Nothing is deleted.
     Only the current item may change status, and only that one per call.
     The list is then forced back to a single in-progress item, in order.
+
+    A brand new list cannot arrive already finished. Plan mode also seals a list
+    that is already fully closed: further ids are ignored so research cannot be
+    reopened. Act writes its own list after the handoff.
     """
     prior = normalize_plan_items(previous)
     fresh = normalize_plan_items(incoming)
     if not prior:
-        return _single_active(_order_numeric(fresh))
+        ordered = _order_numeric(fresh)
+        if ordered and all(item["status"] in CLOSED_PLAN_STATUSES for item in ordered):
+            ordered[0]["status"] = "active"
+            for item in ordered[1:]:
+                item["status"] = "pending"
+        return _single_active(ordered)
+    if seal_when_closed and all(item["status"] in CLOSED_PLAN_STATUSES for item in prior):
+        return [dict(item) for item in prior]
     by_id = {item["id"]: dict(item) for item in prior}
     for item in fresh:
         current = by_id.get(item["id"])
@@ -185,22 +202,34 @@ class UpdatePlanTool(Tool):
         return "update_plan"
 
     @property
+    def display_phrase(self) -> str:
+        return "plan updates"
+
+    @property
     def description(self) -> str:
         return (
             "Publish the TODO. Send the full list in order. You cannot delete an item or rename an existing one. "
-            "Work strictly in order, one item at a time. Exactly one item is in progress: the first item that is not done. "
+            "Work strictly in order, one item at a time. Exactly one item is in progress: the first item that is not done or failed. "
             "Each call may change the status of that current item only. "
-            "If you cannot finish it, mark that one item failed. Do not start, finish, freeze, or fail a later item in the same call. "
-            "The next item becomes current only after the current one is done. "
+            "If you found what it asked for, mark that one item done. "
+            "If the same attempt is empty about three times, or you have given up, mark that one item failed. "
+            "Do not mark failed on the first miss. Do not start, finish, freeze, or fail a later item in the same call. "
+            "The next item becomes current after the current one is done or failed. "
             "New items may be inserted only among the current item and the items after it. "
             "status is pending, active, done, frozen, or failed. "
-            "done stays on the list. frozen pauses the current item. failed marks it failed. Both still block the end. "
+            "done stays on the list. frozen pauses the current item and still blocks the end. "
+            "failed stays on the list, records the miss, and does not block the end. "
+            "In Plan mode a fully closed list is sealed: new items are refused and the closed items stay archived. "
+            "Archived ids stay closed. Do not put them back on the live list. "
             "An empty list does not clear the TODO."
         )
 
     @property
     def risk_level(self) -> str:
         return "read_only"
+
+    def plan_membership_default(self) -> bool:
+        return True
 
     @property
     def category(self) -> str:
@@ -237,15 +266,43 @@ class UpdatePlanTool(Tool):
     async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
         incoming = normalize_plan_items((arguments or {}).get("items"))
         previous = []
+        mode = "act"
+        archived_ids = set()
         if context is not None and getattr(context, "metadata", None) is not None:
             previous = list(context.metadata.get("plan") or [])
-        items = merge_plan(previous, incoming)
+            mode = str(context.metadata.get("agent_mode") or "act")
+            for old in list(context.metadata.get("plan_archive") or []):
+                if isinstance(old, dict) and old.get("id"):
+                    archived_ids.add(str(old.get("id")))
+        live_ids = {
+            str(item.get("id"))
+            for item in previous
+            if isinstance(item, dict) and item.get("id")
+        }
+        refused_archive = [
+            item for item in incoming
+            if item["id"] in archived_ids and item["id"] not in live_ids
+        ]
+        if refused_archive:
+            incoming = [
+                item for item in incoming
+                if item["id"] not in archived_ids or item["id"] in live_ids
+            ]
+        sealed = mode == "plan" and bool(previous) and all(
+            isinstance(item, dict) and normalize_status(item.get("status")) in CLOSED_PLAN_STATUSES
+            for item in previous
+        )
+        items = merge_plan(previous, incoming, seal_when_closed=sealed)
         archive: List[Dict[str, str]] = []
         if context is not None and getattr(context, "metadata", None) is not None:
             seen = set()
             for old in list(context.metadata.get("plan_archive") or []):
                 if isinstance(old, dict) and old.get("id") and old["id"] not in seen:
-                    archive.append(dict(old))
+                    archive.append({
+                        "id": str(old.get("id")),
+                        "title": str(old.get("title") or ""),
+                        "status": str(old.get("status") or "done"),
+                    })
                     seen.add(old["id"])
             for old in list(context.metadata.get("plan") or []):
                 if (
@@ -263,17 +320,34 @@ class UpdatePlanTool(Tool):
             context.metadata["plan_archive"] = archive
         open_items = [item for item in items if is_open_status(item.get("status"))]
         frozen = [item for item in open_items if item.get("status") == "frozen"]
+        if sealed:
+            note = (
+                "Research list is closed and was not extended. "
+                f"{len(archive)} item(s) stay in the archive. "
+                "Do not call update_plan again. Write the note and the draft, then stop."
+            )
+        elif refused_archive and not items:
+            note = (
+                "Archived items stay closed and were not put back on the list. "
+                "Write a new action TODO with new ids."
+            )
+        else:
+            note = (
+                f"TODO updated ({len(open_items)} open, {len(frozen)} frozen, {len(archive)} archived). "
+                "Nothing was deleted. Only the current item can change, and only one item per call. "
+                "Later items stay pending until the current one is done or failed. "
+                "Mark the current item done when you actually finished it. "
+                "If the same attempt is empty about three times, or you have given up, mark that one failed. "
+                "failed stays on the list and does not block the end. frozen still does. "
+                "Completed items stay on the list. Archived ids stay closed."
+            )
+            if refused_archive:
+                note += " Archived items were left closed and were not added."
         return ToolResult(
             tool_call_id="",
             tool_id=self.tool_id,
             status="success",
             success=True,
-            output={"items": items, "open": open_items, "archive": archive},
-            human_readable=(
-                f"TODO updated ({len(open_items)} open, {len(frozen)} frozen, {len(archive)} archived). "
-                "Nothing was deleted. Only the current item can change, and only one item per call. "
-                "Later items stay pending until the current one is done. "
-                "If you cannot finish the current item, mark that one failed and keep working or retry it. "
-                "Completed items stay on the list."
-            ),
+            output={"items": items, "open": open_items, "archive": archive, "sealed": sealed},
+            human_readable=note,
         )

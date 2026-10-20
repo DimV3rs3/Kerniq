@@ -129,10 +129,15 @@ if ($LASTEXITCODE -ne 0) {
     if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 }
 
+Write-Host "Creating the workspace sandbox..."
+& $target -c "import pathlib,sys; from Kerniq.sandbox.venv import prepare_workspace_at_install; prepare_workspace_at_install(pathlib.Path(sys.argv[1]))" $Root
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Workspace sandbox was not created. Kerniq itself is installed."
+}
 Write-Host "Scanning plugins and tool packs for Python libraries..."
 & $target -c "import pathlib,sys; from Kerniq.sandbox.deps import install_product_tree; install_product_tree(pathlib.Path(sys.argv[1]))" $Root
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Library scan failed. Kerniq itself is installed; a plugin can still install its own libraries on load."
+    Write-Host "Library scan failed. Kerniq itself is installed."
 }
 
 $flagVenv = $(if ($createdVenv) { "1" } else { "0" })

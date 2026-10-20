@@ -1,0 +1,10 @@
+[plugin]
+plugin_id = "benchmark_pro"
+name = "Professional LLM Benchmark"
+version = "1.0.0"
+api_version = "1.0"
+entry_point = "main.BenchmarkProPlugin"
+description = "Advanced benchmarking tool for evaluating multiple LLMs on complex tasks using Kerniq's provider system."
+
+[capabilities]
+tools = true

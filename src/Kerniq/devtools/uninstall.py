@@ -8,6 +8,7 @@ is released.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import site
@@ -116,18 +117,60 @@ def _remove_console_scripts() -> List[str]:
     return removed
 
 
+def _project_workspace(project_root: Path) -> Optional[Path]:
+    """In-project workspace to drop. Never the project root, source, or an external path."""
+    raw = "./workspace"
+    settings = project_root / "state" / "settings.json"
+    if settings.is_file():
+        try:
+            data = json.loads(settings.read_text(encoding="utf-8"))
+            agent = data.get("agent") if isinstance(data, dict) else None
+            if isinstance(agent, dict) and agent.get("workspace"):
+                raw = str(agent.get("workspace"))
+        except Exception:
+            raw = "./workspace"
+    path = Path(raw)
+    if not path.is_absolute():
+        path = project_root / path
+    try:
+        path = path.resolve()
+        rel = path.relative_to(project_root.resolve())
+    except Exception:
+        return None
+    if not rel.parts:
+        return None
+    if rel.parts[0] in {"src", "plugins", "tests", "config", ".git"}:
+        return None
+    return path
+
+
 def _purge_project_state(project_root: Path) -> List[str]:
     cleaned: List[str] = []
-    for name in (
-        "sessions",
-        "logs",
-        "state",
-        "__pycache__",
-        ".pytest_cache",
-        ".mypy_cache",
-        ".ruff_cache",
-    ):
-        p = project_root / name
+    extra = _project_workspace(project_root)
+    targets = [
+        project_root / name
+        for name in (
+            "sessions",
+            "logs",
+            "state",
+            "workspace",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+        )
+    ]
+    if extra is not None:
+        targets.append(extra)
+    seen: set[str] = set()
+    for p in targets:
+        try:
+            key = str(p.resolve())
+        except Exception:
+            key = str(p)
+        if key in seen:
+            continue
+        seen.add(key)
         if not p.is_dir():
             continue
         # Never delete a Python package. User data dirs have no __init__.py.
@@ -137,8 +180,9 @@ def _purge_project_state(project_root: Path) -> List[str]:
         try:
             rel = p.resolve().relative_to(project_root.resolve())
         except Exception:
-            rel = None
-        if rel is not None and "src" in rel.parts:
+            cleaned.append(f"{p} (kept: outside the project)")
+            continue
+        if not rel.parts or "src" in rel.parts:
             cleaned.append(f"{p} (kept: inside src)")
             continue
         try:

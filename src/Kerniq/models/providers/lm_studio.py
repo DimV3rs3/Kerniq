@@ -30,6 +30,7 @@ from ...interfaces.models import (
     ToolCall,
 )
 from ...interfaces.errors import ProviderError, ErrorCode
+from ..cancel import StreamCancelled, await_unless_cancelled, cancelled_response, next_stream_line
 
 logger = logging.getLogger(__name__)
 
@@ -637,12 +638,19 @@ class LMStudioProvider(ModelProvider):
 
         use_stream = bool(request.options and request.options.streaming)
         url = self._url("/v1/chat/completions")
+        cancel_check = (request.metadata or {}).get("cancel_check")
 
         try:
             if use_stream:
                 return await self._generate_stream(url, payload, request)
             async with self._client(timeout=self.timeout) as client:
-                response = await client.post(url, json=payload, headers=self._headers())
+                try:
+                    response = await await_unless_cancelled(
+                        client.post(url, json=payload, headers=self._headers()),
+                        cancel_check,
+                    )
+                except StreamCancelled:
+                    return cancelled_response()
                 body = response.text
                 if response.status_code >= 400:
                     raise ProviderError(
@@ -702,32 +710,29 @@ class LMStudioProvider(ModelProvider):
                         self._friendly_chat_error(response.status_code, body.decode("utf-8", errors="replace") if isinstance(body, (bytes, bytearray)) else str(body), url),
                     )
                 cancel_check = (request.metadata or {}).get("cancel_check")
-                async for line in response.aiter_lines():
-                    if callable(cancel_check):
-                        try:
-                            if cancel_check():
-                                await response.aclose()
-                                # Use module-level Message/ModelResponse — do NOT import
-                                # them here (that makes Message a local and breaks the
-                                # normal return path: "not associated with a value").
-                                content = "".join(content_parts)
-                                reasoning = "".join(reasoning_parts) or None
-                                meta: Dict[str, Any] = {"cancelled": True}
-                                if reasoning:
-                                    meta["reasoning"] = reasoning
-                                return ModelResponse(
-                                    messages=[
-                                        Message(
-                                            role=MessageRole.ASSISTANT,
-                                            content=content,
-                                            metadata=meta if reasoning else None,
-                                        )
-                                    ],
-                                    finish_reason="cancelled",
-                                    metadata=meta,
+                lines = response.aiter_lines()
+                while True:
+                    try:
+                        line = await next_stream_line(lines, response, cancel_check)
+                    except StreamCancelled:
+                        content = "".join(content_parts)
+                        reasoning = "".join(reasoning_parts) or None
+                        meta: Dict[str, Any] = {"cancelled": True}
+                        if reasoning:
+                            meta["reasoning"] = reasoning
+                        return ModelResponse(
+                            messages=[
+                                Message(
+                                    role=MessageRole.ASSISTANT,
+                                    content=content,
+                                    metadata=meta if reasoning else None,
                                 )
-                        except Exception:
-                            pass
+                            ],
+                            finish_reason="cancelled",
+                            metadata=meta,
+                        )
+                    except StopAsyncIteration:
+                        break
                     line = (line or "").strip()
                     if not line or line.startswith(":") or not line.startswith("data:"):
                         continue

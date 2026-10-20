@@ -59,6 +59,13 @@ class Application:
         return SettingsProvider(config_path).config
 
     def _merge_tool_config(self) -> None:
+        """Seed tool toggles from the platform config only when tools.json is new."""
+        from .settings.file import TOOLS_FILE, read_state_file
+
+        raw = read_state_file(self.config.storage.state_dir, TOOLS_FILE)
+        if any(key in raw for key in ("fs_enabled", "terminal_enabled", "enabled_tools")):
+            self.tool_settings.load()
+            return
         tc = self.config.tools
         self.tool_settings.update(
             fs_enabled=tc.fs_enabled,

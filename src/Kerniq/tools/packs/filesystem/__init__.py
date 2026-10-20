@@ -27,6 +27,10 @@ class Pack(ToolPack):
     def category(self) -> str:
         return "filesystem"
 
+    @property
+    def include_in_plan(self) -> bool:
+        return False
+
     def resources_dir(self):
         return pack_resources_dir(__file__)
 

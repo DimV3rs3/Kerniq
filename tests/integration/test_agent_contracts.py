@@ -473,6 +473,161 @@ def test_cancel_finish_reason():
     assert "Stopped by user" in result
 
 
+def test_stop_aborts_blocked_generate():
+    """Stop must unblock a model call that never returns on its own."""
+
+    class _Hang(MockProvider):
+        def __init__(self):
+            super().__init__([])
+            self.started = asyncio.Event()
+
+        async def generate(self, request):
+            self.started.set()
+            await asyncio.sleep(30)
+            return ModelResponse(
+                messages=[Message(role=MessageRole.ASSISTANT, content="too late")],
+                finish_reason="stop",
+            )
+
+    provider = _Hang()
+    agent = Agent(provider, ToolRegistry())
+    flag = {"on": False}
+
+    async def go():
+        async def arm():
+            await provider.started.wait()
+            flag["on"] = True
+
+        asyncio.create_task(arm())
+        agent.orchestrator.cancel_check = lambda: flag["on"]
+        return await agent.run("keep going")
+
+    result = asyncio.run(asyncio.wait_for(go(), timeout=3))
+    assert agent.last_context.metadata["outcome"] == "cancelled"
+    assert "Stopped by user" in result
+    assert "too late" not in result
+
+
+def test_stop_abandons_a_call_that_swallows_cancel():
+    """A socket that ignores CancelledError must not pin Stop until timeout."""
+
+    class _Stubborn(MockProvider):
+        def __init__(self):
+            super().__init__([])
+            self.started = asyncio.Event()
+
+        async def generate(self, request):
+            self.started.set()
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                try:
+                    await asyncio.sleep(30)
+                except asyncio.CancelledError:
+                    return ModelResponse(
+                        messages=[Message(role=MessageRole.ASSISTANT, content="too late")],
+                        finish_reason="stop",
+                    )
+            return ModelResponse(
+                messages=[Message(role=MessageRole.ASSISTANT, content="too late")],
+                finish_reason="stop",
+            )
+
+    provider = _Stubborn()
+    agent = Agent(provider, ToolRegistry())
+    flag = {"on": False}
+
+    async def go():
+        async def arm():
+            await provider.started.wait()
+            flag["on"] = True
+
+        asyncio.create_task(arm())
+        agent.orchestrator.cancel_check = lambda: flag["on"]
+        return await agent.run("keep going")
+
+    result = asyncio.run(asyncio.wait_for(go(), timeout=4))
+    assert agent.last_context.metadata["outcome"] == "cancelled"
+    assert "Stopped by user" in result
+
+
+def test_stream_poll_does_not_cancel_the_read():
+    from Kerniq.models.cancel import StreamCancelled, next_stream_line
+
+    class _Lines:
+        def __init__(self):
+            self.cancelled = 0
+            self.n = 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            try:
+                await asyncio.sleep(0.6)
+            except asyncio.CancelledError:
+                self.cancelled += 1
+                raise
+            self.n += 1
+            if self.n > 1:
+                raise StopAsyncIteration
+            return "data: hi"
+
+    class _Resp:
+        def __init__(self):
+            self.closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    lines = _Lines()
+    resp = _Resp()
+
+    async def go():
+        return await next_stream_line(lines, resp, lambda: False, interval=0.2)
+
+    line = asyncio.run(asyncio.wait_for(go(), timeout=2))
+    assert line == "data: hi"
+    assert lines.cancelled == 0
+    assert resp.closed is False
+
+    lines2 = _Lines()
+    resp2 = _Resp()
+    flag = {"on": False}
+
+    async def stop_soon():
+        await asyncio.sleep(0.15)
+        flag["on"] = True
+        return await next_stream_line(lines2, resp2, lambda: flag["on"], interval=0.05)
+
+    try:
+        asyncio.run(asyncio.wait_for(stop_soon(), timeout=2))
+        assert False, "stop should raise"
+    except StreamCancelled:
+        pass
+    assert resp2.closed is True
+
+
+def test_terminal_stops_when_cancelled(tmp_path, monkeypatch):
+    from Kerniq.security.policy import SecurityPolicy
+    from Kerniq.tools.packs.terminal.tools import TerminalTools
+
+    monkeypatch.setattr("Kerniq.sandbox.venv.ensure_sandbox_python", lambda workspace: None)
+    tool = TerminalTools(tmp_path, SecurityPolicy(tmp_path))
+    ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="sleep")
+
+    async def go():
+        async def flip():
+            await asyncio.sleep(0.3)
+            ctx.cancelled = True
+
+        asyncio.create_task(flip())
+        return await tool.execute({"command": "sleep 30", "timeout": 20}, ctx)
+
+    result = asyncio.run(asyncio.wait_for(go(), timeout=5))
+    assert result.stop_reason == "cancelled"
+
+
 def test_router_does_not_swap_provider():
     from Kerniq.models.router import ModelRouter
 

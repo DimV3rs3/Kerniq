@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import logging
 import sys
 import tomllib
@@ -44,18 +43,20 @@ def normalize_manifest_data(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _plugin_disabled(context, plugin_id: str) -> bool:
-    """True when state/plugins/<id>.json sets enabled to false. Missing means on."""
+    """True when plugins.json says this plugin is off. Missing means on."""
     try:
         storage = getattr(getattr(context, "config", None), "storage", None)
         state = getattr(storage, "state_dir", None)
         if not state:
             return False
-        safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in plugin_id)
-        path = Path(state) / "plugins" / f"{safe}.json"
-        if not path.is_file():
-            return False
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return isinstance(data, dict) and data.get("enabled") is False
+        from ..settings.file import PLUGINS_FILE, read_state_file
+
+        raw = read_state_file(state, PLUGINS_FILE)
+        components = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+        block = components.get(plugin_id)
+        if isinstance(block, dict):
+            return block.get("enabled") is False
+        return False
     except Exception:
         return False
 
@@ -76,6 +77,25 @@ class PluginManager:
         for item in sorted(plugins_dir.iterdir()):
             if item.is_dir() and (item / "manifest.toml").exists():
                 await self._load_plugin(item, skip_ids=skipped)
+        self._reconcile_settings()
+
+    def _reconcile_settings(self) -> None:
+        try:
+            context = self.context_factory()
+            state_dir = context.config.storage.state_dir
+        except Exception:
+            return
+        from ..plugins.fields import with_manager_fields
+        from ..settings.component_store import ComponentSettingsStore
+        schemas: Dict[str, Optional[SettingsSchema]] = {}
+        for plugin_id in self.manifests:
+            plugin = self.plugins.get(plugin_id)
+            getter = getattr(plugin, "settings_schema", None) if plugin is not None else None
+            schema = getter() if callable(getter) else None
+            title = getattr(self.manifests[plugin_id], "name", plugin_id)
+            schema = with_manager_fields(schema, plugin_id, title)
+            schemas[plugin_id] = schema
+        ComponentSettingsStore(state_dir).reconcile("plugin", schemas)
 
     async def _load_plugin(self, plugin_path: Path, *, skip_ids: Optional[set] = None) -> None:
         plugin_key = plugin_path.name
@@ -107,12 +127,6 @@ class PluginManager:
                 return
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
-            try:
-                from Kerniq.sandbox.deps import ensure_project_deps
-
-                ensure_project_deps(plugin_path)
-            except Exception as dep_error:
-                logger.warning("Dependency install for %s failed: %s", pid, dep_error)
             spec.loader.exec_module(module)
 
             # Prefer PluginImpl; fall back to first Plugin subclass

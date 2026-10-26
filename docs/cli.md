@@ -123,11 +123,17 @@ Built-in tool names include `read_file`, `write_file`, `create_file`,
 `edit_file`, `delete_file`, `list_directory`, `create_directory`,
 `file_exists`, `get_file_info`, `search_code`, `run_command`, `web_search`,
 and `fetch_url`. Packs can add more. `kerniq tools list` is the live list.
+`create_file`, `write_file`, `edit_file`, and `read_file` refuse Office suffixes. Those documents belong to the Office plugin.
 
 ## `kerniq plugins`
 
 ```bash
 kerniq plugins list
+kerniq plugins check catalog/Kerniq-llm-benchmark
+kerniq plugins install --path catalog/Kerniq-llm-benchmark
+kerniq plugins install owner/repo
+kerniq plugins updates
+kerniq plugins remove PLUGIN_ID --yes
 kerniq plugins validate
 kerniq plugins set plugin_web_ui -s port 9000
 kerniq plugins set plugin_web_ui -s host 0.0.0.0 -s server_mode true
@@ -138,6 +144,10 @@ kerniq plugins ui --host 127.0.0.1 --port 8765
 | Action | Meaning |
 |--------|---------|
 | `list` | Plugins discovered under `plugins/`. A plugin with **Show in plugin list** off is omitted. Prints `on` or `off`, and an error if loading failed. |
+| `check PATH` | Reports whether that folder is a complete standalone plugin. |
+| `install owner/repo` | Downloads that GitHub repository, checks it, and installs it under `plugins/<plugin_id>`. `--path FOLDER` installs a local folder. `--force` replaces an installed copy. |
+| `updates` | Compares each installed add-on with the GitHub repo or folder it came from. Kit plugins update with Kerniq. |
+| `remove ID --yes` | Deletes an installed add-on. The Web UI, Context Compact, and the Plugin Manager stay. |
 | `validate` | Writes missing plugin defaults and replaces values the schema rejects. Then loads every plugin. Exit `1` if a plugin failed to load. |
 | `set PLUGIN_ID -s NAME VALUE` | Saves one or more settings for that plugin. Repeat `-s`. An invalid value is refused and nothing from that call is applied. |
 | `ui` | Starts the Web UI and blocks until Ctrl+C. |
@@ -164,6 +174,22 @@ Web UI settings (`plugin_web_ui`):
 
 If the Web UI plugin is not found, the command prints the directories it
 searched and tells you to set `KERNIQ_ROOT`.
+
+## `kerniq autostart`
+
+```bash
+kerniq autostart on
+kerniq autostart off
+kerniq autostart status
+```
+
+`on` writes a sign-in entry and does not start a second UI while one is already open. The server starts in the background at the next sign-in. `off` removes the entry. The same switch is in the Web UI under Interface, Startup.
+
+| System | Entry |
+|--------|--------|
+| Windows | Startup folder, `Kerniq UI.vbs` |
+| Linux | systemd user service `kerniq-ui.service` when `systemctl --user` works, otherwise `~/.config/autostart/kerniq-ui.desktop` |
+| macOS | `~/Library/LaunchAgents/com.kerniq.ui.plist` |
 
 ## `kerniq sessions`
 

@@ -112,6 +112,17 @@
     "No tools discovered.": "Инструменты не найдены.",
     "No plugins discovered.": "Плагины не найдены.",
     "Photos, video, audio, and archives cannot be attached.": "Фото, видео, аудио и архивы прикреплять нельзя.",
+    "Hide": "Скрыть",
+    "Back": "Назад",
+    "owner/repo or words to search": "owner/repo или слова для поиска",
+    "Search": "Найти",
+    "Install": "Установить",
+    "Check updates": "Проверить обновления",
+    "Restart Kerniq to load it.": "Перезапустите Kerniq, чтобы плагин загрузился.",
+    "Included with Kerniq": "В комплекте Kerniq",
+    "Update available": "Есть обновление",
+    "Remove": "Удалить",
+    "No plugins found.": "Плагины не найдены.",
     "File dialog failed.": "Не удалось открыть окно выбора файла.",
     "Settings did not load.": "Не удалось загрузить настройки.",
     "Select a tool": "Выберите инструмент",
@@ -319,6 +330,9 @@
     "This clears local settings and cannot be undone.": "Локальные настройки будут стёрты, вернуть их нельзя.",
     "Nothing in this chat yet": "В этом чате пока пусто",
     "Ask the agent to edit a file, explain the code, or sketch the next change.": "Попросите агента поправить файл, объяснить код или набросать следующий шаг.",
-    "You can send the request again. If the provider did not answer, open API & model and check the address.": "Запрос можно отправить ещё раз. Если провайдер не ответил, откройте «API и модель» и проверьте адрес."
+    "You can send the request again. If the provider did not answer, open API & model and check the address.": "Запрос можно отправить ещё раз. Если провайдер не ответил, откройте «API и модель» и проверьте адрес.",
+    "Startup": "Автозапуск",
+    "Start the UI when you sign in": "Запускать UI при входе в систему",
+    "The Web UI starts in the background the next time you sign in on this computer. Nothing is sent off the machine. A second copy is not started while this page is open. Windows, Linux, and macOS each get their own sign-in entry. Turn it off here or with kerniq autostart off.": "Веб-интерфейс запустится в фоне при следующем входе на этом компьютере. Данные никуда не отправляются. Пока эта страница открыта, вторая копия не запускается. У Windows, Linux и macOS своя запись автозапуска. Выключить можно здесь или командой kerniq autostart off."
   }
 }

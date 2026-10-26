@@ -1,4 +1,3 @@
-# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -9,22 +8,18 @@ __pycache__/
 .kerniq-venv/
 /.kerniq/
 
-# Runtime
 /state/
 /sessions/
 /logs/
 *.log
 workspace/
 
-# Extra plugins. The shipped base is the Web UI and context compaction.
-# plugin_manager and benchmark_pro stay in the tree but are not the base set.
 /plugins/*
 !/plugins/web_ui/
 !/plugins/context_compact/
+!/plugins/plugin_manager/
 !/plugins/README.md
 
-# Extra tool packs. filesystem and plan stay because the agent cannot run without them.
-# The base interaction set is filesystem, plan, terminal, and web.
 /src/Kerniq/tools/packs/*
 !/src/Kerniq/tools/packs/__init__.py
 !/src/Kerniq/tools/packs/filesystem/

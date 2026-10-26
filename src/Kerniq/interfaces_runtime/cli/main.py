@@ -415,6 +415,16 @@ async def async_main(argv: Optional[list] = None) -> int:
     plugin_sub = plugin_parser.add_subparsers(dest="action")
     plugin_sub.add_parser("list")
     plugin_sub.add_parser("validate")
+    plugin_sub.add_parser("updates", help="Show which installed plugins have a newer version")
+    plugin_check = plugin_sub.add_parser("check", help="Check that a folder is a standalone Kerniq plugin")
+    plugin_check.add_argument("path")
+    plugin_install = plugin_sub.add_parser("install", help="Install a plugin from GitHub or from a folder")
+    plugin_install.add_argument("repo", nargs="?", default=None, help="owner/repo or a GitHub URL")
+    plugin_install.add_argument("--path", default=None, help="Install this folder instead of a GitHub repo")
+    plugin_install.add_argument("--force", action="store_true", help="Replace an installed copy")
+    plugin_remove = plugin_sub.add_parser("remove", help="Remove an installed add-on plugin")
+    plugin_remove.add_argument("name")
+    plugin_remove.add_argument("--yes", action="store_true")
     plugin_set = plugin_sub.add_parser("set", help="Set one plugin value: plugins set ID -s name value")
     plugin_set.add_argument("plugin_id")
     plugin_set.add_argument(
@@ -500,6 +510,15 @@ async def async_main(argv: Optional[list] = None) -> int:
         default="DimV3rs3/Kerniq",
         help="GitHub owner/repo (default: DimV3rs3/Kerniq)",
     )
+
+    autostart_parser = subparsers.add_parser(
+        "autostart",
+        help="Start the Web UI in the background at the next sign-in",
+    )
+    autostart_sub = autostart_parser.add_subparsers(dest="action")
+    autostart_sub.add_parser("on", help="Enable the sign-in entry. Does not start a second server now")
+    autostart_sub.add_parser("off", help="Remove the sign-in entry")
+    autostart_sub.add_parser("status", help="Show whether autostart is on")
 
     un_parser = subparsers.add_parser(
         "uninstall",
@@ -598,6 +617,25 @@ async def async_main(argv: Optional[list] = None) -> int:
         if info.error in ("auth",) and info.remote_version is None:
             return 1
         return 2 if info.is_newer else 0
+
+    if args.command == "autostart":
+        from Kerniq.devtools.autostart import configure, current
+
+        root = find_project_root() or Path.cwd()
+        action = getattr(args, "action", None)
+        if action == "on":
+            info = configure(True, project=root)
+        elif action == "off":
+            info = configure(False, project=root)
+        elif action == "status":
+            info = current(project=root)
+        else:
+            autostart_parser.print_help()
+            return 0
+        print(info["message"])
+        if info.get("path"):
+            print(info["path"])
+        return 0 if info.get("ok", True) else 1
 
     if args.command == "run":
         import os
@@ -743,6 +781,51 @@ async def async_main(argv: Optional[list] = None) -> int:
             return 0
     if args.command == "plugins":
         plugin_dirs = find_plugins_dirs()
+        if args.action in ("check", "install", "remove", "updates"):
+            from Kerniq.plugins.distribution import (
+                check_updates,
+                inspect_plugin,
+                install_github,
+                install_tree,
+                remove_plugin,
+            )
+
+            dest = plugin_dirs[0] if plugin_dirs else Path("plugins")
+            if args.action == "check":
+                report = inspect_plugin(args.path)
+                if report.get("kit"):
+                    print(f"{report.get('plugin_id')} is part of the Kerniq kit, not a separate plugin.")
+                elif report.get("standalone"):
+                    print(f"OK {report.get('plugin_id')} {report.get('version')} — standalone plugin.")
+                else:
+                    print("Not a standalone plugin.")
+                for err in report.get("errors") or []:
+                    print(f"  {err}")
+                return 0 if report.get("ok") else 1
+            if args.action == "install":
+                if args.path:
+                    result = install_tree(args.path, force=bool(args.force), plugins_dir=dest)
+                elif args.repo:
+                    result = install_github(args.repo, force=bool(args.force), plugins_dir=dest)
+                else:
+                    print("Give owner/repo or --path FOLDER.", file=sys.stderr)
+                    return 1
+                print(result.get("message") or result.get("error") or result)
+                return 0 if result.get("ok") else 1
+            if args.action == "remove":
+                result = remove_plugin(args.name, confirm=bool(args.yes), plugins_dir=dest)
+                print(result.get("message") or result.get("error") or result)
+                return 0 if result.get("ok") else 1
+            for row in check_updates(dest):
+                if row.get("kind") == "kit":
+                    print(f"  {row['plugin_id']:24} kit")
+                elif row.get("update"):
+                    print(f"  {row['plugin_id']:24} update {row.get('note')}")
+                elif row.get("error"):
+                    print(f"  {row['plugin_id']:24} check failed: {row['error']}")
+                else:
+                    print(f"  {row['plugin_id']:24} {row.get('note') or row.get('kind')}")
+            return 0
         if args.action == "list":
             for d in plugin_dirs:
                 await pm.discover_and_load(d)

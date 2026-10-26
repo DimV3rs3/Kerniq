@@ -28,6 +28,19 @@ def _ensure_collapse(schema: SettingsSchema | None, tool_id: str, title: str) ->
     return schema
 
 
+_OFFICE_SUFFIXES = {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp"}
+
+
+def _office_refusal(path: pathlib.Path) -> str | None:
+    if path.suffix.lower() not in _OFFICE_SUFFIXES:
+        return None
+    return (
+        f"{path.name} is an Office document, not plain text. "
+        "create_file, write_file, edit_file, and read_file do not create or change it. "
+        "Use office_create, office_read, and office_edit."
+    )
+
+
 class FileSystemToolBase(Tool):
     _PLAN_NAMES = frozenset({
         "file_exists",
@@ -358,6 +371,9 @@ class ReadFileTool(FileSystemToolBase):
             path = self._safe_path(arguments["path"], must_exist=True)
             if not path.is_file():
                 return self._create_error_result(call_id, f"Not a file: {arguments['path']}", "FS_ERROR")
+            refused = _office_refusal(path)
+            if refused:
+                return self._create_error_result(call_id, refused, "FS_OFFICE")
             from Kerniq.models.vision import sniff_image
 
             head = path.read_bytes()[:32]
@@ -506,7 +522,7 @@ class WriteFileTool(FileSystemToolBase):
 
     @property
     def description(self) -> str:
-        return "Creates or overwrites a file with the given content (relative to workspace)."
+        return "Creates or overwrites a text file. Office documents (.docx, .xlsx, .pptx, .odt, .ods, .odp and the legacy binaries) are refused."
 
     @property
     def input_schema(self) -> Dict[str, Any]:
@@ -524,6 +540,9 @@ class WriteFileTool(FileSystemToolBase):
         call_id = arguments.get("tool_call_id", "unknown")
         try:
             path = self._safe_path(arguments["path"])
+            refused = _office_refusal(path)
+            if refused:
+                return self._create_error_result(call_id, refused, "FS_OFFICE")
             if arguments.get("create_dirs", True):
                 path.parent.mkdir(parents=True, exist_ok=True)
             self._admit(path, arguments["content"])
@@ -551,7 +570,7 @@ class CreateFileTool(FileSystemToolBase):
 
     @property
     def description(self) -> str:
-        return "Creates a new file; fails if the file already exists."
+        return "Creates a new text file and fails if it already exists. It cannot create an Office document."
 
     @property
     def input_schema(self) -> Dict[str, Any]:
@@ -568,6 +587,9 @@ class CreateFileTool(FileSystemToolBase):
         call_id = arguments.get("tool_call_id", "unknown")
         try:
             path = self._safe_path(arguments["path"])
+            refused = _office_refusal(path)
+            if refused:
+                return self._create_error_result(call_id, refused, "FS_OFFICE")
             if path.exists():
                 return self._create_error_result(
                     call_id, f"File already exists: {arguments['path']}", "FS_EXISTS"
@@ -626,8 +648,8 @@ class EditFileTool(FileSystemToolBase):
     @property
     def description(self) -> str:
         return (
-            "Edits an existing file. Provide either (old_string + new_string) for "
-            "search-replace, or 'content' for full overwrite."
+            "Edits an existing text file. Provide either (old_string + new_string) for "
+            "search-replace, or content for a full overwrite. Office documents are refused: use office_edit."
         )
 
     @property
@@ -648,6 +670,9 @@ class EditFileTool(FileSystemToolBase):
         call_id = arguments.get("tool_call_id", "unknown")
         try:
             path = self._safe_path(arguments["path"], must_exist=True)
+            refused = _office_refusal(path)
+            if refused:
+                return self._create_error_result(call_id, refused, "FS_OFFICE")
             if not path.is_file():
                 return self._create_error_result(call_id, f"Not a file: {arguments['path']}", "FS_ERROR")
 

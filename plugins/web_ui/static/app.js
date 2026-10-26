@@ -65,6 +65,15 @@ const UI_I18N = {
     modelNoVision: 'This model cannot view images.',
     hide: 'Hide',
     back: 'Back',
+    pluginRepoPh: 'owner/repo or words to search',
+    pluginSearch: 'Search',
+    pluginInstall: 'Install',
+    pluginCheckUpdates: 'Check updates',
+    pluginRestart: 'Restart Kerniq to load it.',
+    pluginKit: 'Included with Kerniq',
+    pluginUpdateReady: 'Update available',
+    pluginRemove: 'Remove',
+    pluginNoMatches: 'No plugins found.',
     scrollDown: 'Scroll to bottom',
     tempTip: 'Higher temperature makes replies more varied and less predictable. Lower keeps them closer to the most likely wording. 0.7 is the default.',
     providersEmpty: 'No providers yet. Check the base URL under API & model, then refresh.',
@@ -134,6 +143,9 @@ const UI_I18N = {
     langPacksBtn: 'Language packs…',
     groupStatus: 'Status bar',
     showFooter: 'Show status footer',
+    groupStartup: 'Startup',
+    uiAutostart: 'Start the UI when you sign in',
+    uiAutostartTip: 'The Web UI starts in the background the next time you sign in on this computer. Nothing is sent off the machine. A second copy is not started while this page is open. Windows, Linux, and macOS each get their own sign-in entry. Turn it off here or with kerniq autostart off.',
     groupNotifications: 'Notifications',
     showNotifications: 'Show notifications',
     autoDismissNotifications: 'Automatically dismiss notifications',
@@ -4404,6 +4416,7 @@ function renderToolDetail(id) {
   });
 }
 let showHiddenPlugins = false;
+let pluginUpdateMap = {};
 function renderPluginsList() {
   const el = document.getElementById('s-plugins-list');
   if (!el) return;
@@ -4441,6 +4454,13 @@ function renderPluginsList() {
       st.className = 'plugin-badge err';
       st.textContent = p.status;
       badges.appendChild(st);
+    }
+    const news = pluginUpdateMap[p.id];
+    if (news && news.update) {
+      const up = document.createElement('span');
+      up.className = 'plugin-badge hide';
+      up.textContent = t('pluginUpdateReady');
+      badges.appendChild(up);
     }
     const name = document.createElement('span');
     name.className = 'tname';
@@ -4555,6 +4575,9 @@ function pluginFormHtml(p) {
   });
   if (groups.length) html += '</div>';
   if (!fields.length && !actions.length) html += '<div class="empty">No settings</div>';
+  if (!p.source || p.source.kind !== 'kit') {
+    html += '<div class="plugin-actions"><button type="button" class="ghost" data-plugin-remove="' + esc(p.id) + '">' + esc(t('pluginRemove')) + '</button></div>';
+  }
   return html;
 }
 function bindPluginForm(panel, p) {
@@ -5038,6 +5061,84 @@ if (_refreshModelsBtn) _refreshModelsBtn.onclick = () => refreshModelsSelect(doc
 document.getElementById('s-show-hidden-plugins')?.addEventListener('change', (ev) => {
   showHiddenPlugins = !!ev.target.checked;
   renderPluginsList();
+});
+function pluginResult(result) {
+  if (!result || result.ok === false || result.error) {
+    toast((result && (result.error || result.message)) || t('error'), true);
+    return;
+  }
+  toast(result.message || t('done'));
+  if (result.restart) toast(t('pluginRestart'));
+  loadComponents().catch(() => {});
+}
+document.getElementById('plugin-search')?.addEventListener('click', async () => {
+  const q = document.getElementById('plugin-repo');
+  const hits = document.getElementById('plugin-search-hits');
+  if (!hits) return;
+  hits.innerHTML = '';
+  const found = await api('/api/plugins/search', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: (q && q.value) || '' }),
+  });
+  if (!found || found.ok === false) { toast((found && found.error) || t('error'), true); return; }
+  const repos = found.repos || [];
+  if (!repos.length) { hits.textContent = t('pluginNoMatches'); return; }
+  repos.forEach(repo => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'ghost plugin-hit';
+    row.textContent = repo.full_name + (repo.description ? ' — ' + repo.description : '');
+    row.addEventListener('click', () => { if (q) q.value = repo.full_name; });
+    hits.appendChild(row);
+  });
+});
+document.getElementById('plugin-install')?.addEventListener('click', async () => {
+  const q = document.getElementById('plugin-repo');
+  const repo = (q && q.value || '').trim();
+  if (!repo) return;
+  const result = await api('/api/plugins/install', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repo: repo }),
+  });
+  pluginResult(result);
+});
+document.getElementById('plugin-updates')?.addEventListener('click', async () => {
+  const box = document.getElementById('plugin-update-list');
+  const data = await api('/api/plugins/updates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  pluginUpdateMap = {};
+  (data.updates || []).forEach(row => { pluginUpdateMap[row.plugin_id] = row; });
+  renderPluginsList();
+  if (!box) return;
+  box.innerHTML = '';
+  (data.updates || []).filter(row => row.kind !== 'kit').forEach(row => {
+    const line = document.createElement('div');
+    line.className = 'plugin-hit';
+    line.textContent = (row.name || row.plugin_id) + ' — ' + (row.note || row.error || '');
+    if (row.update && row.repo) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = t('pluginUpdateReady');
+      btn.addEventListener('click', async () => {
+        const body = row.kind === 'path' ? { path: row.repo, force: true } : { repo: row.repo, force: true };
+        pluginResult(await api('/api/plugins/install', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }));
+      });
+      line.appendChild(btn);
+    }
+    box.appendChild(line);
+  });
+});
+document.getElementById('plugin-modal-body')?.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest && ev.target.closest('[data-plugin-remove]');
+  if (!btn) return;
+  const result = await api('/api/plugins/remove', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: btn.getAttribute('data-plugin-remove') }),
+  });
+  if (result && result.ok) closePluginModal();
+  pluginResult(result);
 });
 document.getElementById('settings-nav')?.addEventListener('click', (ev) => {
   const s = ev.target.closest && ev.target.closest('.stab');
@@ -5631,6 +5732,16 @@ function refreshInterfaceControls() {
     });
     if ([...log.options].some(o => o.value === (saved.log_level || 'warning'))) log.value = saved.log_level || 'warning';
   }
+  refreshAutostart();
+}
+async function refreshAutostart() {
+  const box = document.getElementById('ui-autostart');
+  if (!box) return;
+  const data = await api('/api/ui/autostart').catch(() => null);
+  if (!data || document.activeElement === box) return;
+  box.checked = !!data.enabled;
+  const note = document.getElementById('ui-autostart-note');
+  if (note) note.textContent = data.message || '';
 }
 document.getElementById('ui-lang')?.addEventListener('change', async (e) => {
   const v = e.target.value;
@@ -5648,6 +5759,22 @@ document.getElementById('ui-port')?.addEventListener('change', (e) => setWebUiVa
 document.getElementById('ui-server')?.addEventListener('change', (e) => setWebUiValue('server_mode', !!e.target.checked));
 document.getElementById('ui-lan')?.addEventListener('change', (e) => setWebUiValue('lan_access', !!e.target.checked));
 document.getElementById('ui-log')?.addEventListener('change', (e) => setWebUiValue('log_level', e.target.value));
+document.getElementById('ui-autostart')?.addEventListener('change', async (e) => {
+  const on = !!e.target.checked;
+  const r = await api('/api/ui/autostart', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: on }),
+  });
+  const note = document.getElementById('ui-autostart-note');
+  if (r && r.error) {
+    e.target.checked = !on;
+    toast(String(r.error), true);
+    return;
+  }
+  if (note && r && r.message) note.textContent = r.message;
+  if (r && r.message) toast(r.message);
+});
 document.getElementById('ui-auto-think')?.addEventListener('change', (e) => {
   autoThink = !!e.target.checked;
   saveInterface({ auto_think: autoThink });

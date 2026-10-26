@@ -17,7 +17,7 @@ def _plugins_root() -> Path:
     return Path(__file__).resolve().parents[2] / "plugins"
 
 
-def test_plugin_register_settings_and_shutdown():
+def test_plugin_register_settings_and_shutdown(tmp_path):
     async def go():
         registry = ToolRegistry()
         pm = PluginManager(
@@ -35,21 +35,64 @@ def test_plugin_register_settings_and_shutdown():
             "plugin_list_installed",
         ):
             assert hidden not in offered
-        assert "benchmark_run" in names
-        assert "benchmark_run" not in offered
+        assert "benchmark_run" not in names
+        shipped = {
+            path.name for path in _plugins_root().iterdir()
+            if path.is_dir() and (path / "manifest.toml").is_file()
+        }
+        assert shipped == {"plugin_manager", "web_ui", "context_compact"}
+
+        from Kerniq.plugins.distribution import inspect_plugin, install_tree
         from Kerniq.plugins.extensions import scan_extensions
-        ext = scan_extensions(_plugins_root())
-        hosts = {(row["host"], row["slot"], row["plugin_id"]) for row in ext}
-        assert ("plugin_web_ui", "settings", "benchmark_pro") in hosts
-        assert ("plugin_web_ui", "panel", "benchmark_pro") in hosts
-        assert "plugin_context_compact" in pm.plugins or "plugin_compact" in pm.plugins or any(
-            "compact" in pid for pid in pm.plugins
-        )
+
+        repo = Path(__file__).resolve().parents[2]
+        bench = repo / "catalog" / "Kerniq-llm-benchmark"
+        compact_dir = _plugins_root() / "context_compact"
+        assert inspect_plugin(bench)["standalone"] is True
+        assert inspect_plugin(compact_dir)["kit"] is True
+        assert inspect_plugin(compact_dir)["standalone"] is False
+        assert inspect_plugin(_plugins_root() / "plugin_manager")["kit"] is True
+        assert inspect_plugin(_plugins_root() / "web_ui")["kit"] is True
+        assert install_tree(bench, plugins_dir=tmp_path)["ok"] is True
+        assert install_tree(compact_dir, plugins_dir=tmp_path)["ok"] is False
+        assert install_tree(_plugins_root() / "web_ui", plugins_dir=tmp_path)["ok"] is False
+        assert (tmp_path / "llm-benchmark" / ".kerniq-origin.json").is_file()
+        from Kerniq.plugins.distribution import check_updates, remove_plugin
+
+        assert remove_plugin("plugin_web_ui", confirm=True, plugins_dir=_plugins_root())["ok"] is False
+        assert (_plugins_root() / "web_ui" / "manifest.toml").is_file()
+        assert remove_plugin("plugin_context_compact", confirm=True, plugins_dir=_plugins_root())["ok"] is False
+        assert (_plugins_root() / "context_compact" / "manifest.toml").is_file()
+        current = {row["plugin_id"]: row for row in check_updates(tmp_path)}
+        assert current["llm-benchmark"]["update"] is False
+        bench_manifest = tmp_path / "llm-benchmark" / "manifest.toml"
+        bench_manifest.write_text(bench_manifest.read_text(encoding="utf-8").replace('version = "1.1.0"', 'version = "1.0.0"'))
+        newer = {row["plugin_id"]: row for row in check_updates(tmp_path)}
+        assert newer["llm-benchmark"]["update"] is True
+        assert "1.1.0" in newer["llm-benchmark"]["note"]
+
         compact = pm.plugins["plugin_context_compact"]
         compact.apply_settings({"enabled": False, "keep_last": 3})
         assert compact.cfg_enabled is False
         await pm.shutdown_all()
         assert pm.get_plugin_status("plugin_context_compact").value == "stopped"
+
+        registry2 = ToolRegistry()
+        pm2 = PluginManager(
+            lambda: PluginContext(logger=None, config=None, event_bus=None, tool_registry=registry2)
+        )
+        await pm2.discover_and_load(tmp_path)
+        names2 = {t.name for t in registry2.list_tools()}
+        offered2 = {spec["function"]["name"] for spec in registry2.get_tools_for_model()}
+        assert "benchmark_run" in names2
+        assert "benchmark_run" not in offered2
+        import shutil
+
+        shutil.copytree(_plugins_root() / "web_ui", tmp_path / "web_ui")
+        hosts = {(row["host"], row["slot"], row["plugin_id"]) for row in scan_extensions(tmp_path)}
+        assert ("plugin_web_ui", "settings", "llm-benchmark") in hosts
+        assert ("plugin_web_ui", "panel", "llm-benchmark") in hosts
+        await pm2.shutdown_all()
         return names
 
     names = asyncio.run(go())

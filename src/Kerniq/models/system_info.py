@@ -188,7 +188,7 @@ def recommend_for_lm_studio(
     else:
         recs.append("No clear GPU and no VRAM reading. Expect CPU inference and keep context modest.")
 
-    recs.append(f"CPU cores: {system.cpu_count}. Parallel tool calls stay sequential in v0.1.")
+    recs.append(f"CPU cores: {system.cpu_count}. Parallel tool calls stay sequential.")
     preferred_model = None
     if models:
         keywords = {

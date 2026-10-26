@@ -1,4 +1,4 @@
-# Kerniq 0.1.6
+# Kerniq 0.1.7
 
 Kerniq is a local-first platform for AI agents. One process takes a task, asks a model, runs the tools that model requests, and keeps the session. The same loop is used by the command line, the Web UI, and the MCP server. A model provider or a plugin is an adapter. It is not a second copy of the loop.
 
@@ -10,7 +10,7 @@ File tools may touch only the workspace you set. `run_command` is not an operati
 - Shares one settings store between the CLI and the Web UI: agent, API, prompt, chat, and interface in `state/settings.json`, tool values in `state/tools.json`, plugin values in `state/plugins.json`.
 - Ships tool packs for files, the workspace shell, the web, and the plan. The live list is `kerniq tools list`. A picture is sent only when the provider catalog says that model can see images. The model looks at a file with `view_image`, not by reading the bytes as text.
 - Keeps Plan mode and Act mode separate. Each mode has its own plan.
-- Loads plugins from folders under `plugins/`. A plugin's own tools live in that folder and are not agent commands unless that plugin's manifest says so. A plugin can add a screen to another plugin only when the host declares a slot for it. The benchmark plugin uses this to add a Benchmark section and a benchmark window to the Web UI.
+- Loads plugins from folders under `plugins/`. The default kit is the Web UI, Context Compact, and the Plugin Manager. Every other plugin is a separate folder Kerniq identifies by its manifest after it is installed. `catalog/` holds those plugins so they can be published on their own. They are not loaded until then. A plugin's own tools stay out of the agent's command list unless that plugin's manifest says so. A plugin can add a screen to another plugin only when the host declares a slot for it.
 - Includes server mode. One Kerniq process serves every browser. Each browser is a separate user with its own chats and its own workspace. MySQL is optional.
 - On a phone held upright, the Web UI stays in the agent chat. Landscape and desktop keep the editor layout.
 
@@ -73,7 +73,7 @@ Stop the UI from the status bar, or with Ctrl+C in the terminal that started it.
 
 ## Commands
 
-`kerniq` and `python -m Kerniq` are the same program after install. `kerniq --help` prints the command list. `kerniq --version` prints `0.1.6`. Every flag is in [docs/cli.md](docs/cli.md).
+`kerniq` and `python -m Kerniq` are the same program after install. `kerniq --help` prints the command list. `kerniq --version` prints `0.1.7`. Every flag is in [docs/cli.md](docs/cli.md).
 
 | Command | What it does |
 |---------|----------------|
@@ -82,7 +82,7 @@ Stop the UI from the status bar, or with Ctrl+C in the terminal that started it.
 | `kerniq models list` | Prints provider ids, then LM Studio models if that server answers. Also `loaded`, `load`, `unload-all`. |
 | `kerniq tools list` | Tools the agent can see, and the short phrase the UI shows. `tools settings` and `tools set KEY VALUE` read and write `state/tools.json`. |
 | `kerniq plugins list` | Plugins found under `plugins/`. `plugins validate` writes missing defaults and refuses values the schema rejects. `plugins set ID -s name value` saves one plugin setting. |
-| `kerniq plugins ui` | Starts the Web UI and blocks until Ctrl+C. `--host` and `--port` apply to this process only. `-s name value` saves a Web UI setting before the server starts. |
+| `kerniq plugins ui` | Starts the Web UI and blocks until Ctrl+C. `--host` and `--port` apply to this process only. `-s name value` saves a Web UI setting before the server starts. `kerniq autostart on` starts that same UI in the background at the next sign-in. |
 | `kerniq settings show` | Prints the shared settings. `settings set api.max_tokens null` leaves one reply uncapped. |
 | `kerniq sessions list` | Sessions written by `kerniq run` under `sessions/`. `sessions show ID` prints one. |
 | `kerniq server show` | Server-mode bind address, storage, and whether an API key exists. `server key` prints the key a remote console must send. `server init` creates the optional database. Kerniq creates the database. You do not create it first. |
@@ -107,7 +107,11 @@ kerniq run --server http://HOST:8765 --api-key KEY --task "Read the project"
 
 Platform defaults that are not per-user (LM Studio URL, limits, the MCP allow-list, `auto_install_deps`) live in `config/default.toml`. The first run writes the user defaults. A later change from the CLI or the Web UI replaces those values in the same file. `kerniq plugins validate` writes missing component defaults and drops a component that is no longer installed.
 
-Context trimming keeps the system prompt, the original user goal, and the newest complete tool-call groups. Token counts are an estimate (`len/4`) unless the provider returns usage or a context length. The Context Compact plugin can replace older turns with a memory note when the transcript crosses a percent of the model window. Its settings are in that plugin's folder.
+Context trimming keeps the system prompt, the original user goal, and the newest complete tool-call groups. Token counts are an estimate (`len/4`) unless the provider returns usage or a context length. Context Compact ships in the default kit. It can replace older turns with a memory note when the transcript crosses a percent of the model window. Its settings are in that plugin's folder. Turn it off there if you only want the trim.
+
+### System readings
+
+Kerniq reads this computer's operating system, CPU, memory, and, when `nvidia-smi` is present, GPU memory. Those readings stay on this computer. They are not sent to a model provider, to GitHub, or to any other host. Kerniq uses them locally, and a plugin may use the same local readings. The model advisor does that when it compares a model's quantization, parameter count, and context window with this machine. It does not upload the readings either.
 
 ### Plugins
 
@@ -120,7 +124,9 @@ expose_to_agent = true
 
 The default is hidden. Hidden tools are also left out of `kerniq tools list`, the system prompt, and MCP.
 
-A plugin may attach to another plugin only where the host allows it. The host returns slot names from `extension_slots()`. The other plugin offers `{host, slot, id, label, icon}` from `contributions()`. An offer is kept only when the host lists that slot. The Web UI offers `settings` and `panel`. The benchmark plugin fills both: a Benchmark item in settings, and a separate window with the run state. Copy a plugin folder into `plugins/` and restart. Details: [docs/plugins/development.md](docs/plugins/development.md).
+A plugin may attach to another plugin only where the host allows it. The host returns slot names from `extension_slots()`. The other plugin offers `{host, slot, id, label, icon}` from `contributions()`. An offer is kept only when the host lists that slot. The Web UI offers `settings` and `panel`. The LLM benchmark plugin fills both after it is installed: a Benchmark item in settings, and a separate window with the run state. It is not part of the kit. Its id is `llm-benchmark`. Copy a plugin folder into `plugins/` and restart, or install it from the Plugins tab. Details: [docs/plugins/development.md](docs/plugins/development.md).
+
+`create_file`, `write_file`, `edit_file`, and `read_file` refuse `.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, `.pptx`, `.odt`, `.ods`, and `.odp`. Those are Office documents. The Office plugin (`catalog/Kerniq-office`) creates and edits them, including numbered tables, styles, and fonts, for Microsoft Office and LibreOffice.
 
 ### Server mode
 
@@ -165,6 +171,7 @@ Uninstall resets settings, `sessions/`, `logs/`, and `state/`, then removes only
 ## Documentation
 
 - [docs/cli.md](docs/cli.md) — every command and flag
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) — what changed in 0.1.7
 - [docs/architecture/overview.md](docs/architecture/overview.md) — how the pieces fit
 - [docs/architecture/security.md](docs/architecture/security.md) — workspace and approvals
 - [docs/plugins/development.md](docs/plugins/development.md) — writing a plugin
@@ -173,4 +180,4 @@ Uninstall resets settings, `sessions/`, `logs/`, and `state/`, then removes only
 
 ## License
 
-MIT. See `LICENSE`.
+MIT. See [LICENSE](LICENSE).

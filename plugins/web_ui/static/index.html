@@ -420,6 +420,17 @@
           </div>
         </div>
         <div class="set-group">
+          <h3 data-i18n="groupStartup">Startup</h3>
+          <div class="field field-check">
+            <label class="check-line">
+              <input type="checkbox" id="ui-autostart" class="soft-check" data-keep-unlocked/>
+              <span data-i18n="uiAutostart">Start the UI when you sign in</span>
+              <span class="info-tip" tabindex="0" data-i18n-tip="uiAutostartTip" data-tip="The Web UI starts in the background the next time you sign in on this computer. Nothing is sent off the machine. A second copy is not started while this page is open. Windows, Linux, and macOS each get their own sign-in entry. Turn it off here or with kerniq autostart off.">i</span>
+            </label>
+          </div>
+          <p class="hint" id="ui-autostart-note"></p>
+        </div>
+        <div class="set-group">
           <h3 data-i18n="groupNotifications">Notifications</h3>
           <div class="field field-check">
             <label class="check-line">
@@ -468,6 +479,16 @@ Its options show up here.</div></div>
       </div>
       <div class="scard tabp" id="tab-plugins" style="display:none">
         <h2 data-i18n="plugins">Plugins</h2>
+        <div class="plugin-catalog">
+          <div class="path-pick">
+            <input class="input-std" id="plugin-repo" data-i18n-placeholder="pluginRepoPh" placeholder="owner/repo or words to search" autocomplete="off"/>
+            <button type="button" id="plugin-search" data-i18n="pluginSearch">Search</button>
+            <button type="button" id="plugin-install" data-i18n="pluginInstall">Install</button>
+            <button type="button" class="ghost" id="plugin-updates" data-i18n="pluginCheckUpdates">Check updates</button>
+          </div>
+          <div id="plugin-search-hits" class="plugin-hits"></div>
+          <div id="plugin-update-list" class="plugin-hits"></div>
+        </div>
         <label class="check-line" style="margin:0 0 10px">
           <input type="checkbox" id="s-show-hidden-plugins" class="soft-check"/>
           <span data-i18n="showHiddenPlugins">Show hidden plugins</span>

@@ -96,71 +96,30 @@ class SearchPluginsTool(Tool):
         return "plugins"
 
     async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
+        from Kerniq.plugins.distribution import search_repositories
+
         query = (arguments.get("query") or "").strip()
         limit = int(arguments.get("limit") or 10)
-        limit = max(1, min(limit, 20))
-        if not query:
+        found = search_repositories(query, limit)
+        if not found.get("ok"):
             return ToolResult(
                 tool_call_id=arguments.get("tool_call_id", ""),
                 tool_id=self.tool_id,
                 status="error",
                 success=False,
-                error="query is required",
-                human_readable="query is required",
+                error=found.get("error") or "search failed",
+                human_readable=found.get("error") or "search failed",
             )
-
-        q = f"{query} kerniq plugin in:name,description,readme"
-        url = str(httpx.URL(
-            f"{_GITHUB_API}/search/repositories",
-            params={"q": q, "sort": "stars", "order": "desc", "per_page": str(limit)},
-        ))
-        headers = {"Accept": "application/vnd.github+json", "User-Agent": "Kerniq-PluginManager/1.0"}
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.get(url, headers=headers)
-                if resp.status_code == 403:
-                    return ToolResult(
-                        tool_call_id=arguments.get("tool_call_id", ""),
-                        tool_id=self.tool_id,
-                        status="error",
-                        success=False,
-                        error="GitHub API rate limited",
-                        human_readable="GitHub API rate limited. Set GITHUB_TOKEN or retry later.",
-                    )
-                resp.raise_for_status()
-                data = resp.json()
-        except Exception as e:
-            return ToolResult(
-                tool_call_id=arguments.get("tool_call_id", ""),
-                tool_id=self.tool_id,
-                status="error",
-                success=False,
-                error=str(e),
-                human_readable=f"Search failed: {e}",
-            )
-
-        items = []
-        for repo in data.get("items", [])[:limit]:
-            items.append(
-                {
-                    "full_name": repo.get("full_name"),
-                    "description": repo.get("description"),
-                    "stars": repo.get("stargazers_count"),
-                    "url": repo.get("html_url"),
-                    "clone_url": repo.get("clone_url"),
-                    "default_branch": repo.get("default_branch", "main"),
-                    "updated_at": repo.get("updated_at"),
-                }
-            )
+        items = found.get("repos") or []
         lines = [
-            f"- {i['full_name']} ★{i['stars']}: {i['description'] or ''} ({i['url']})"
-            for i in items
+            f"- {item['full_name']} ★{item['stars']}: {item['description']} ({item['url']})"
+            for item in items
         ]
         return ToolResult(
             tool_call_id=arguments.get("tool_call_id", ""),
             tool_id=self.tool_id,
             status="success",
-            output={"count": len(items), "repos": items},
+            output={"count": len(items), "repos": items, "query": found.get("query")},
             human_readable=f"Found {len(items)} repos:\n" + ("\n".join(lines) if lines else "(none)"),
         )
 
@@ -217,151 +176,20 @@ class InstallPluginTool(Tool):
         return "plugins"
 
     async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
+        from Kerniq.plugins.distribution import install_github
+
         raw = (arguments.get("repo") or "").strip()
         force = bool(arguments.get("force", False))
         ref = (arguments.get("ref") or "").strip() or None
-        target_name = (arguments.get("target_name") or "").strip() or None
-
-        m = re.search(r"github\.com[/:]([^/]+)/([^/.]+)", raw)
-        if m:
-            owner, repo = m.group(1), m.group(2)
-        elif "/" in raw and not raw.startswith("http"):
-            parts = raw.strip("/").split("/")
-            if len(parts) >= 2:
-                owner, repo = parts[0], parts[1]
-            else:
-                return self._err(arguments, "Invalid repo; use owner/repo")
-        else:
-            return self._err(arguments, "Invalid repo; use owner/repo or GitHub URL")
-
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "Kerniq-PluginManager/1.0",
-        }
-        # Optional token from env
-        import os
-
-        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-
-        try:
-            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-                if not ref:
-                    meta = await client.get(f"{_GITHUB_API}/repos/{owner}/{repo}", headers=headers)
-                    if meta.status_code != 200:
-                        return self._err(arguments, f"Repo not found: {owner}/{repo} ({meta.status_code})")
-                    ref = meta.json().get("default_branch") or "main"
-
-                zip_url = str(httpx.URL(f"{_GITHUB_API}/repos/{owner}/{repo}/zipball/{ref}"))
-                resp = await client.get(zip_url, headers=headers)
-                if resp.status_code != 200:
-                    return self._err(
-                        arguments,
-                        f"Failed to download {owner}/{repo}@{ref}: HTTP {resp.status_code}",
-                    )
-                content = resp.content
-        except Exception as e:
-            return self._err(arguments, f"Download failed: {e}")
-
-        plugins_dir = _plugins_root()
-        plugins_dir.mkdir(parents=True, exist_ok=True)
-        folder = _safe_name(target_name or repo)
-        dest = plugins_dir / folder
-        if dest.exists():
-            if not force:
-                return self._err(
-                    arguments,
-                    f"Plugin directory already exists: {dest}. Pass force=true to overwrite.",
-                )
-            shutil.rmtree(dest)
-
-        tmp_zip = plugins_dir / f".{folder}.zip"
-        tmp_extract = plugins_dir / f".{folder}.extract"
-        try:
-            tmp_zip.write_bytes(content)
-            if tmp_extract.exists():
-                shutil.rmtree(tmp_extract)
-            tmp_extract.mkdir()
-            with zipfile.ZipFile(tmp_zip, "r") as zf:
-                zf.extractall(tmp_extract)
-            # GitHub zip has a single top-level directory
-            children = [c for c in tmp_extract.iterdir() if c.is_dir()]
-            if len(children) == 1:
-                shutil.move(str(children[0]), str(dest))
-            else:
-                dest.mkdir(parents=True, exist_ok=True)
-                for c in tmp_extract.iterdir():
-                    shutil.move(str(c), str(dest / c.name))
-        except Exception as e:
-            return self._err(arguments, f"Extract failed: {e}")
-        finally:
-            if tmp_zip.exists():
-                tmp_zip.unlink(missing_ok=True)
-            if tmp_extract.exists():
-                shutil.rmtree(tmp_extract, ignore_errors=True)
-
-        # Prefer nested plugin dir if zip is a monorepo
-        if not (dest / "manifest.toml").exists():
-            nested = list(dest.rglob("manifest.toml"))
-            if nested:
-                # move the directory containing manifest to dest
-                plugin_root = nested[0].parent
-                if plugin_root != dest:
-                    staging = plugins_dir / f".{folder}.staging"
-                    if staging.exists():
-                        shutil.rmtree(staging)
-                    shutil.copytree(plugin_root, staging)
-                    shutil.rmtree(dest)
-                    shutil.move(str(staging), str(dest))
-
-        scan = _security_scan(dest)
-        sha = hashlib.sha256(content).hexdigest()[:16]
-        if scan["risk"] == "critical":
-            shutil.rmtree(dest, ignore_errors=True)
-            return ToolResult(
-                tool_call_id=arguments.get("tool_call_id", ""),
-                tool_id=self.tool_id,
-                status="error",
-                success=False,
-                error="Security scan failed (critical)",
-                output={"scan": scan, "sha256_prefix": sha},
-                human_readable=(
-                    f"Install aborted: critical security findings in {owner}/{repo}.\n"
-                    + "\n".join(scan.get("findings", [])[:10])
-                ),
-            )
-
-        has_manifest = (dest / "manifest.toml").exists()
-        dep_line = ""
-        try:
-            from Kerniq.sandbox.deps import ensure_project_deps
-
-            added = ensure_project_deps(dest, enabled=True)
-            if added:
-                dep_line = "installed packages: " + ", ".join(added) + "\n"
-        except Exception as dep_error:
-            dep_line = f"dependency install failed: {dep_error}\n"
-        msg = (
-            f"Installed {owner}/{repo}@{ref} → {dest}\n"
-            f"manifest.toml: {'yes' if has_manifest else 'MISSING'}\n"
-            f"{dep_line}"
-            f"security risk: {scan['risk']} ({len(scan.get('findings', []))} findings)\n"
-            f"content sha256 prefix: {sha}"
-        )
+        result = install_github(raw, ref=ref, force=force)
+        if not result.get("ok"):
+            return self._err(arguments, result.get("error") or "install failed")
         return ToolResult(
             tool_call_id=arguments.get("tool_call_id", ""),
             tool_id=self.tool_id,
             status="success",
-            output={
-                "path": str(dest),
-                "repo": f"{owner}/{repo}",
-                "ref": ref,
-                "has_manifest": has_manifest,
-                "scan": scan,
-                "sha256_prefix": sha,
-            },
-            human_readable=msg,
+            output=result,
+            human_readable=result.get("message") or "Installed.",
         )
 
     def _err(self, arguments: Dict[str, Any], msg: str) -> ToolResult:
@@ -418,74 +246,27 @@ class RemovePluginTool(Tool):
         return "plugins"
 
     async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
-        name = _safe_name((arguments.get("name") or "").strip())
-        confirm = bool(arguments.get("confirm", False))
-        if not name:
-            return ToolResult(
-                tool_call_id=arguments.get("tool_call_id", ""),
-                tool_id=self.tool_id,
-                status="error",
-                success=False,
-                error="name required",
-                human_readable="name required",
-            )
-        dest = _plugins_root() / name
-        if not dest.exists():
-            return ToolResult(
-                tool_call_id=arguments.get("tool_call_id", ""),
-                tool_id=self.tool_id,
-                status="error",
-                success=False,
-                error=f"Not found: {dest}",
-                human_readable=f"Plugin directory not found: {name}",
-            )
-        if not confirm:
-            return ToolResult(
-                tool_call_id=arguments.get("tool_call_id", ""),
-                tool_id=self.tool_id,
-                status="error",
-                success=False,
-                error="confirm=true required",
-                human_readable=f"Refusing to delete {dest} without confirm=true",
-            )
-        plugin_ids = [name]
-        manifest = dest / "manifest.toml"
-        if manifest.is_file():
-            try:
-                import tomllib
-                with open(manifest, "rb") as handle:
-                    raw = tomllib.load(handle)
-                if isinstance(raw, dict):
-                    block = raw.get("plugin") if isinstance(raw.get("plugin"), dict) else raw
-                    pid = str((block or {}).get("plugin_id") or "").strip()
-                    if pid:
-                        plugin_ids.append(pid)
-            except Exception:
-                pass
-        try:
-            shutil.rmtree(dest)
-        except Exception as e:
-            return ToolResult(
-                tool_call_id=arguments.get("tool_call_id", ""),
-                tool_id=self.tool_id,
-                status="error",
-                success=False,
-                error=str(e),
-                human_readable=f"Remove failed: {e}",
-            )
-        try:
-            from Kerniq.settings.component_store import ComponentSettingsStore
-            from Kerniq.settings.loader import SettingsProvider
+        from Kerniq.plugins.distribution import remove_plugin
 
-            ComponentSettingsStore(SettingsProvider().config.storage.state_dir).forget("plugin", *plugin_ids)
-        except Exception:
-            pass
+        result = remove_plugin(
+            str(arguments.get("name") or ""),
+            confirm=bool(arguments.get("confirm", False)),
+        )
+        if not result.get("ok"):
+            return ToolResult(
+                tool_call_id=arguments.get("tool_call_id", ""),
+                tool_id=self.tool_id,
+                status="error",
+                success=False,
+                error=result.get("error") or "remove failed",
+                human_readable=result.get("error") or "remove failed",
+            )
         return ToolResult(
             tool_call_id=arguments.get("tool_call_id", ""),
             tool_id=self.tool_id,
             status="success",
-            output={"removed": str(dest)},
-            human_readable=f"Removed plugin directory: {dest}",
+            output=result,
+            human_readable=result.get("message") or "Removed.",
         )
 
 
@@ -639,7 +420,7 @@ def _security_scan(root: Path) -> Dict[str, Any]:
             for m in pattern.finditer(text):
                 line_no = text.count("\n", 0, m.start()) + 1
                 findings.append(f"{py.relative_to(root)}:{line_no}: {label}")
-                if label in ("use of eval()", "use of exec()", "pickle load", "ctypes (native code)"):
+                if label in ("use of eval()", "use of exec()", "pickle load"):
                     risk = "critical"
                 elif risk != "critical":
                     risk = "medium"

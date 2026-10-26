@@ -19,13 +19,13 @@ def test_benchmark_plugin_schema_validates():
     import importlib.util
     from pathlib import Path
 
-    path = Path(__file__).resolve().parents[2] / "plugins" / "benchmark_pro" / "main.py"
-    spec = importlib.util.spec_from_file_location("benchmark_pro_main", path)
+    path = Path(__file__).resolve().parents[2] / "catalog" / "Kerniq-llm-benchmark" / "main.py"
+    spec = importlib.util.spec_from_file_location("llm-benchmark_main", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     plugin = mod.PluginImpl()
     assert plugin.manifest is not None
-    assert plugin.manifest.plugin_id == "benchmark_pro"
+    assert plugin.manifest.plugin_id == "llm-benchmark"
     schema = plugin.settings_schema()
     assert all(isinstance(field.type, SettingType) for field in schema.fields)
     slots = mod.slots_from({"task": "one", "system_2": "be brief", "task_2": "two", "task_3": ""})
@@ -38,8 +38,8 @@ def test_results_dir_stays_inside_the_workspace(tmp_path):
     import importlib.util
     from pathlib import Path
 
-    path = Path(__file__).resolve().parents[2] / "plugins" / "benchmark_pro" / "main.py"
-    spec = importlib.util.spec_from_file_location("benchmark_pro_paths", path)
+    path = Path(__file__).resolve().parents[2] / "catalog" / "Kerniq-llm-benchmark" / "main.py"
+    spec = importlib.util.spec_from_file_location("llm-benchmark_paths", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     default = mod.results_dir(tmp_path, "")
@@ -124,8 +124,8 @@ def test_rank_puts_a_failed_load_behind_a_finished_run():
     import importlib.util
     from pathlib import Path
 
-    path = Path(__file__).resolve().parents[2] / "plugins" / "benchmark_pro" / "main.py"
-    spec = importlib.util.spec_from_file_location("benchmark_pro_rank", path)
+    path = Path(__file__).resolve().parents[2] / "catalog" / "Kerniq-llm-benchmark" / "main.py"
+    spec = importlib.util.spec_from_file_location("llm-benchmark_rank", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     ranked = mod.rank_rows([
@@ -198,7 +198,7 @@ def _benchmark_module(name: str):
     import importlib.util
     from pathlib import Path
 
-    path = Path(__file__).resolve().parents[2] / "plugins" / "benchmark_pro" / "main.py"
+    path = Path(__file__).resolve().parents[2] / "catalog" / "Kerniq-llm-benchmark" / "main.py"
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -208,7 +208,7 @@ def _benchmark_module(name: str):
 def test_catalog_order_trim_and_final_analyzer():
     import random
 
-    mod = _benchmark_module("benchmark_pro_select")
+    mod = _benchmark_module("llm-benchmark_select")
     rows = []
     for index, (weight, context) in enumerate((
         (1, 2048), (1, 8192), (2, 4096), (3, 4096), (4, 8192),

@@ -1,34 +1,35 @@
 # Plugins
 
-Each plugin is one folder under `plugins/`. Kerniq discovers the folder. The core does not import a plugin by name. Copy a folder in and restart.
+Kerniq loads every folder under `plugins/` that has a manifest. It does not import a plugin by name.
 
-```
-plugins/<name>/
-  manifest.toml
-  main.py
-  tools/__init__.py    # optional; create_tools(plugin) -> list of tools
-  README.md
-  resources/           # optional
-  static/              # optional
+The default kit is the shell, the compactor, and the installer:
+
+| Folder | Id | What it is |
+|--------|-----|------------|
+| `web_ui/` | `plugin_web_ui` | Browser UI. Host slots: `settings`, `panel`. |
+| `context_compact/` | `plugin_context_compact` | Replaces older turns with a memory note when the window fills. |
+| `plugin_manager/` | `plugin_plugin_manager` | Search, install, remove, and check updates for other plugins. |
+
+Anything else is a separate plugin. The copies in `catalog/` are not loaded. Install one and Kerniq identifies it by the `plugin_id` in its manifest.
+
+```bash
+kerniq plugins check catalog/Kerniq-llm-benchmark
+kerniq plugins install --path catalog/Kerniq-llm-benchmark
+kerniq plugins install owner/repo
+kerniq plugins updates
+kerniq plugins remove llm-benchmark --yes
 ```
 
-Tools in `tools/` load with the plugin. They are not agent commands unless `manifest.toml` says so:
+`catalog/Kerniq-office` and `catalog/Kerniq-model-advisor` install the same way. Their tools are offered to the model. The benchmark command is not.
+
+A plugin's tools stay inside the plugin unless its manifest says:
 
 ```toml
 [tools]
 expose_to_agent = true
 ```
 
-Leave the flag out, or set it to `false`, and the tool stays inside the plugin. It does not appear in the model prompt, `kerniq tools list`, or MCP.
-
-A plugin can add UI to another plugin only when that host returns the slot from `extension_slots()`. The guest lists the offer in `contributions()`. Offers for a slot the host did not declare are ignored.
-
-| Folder | Id | What it is |
-|--------|-----|------------|
-| `web_ui/` | `plugin_web_ui` | Browser UI. Host slots: `settings`, `panel`. |
-| `benchmark_pro/` | `benchmark_pro` | Runs the selected provider's models. Private tool. Adds a Benchmark section and window to the Web UI. |
-| `context_compact/` | `plugin_context_compact` | Replaces older turns with a memory note when the transcript gets large. |
-| `plugin_manager/` | `plugin_plugin_manager` | Lists, validates, and scaffolds other plugins and tool packs. |
+A plugin can add UI to another plugin only when that host returns the slot from `extension_slots()`. The guest lists the offer in `contributions()`.
 
 ```bash
 kerniq plugins list

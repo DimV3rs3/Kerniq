@@ -887,6 +887,11 @@ class UIHandler(BaseHTTPRequestHandler):
             return _json(self, 200, self._plugin_job(qs.get("id", "")))
         if path == "/api/benchmark/active":
             return _json(self, 200, self._benchmark_active())
+        if path == "/api/ui/autostart":
+            from Kerniq.devtools.autostart import current
+            from Kerniq.devtools.paths import find_project_root
+
+            return _json(self, 200, current(project=find_project_root()))
         _json(self, 404, {"error": "not found"})
 
     def do_POST(self) -> None:
@@ -969,6 +974,43 @@ class UIHandler(BaseHTTPRequestHandler):
             )
         if path == "/api/plugins/action":
             return _json(self, 200, self._start_plugin_action(data))
+        if path == "/api/plugins/search":
+            from Kerniq.plugins.distribution import search_repositories
+
+            found = search_repositories(str((data or {}).get("query") or ""), int((data or {}).get("limit") or 8))
+            return _json(self, 200, found)
+        if path == "/api/plugins/install":
+            from Kerniq.plugins.distribution import install_github, install_tree
+
+            force = bool((data or {}).get("force"))
+            local = str((data or {}).get("path") or "").strip()
+            repo = str((data or {}).get("repo") or "").strip()
+            if local:
+                result = install_tree(local, force=force, plugins_dir=self._plugins_dir())
+            elif repo:
+                result = install_github(repo, force=force, plugins_dir=self._plugins_dir())
+            else:
+                result = {"ok": False, "error": "Give owner/repo or a folder path."}
+            return _json(self, 200, result)
+        if path == "/api/plugins/remove":
+            from Kerniq.plugins.distribution import remove_plugin
+
+            result = remove_plugin(
+                str((data or {}).get("name") or ""),
+                confirm=True,
+                plugins_dir=self._plugins_dir(),
+            )
+            return _json(self, 200, result)
+        if path == "/api/plugins/updates":
+            from Kerniq.plugins.distribution import check_updates
+
+            return _json(self, 200, {"updates": check_updates(self._plugins_dir())})
+        if path == "/api/ui/autostart":
+            from Kerniq.devtools.autostart import configure
+            from Kerniq.devtools.paths import find_project_root
+
+            enabled = bool((data or {}).get("enabled"))
+            return _json(self, 200, configure(enabled, project=find_project_root()))
         if path == "/api/remote/run":
             return self._remote_run(data)
         _json(self, 404, {"error": "not found"})
@@ -1406,6 +1448,19 @@ class UIHandler(BaseHTTPRequestHandler):
                     item["values"] = {}
             if err:
                 item["error"] = err
+            from Kerniq.plugins.distribution import describe_source
+
+            item["source"] = describe_source(folder, item["id"])
+            item["version"] = ""
+            try:
+                import tomllib as _toml
+
+                with open(folder / "manifest.toml", "rb") as fh:
+                    _raw = _toml.load(fh)
+                _block = _raw.get("plugin") if isinstance(_raw, dict) and isinstance(_raw.get("plugin"), dict) else _raw
+                item["version"] = str((_block or {}).get("version") or "")
+            except Exception:
+                pass
             rows.append(item)
         if root.is_dir():
             from Kerniq.interfaces.settings_schema import SettingsSchema
@@ -2122,7 +2177,7 @@ class UIHandler(BaseHTTPRequestHandler):
             return {"error": "plugin_id and action_id are required"}
         if self._runtime_busy():
             return {"error": "An agent run is active. Wait for it to finish."}
-        if plugin_id == "benchmark_pro" and self._benchmark_busy():
+        if plugin_id == "llm-benchmark" and self._benchmark_busy():
             return {"error": "A benchmark is already running. It keeps going if you leave this screen."}
         job_id = str(uuid.uuid4())
         job = {"id": job_id, "plugin_id": plugin_id, "action_id": action_id, "status": "running", "result": None, "error": ""}
@@ -2176,7 +2231,7 @@ class UIHandler(BaseHTTPRequestHandler):
     def _benchmark_busy(self) -> bool:
         with STATE.jobs_lock:
             for job in STATE.jobs.values():
-                if job.get("plugin_id") == "benchmark_pro" and job.get("status") == "running":
+                if job.get("plugin_id") == "llm-benchmark" and job.get("status") == "running":
                     return True
         active = self._benchmark_active()
         return str(active.get("status") or "") == "running"

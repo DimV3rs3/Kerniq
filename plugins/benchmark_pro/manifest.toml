@@ -1,10 +1,14 @@
 [plugin]
 plugin_id = "benchmark_pro"
-name = "Professional LLM Benchmark"
-version = "1.0.0"
+name = "Model benchmark"
+version = "1.1.0"
 api_version = "1.0"
-entry_point = "main.BenchmarkProPlugin"
-description = "Advanced benchmarking tool for evaluating multiple LLMs on complex tasks using Kerniq's provider system."
+manifest_version = "1.0"
+entry_point = "main.PluginImpl"
+description = "Benchmarks the selected provider's models in sequence and writes the report under workspace/benchmarks."
 
 [capabilities]
 tools = true
+
+[tools]
+expose_to_agent = false

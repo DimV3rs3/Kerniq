@@ -155,6 +155,9 @@ class PluginManager:
                 logger.info("Plugin %s is disabled.", pid)
                 return
             if await plugin_instance.initialize(context):
+                from .folder_tools import register_folder_tools
+
+                register_folder_tools(plugin_instance, plugin_path, context)
                 self.plugins[pid] = plugin_instance
                 self.statuses[pid] = PluginStatus.AVAILABLE
                 logger.info("Plugin %s loaded successfully.", pid)

@@ -1,6 +1,6 @@
 [application]
 name = "AI Agent Platform"
-version = "0.1.5"
+version = "0.1.6"
 workspace_root = "./workspace"
 auto_install_deps = true
 
@@ -62,3 +62,9 @@ state_dir = "./state"
 enabled = true
 host = "127.0.0.1"
 port = 8765
+
+[server]
+enabled = false
+host = "127.0.0.1"
+port = 8765
+database_url = ""

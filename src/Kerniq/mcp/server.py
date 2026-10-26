@@ -179,12 +179,6 @@ class MCPServerAdapter:
             names or "(none — set [mcp] published_tools in config)",
             self.workspace,
         )
-        # stderr so clients reading stdout only see protocol frames
-        print(
-            f"kerniq-mcp: ready tools={names or []} workspace={self.workspace}",
-            flush=True,
-            file=__import__("sys").stderr,
-        )
 
         init_opts = server.create_initialization_options()
         async with stdio_server() as (read_stream, write_stream):

@@ -10,6 +10,23 @@ from ..interfaces.errors import SecurityError, ErrorCode
 from .command_guard import assess_command, blacklist_hit
 
 
+def _under_any(path: str, roots: list[str]) -> bool:
+    try:
+        target = Path(path).resolve()
+    except OSError:
+        target = Path(path)
+    for item in roots:
+        root = Path(item)
+        if target == root:
+            return True
+        try:
+            if target.is_relative_to(root):
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
 class RiskLevel(str, Enum):
     READ_ONLY = "read_only"
     LOW = "low"
@@ -81,6 +98,17 @@ class SecurityPolicy:
         self.auto_approve_up_to = parsed
 
     def validate_path(self, path: str) -> Path:
+        from Kerniq.server.homes import jail_root, logical_path
+
+        jail = jail_root()
+        if jail is not None:
+            try:
+                return logical_path(path, jail)
+            except PermissionError as exc:
+                raise SecurityError(
+                    ErrorCode.PERMISSION_DENIED,
+                    "Path is outside /workspace",
+                ) from exc
         raw = str(path)
         if "\x00" in raw or raw.startswith("\\\\") or raw.startswith("//"):
             raise SecurityError(
@@ -165,13 +193,14 @@ class SecurityPolicy:
         if name in ("write_file", "edit_file", "delete_file", "create_file", "move_file", "create_directory", "unzip"):
             from .task_scope import current_task
             task = current_task()
+            meta = getattr(task, "metadata", None) or {} if task is not None else {}
             external = []
-            if task is not None:
-                for item in ((getattr(task, "metadata", None) or {}).get("external_files") or []):
-                    try:
-                        external.append(str(Path(item).resolve()))
-                    except Exception:
-                        continue
+            for item in meta.get("external_files") or []:
+                try:
+                    external.append(str(Path(item).resolve()))
+                except Exception:
+                    continue
+            read_only = bool(meta.get("external_read_only", True))
             raw_paths = []
             for key in ("path", "destination", "src", "dst", "source"):
                 raw = arguments.get(key)
@@ -183,8 +212,10 @@ class SecurityPolicy:
                         resolved = str(Path(raw_path).resolve())
                     except Exception:
                         resolved = raw_path
-                    if resolved in external:
-                        return PolicyDecision.REQUIRE_APPROVAL
+                    if _under_any(resolved, external):
+                        if read_only:
+                            return PolicyDecision.DENY
+                        return PolicyDecision.ALLOW
 
         risk = self.resolve_risk(tool_id, risk_level, tool)
         if self.bypass_all:

@@ -34,6 +34,28 @@ def is_context_overflow(exc: BaseException) -> bool:
     return any(marker in text for marker in _OVERFLOW_MARKERS)
 
 
+def compose_plan_allowed(registry) -> bool:
+    """True when update_plan is enabled and included in Plan mode.
+
+    A disabled tool is not in the registry. Opting the plan tool out of Plan
+    also turns "Build a plan" off. Act can still use the tool when it is enabled.
+    """
+    if registry is None or not hasattr(registry, "list_tools"):
+        return False
+    try:
+        tools = registry.list_tools() or []
+    except Exception:
+        return False
+    for tool in tools:
+        if str(getattr(tool, "name", "") or "") != "update_plan":
+            continue
+        if getattr(tool, "agent_visible", True) is False:
+            continue
+        if bool(getattr(tool, "include_in_plan", False)):
+            return True
+    return False
+
+
 def apply_runtime(orchestrator, ui) -> None:
     """Copy agent/api/chat limits onto the orchestrator. None max_tokens means no cap."""
     agent = ui.agent
@@ -45,7 +67,14 @@ def apply_runtime(orchestrator, ui) -> None:
     orchestrator.max_content_loop_hits = max(1, retries)
     orchestrator.max_identical_tool_streak = max(2, retries)
     orchestrator.max_plan_continuations = max(1, retries)
-    orchestrator.finish_open_plan = True
+    want = bool(getattr(chat, "compose_plan", False))
+    already = getattr(orchestrator, "compose_plan", None)
+    if already is False:
+        want = False
+    if not compose_plan_allowed(getattr(orchestrator, "tool_registry", None)):
+        want = False
+    orchestrator.compose_plan = want
+    orchestrator.finish_open_plan = False
     orchestrator.generation_options = GenerationOptions(
         temperature=api.temperature if api.temperature is not None else 0.7,
         max_tokens=api.max_tokens,
@@ -74,8 +103,12 @@ async def probe_context_limit(provider, model: str) -> int:
             loaded_fallback = int(item["loaded_context_length"])
         if not limit:
             continue
-        if want and (mid == want or want in mid or mid in want):
+        from Kerniq.models.identity import same_model
+
+        if want and same_model(mid, want):
             return int(limit)
+    if want:
+        return 0
     return int(loaded_fallback or 0)
 
 
@@ -92,14 +125,34 @@ async def use_model_for_mode(provider, api, mode: str) -> Optional[str]:
     split = bool(getattr(api, "split_models", False))
     target = act_model if mode == "act" and split and act_model else plan_model
     if not target:
+        if hasattr(provider, "resolve_auto_model") and not str(getattr(provider, "model", "") or "").strip():
+            try:
+                resolved = await provider.resolve_auto_model()
+            except Exception:
+                logger.exception("auto model resolve failed")
+                resolved = None
+            if resolved and hasattr(provider, "model"):
+                provider.model = str(resolved)
+                logger.info("auto model for %s mode is %s", mode, resolved)
+        return None
+    already = False
+    if hasattr(provider, "model_is_loaded"):
+        try:
+            already = bool(await provider.model_is_loaded(target))
+        except Exception:
+            logger.exception("loaded-model check failed")
+            already = False
+    if already:
+        if hasattr(provider, "model"):
+            provider.model = target
+        logger.info("Model for %s mode is already loaded: %s", mode, target)
         return None
     current = str(getattr(provider, "model", "") or "").strip()
-    if current == target:
+    if current == target and not hasattr(provider, "load_model"):
         return None
     provider_id = str(getattr(api, "provider", "") or getattr(provider, "provider_id", "") or "")
     try:
-        if provider_id == "lm_studio" and hasattr(provider, "unload_all") and hasattr(provider, "load_model"):
-            await provider.unload_all()
+        if provider_id == "lm_studio" and hasattr(provider, "load_model"):
             await provider.load_model(target)
         elif provider_id == "ollama":
             import httpx
@@ -108,8 +161,6 @@ async def use_model_for_mode(provider, api, mode: str) -> Optional[str]:
             if base.endswith("/v1"):
                 base = base[:-3]
             async with httpx.AsyncClient(timeout=30) as client:
-                if current:
-                    await client.post(base + "/api/generate", json={"model": current, "keep_alive": 0})
                 await client.post(base + "/api/generate", json={"model": target, "keep_alive": "10m"})
         if hasattr(provider, "model"):
             provider.model = target
@@ -280,17 +331,14 @@ def act_followup_task(user_task: str, draft: str, *, max_iterations: int) -> str
     return (
         "You are in ACT. Plan mode is finished and its iteration budget does not carry over. "
         f"Yours starts at zero (limit {max_iterations}). Context compaction does not spend iterations.\n"
-        "The plan-mode transcript was cleared on purpose. "
         "The text under Draft is the research. The archived TODO is only titles of finished lookups. "
-        "Do not treat those titles as the audit, and do not copy them onto your TODO.\n"
-        "First write YOUR OWN action TODO with update_plan, before any other tool, from the original request and then from the draft. "
-        "You may search more after that list exists. Insert new items only among the current item and the items after it. "
-        "Do not delete items or rename existing ones. "
-        "Statuses: pending, active, done, frozen, failed. "
-        "A failed archive item is a lookup Plan already exhausted. Do not repeat it unless the draft says the fact is still required. "
-        "Mark your own item failed only after the same attempt is empty about three times, or you have given up. Not on the first miss. "
-        "failed stays on the list and does not block the end. frozen still does. "
-        "You cannot finish, refuse, or abandon the task while any item is pending, active, or frozen.\n\n"
+        "Do not treat those titles as the audit. Do not redo the reading just to rediscover the draft.\n"
+        "Every enabled tool is available. A new action TODO is optional. "
+        "Write one with update_plan only if it helps. Kerniq does not force it. "
+        "If you do write one, follow it. Statuses: pending, active, done, frozen, failed. "
+        "failed stays on the list and does not block the end. frozen does. "
+        "If you finish while items are still open, end with TASK_COMPLETED. "
+        "Kerniq records the unfinished items as failed.\n\n"
         "Draft from plan mode:\n"
         + (draft or "(no draft)")
         + "\n\nOriginal request:\n"
@@ -368,8 +416,13 @@ async def attach_compactor(orchestrator, workspace_config) -> None:
 
 
 def system_prompt_from_settings(ui, tool_names: list[str]) -> Optional[str]:
+    """Operator prompt only.
+
+    Tool definitions are sent as the native ``tools`` array. The server copies
+    that array into the model chat template, which is the call syntax the model
+    was trained on. A second catalog in this prompt makes it invent another.
+    ``tool_names`` stays in the signature for existing callers.
+    """
+    del tool_names
     system = (ui.prompt.system_prompt or "").strip() or None
-    if getattr(ui.prompt, "include_tool_catalog", True) and tool_names:
-        catalog = ", ".join(tool_names)
-        system = ((system or "") + f"\n\nAvailable tools: {catalog}.").strip()
     return system

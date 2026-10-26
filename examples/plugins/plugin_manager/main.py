@@ -11,7 +11,6 @@ import shutil
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
 
 import httpx
 
@@ -105,7 +104,10 @@ class SearchPluginsTool(Tool):
             )
 
         q = f"{query} kerniq plugin in:name,description,readme"
-        url = f"{_GITHUB_API}/search/repositories?q={quote(q)}&sort=stars&order=desc&per_page={limit}"
+        url = str(httpx.URL(
+            f"{_GITHUB_API}/search/repositories",
+            params={"q": q, "sort": "stars", "order": "desc", "per_page": str(limit)},
+        ))
         headers = {"Accept": "application/vnd.github+json", "User-Agent": "Kerniq-PluginManager/1.0"}
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
@@ -241,7 +243,7 @@ class InstallPluginTool(Tool):
                         return self._err(arguments, f"Repo not found: {owner}/{repo} ({meta.status_code})")
                     ref = meta.json().get("default_branch") or "main"
 
-                zip_url = f"{_GITHUB_API}/repos/{owner}/{repo}/zipball/{quote(ref)}"
+                zip_url = str(httpx.URL(f"{_GITHUB_API}/repos/{owner}/{repo}/zipball/{ref}"))
                 resp = await client.get(zip_url, headers=headers)
                 if resp.status_code != 200:
                     return self._err(

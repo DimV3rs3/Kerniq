@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from typing import Dict, Any, Optional, List, Tuple
@@ -54,13 +55,172 @@ def _normalize_host(base_url: str) -> str:
 
 
 def _is_local_host(host: str) -> bool:
-    h = host.lower()
-    return (
+    """Local and private addresses must not go through an HTTP proxy."""
+    h = (host or "").lower()
+    if (
         "localhost" in h
         or "127.0.0.1" in h
         or "[::1]" in h
         or h.startswith("http://0.0.0.0")
+        or h.startswith("https://0.0.0.0")
+    ):
+        return True
+    start = h.find("://")
+    name = h[start + 3:] if start >= 0 else h
+    name = name.split("/", 1)[0].split(":", 1)[0].strip("[]")
+    parts = name.split(".")
+    if len(parts) != 4 or not all(part.isdigit() for part in parts):
+        return False
+    a, b = int(parts[0]), int(parts[1])
+    if a == 10 or a == 192 and b == 168:
+        return True
+    return a == 172 and 16 <= b <= 31
+
+
+def _number(value: Any) -> Optional[float]:
+    """Positive number from an int, float, or a string like ``4.2 GB``."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if value > 0 else None
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return None
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([kmgt]?b)?", text, flags=re.I)
+    if not match:
+        return None
+    amount = float(match.group(1))
+    unit = (match.group(2) or "").lower()
+    scale = {"": 1, "b": 1, "kb": 1024, "mb": 1024 ** 2, "gb": 1024 ** 3, "tb": 1024 ** 4}
+    return amount * scale.get(unit, 1)
+
+
+def _size_bytes(payload: Dict[str, Any]) -> Optional[int]:
+    """On-disk weight. LM Studio reports ``size_bytes`` on ``/api/v1/models``."""
+    keys = (
+        "size_bytes", "sizeBytes", "file_size", "fileSize",
+        "model_size_bytes", "bytes", "size",
     )
+    for source in (payload, payload.get("info"), payload.get("metadata"), payload.get("stats")):
+        if not isinstance(source, dict):
+            continue
+        for key in keys:
+            amount = _number(source.get(key))
+            if amount is None:
+                continue
+            # A bare ``size: 7`` is a parameter count, not a file.
+            if key == "size" and amount < 10_000:
+                continue
+            return int(amount)
+    return None
+
+
+def _param_count(payload: Dict[str, Any]) -> Optional[float]:
+    """Parameter count. Prefers an explicit field, then ``7B`` / ``8x7B`` in the name."""
+    for source in (payload, payload.get("info"), payload.get("metadata")):
+        if not isinstance(source, dict):
+            continue
+        for key in ("parameter_count", "params", "n_params", "param_count"):
+            amount = _number(source.get(key))
+            if amount is None:
+                continue
+            return amount * 1e9 if amount < 10_000 else amount
+        text = str(source.get("params_string") or source.get("paramsString") or "").strip()
+        parsed = _params_in_text(text)
+        if parsed:
+            return parsed
+    blob = " ".join(
+        str(payload.get(key) or "")
+        for key in ("key", "id", "name", "display_name", "path")
+    )
+    return _params_in_text(blob)
+
+
+def _params_in_text(text: str) -> Optional[float]:
+    if not text:
+        return None
+    moe = re.search(r"(?i)(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*b\b", text)
+    if moe:
+        return float(moe.group(1)) * float(moe.group(2)) * 1e9
+    found = [
+        float(match.group(1)) * (1e9 if match.group(2).lower() == "b" else 1e6)
+        for match in re.finditer(r"(?i)(?:^|[^a-z0-9])(?:e)?(\d+(?:\.\d+)?)\s*([bm])\b", text)
+    ]
+    return max(found) if found else None
+
+
+def _quant_bits(payload: Dict[str, Any]) -> float:
+    quant = payload.get("quantization")
+    name = ""
+    if isinstance(quant, dict):
+        bits = _number(quant.get("bits_per_weight") if quant.get("bits_per_weight") is not None else quant.get("bits"))
+        if bits and bits <= 32:
+            return float(bits)
+        name = str(quant.get("name") or "")
+    elif quant:
+        name = str(quant)
+    blob = name + " " + " ".join(str(payload.get(key) or "") for key in ("id", "key", "name", "display_name"))
+    if re.search(r"(?i)\b(bf16|fp16|f16)\b", blob):
+        return 16.0
+    if re.search(r"(?i)\b(fp32|f32)\b", blob):
+        return 32.0
+    match = re.search(r"(?i)\b(?:iq|q|int|fp|bf|f)(\d{1,2})\b", blob)
+    if match:
+        bits = int(match.group(1))
+        if 1 <= bits <= 32:
+            return float(bits)
+    return 4.5
+
+
+def estimate_weight(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Bytes of the weights, plus the parameter count when LM Studio (or the name) has it.
+
+    ``size_bytes`` wins. Otherwise parameters × quantisation bits.
+    """
+    if not isinstance(payload, dict):
+        return {"size_bytes": None, "params": None, "weight_bytes": 0}
+    raw = payload.get("raw") if isinstance(payload.get("raw"), dict) else payload
+    size = _size_bytes(raw)
+    if size is None:
+        size = _size_bytes(payload)
+    params = _param_count(raw)
+    if params is None:
+        params = _param_count(payload)
+    weight = size
+    if not weight and params:
+        weight = int(params * _quant_bits(raw) / 8.0)
+    return {
+        "size_bytes": int(size) if size else None,
+        "params": float(params) if params else None,
+        "weight_bytes": int(weight or 0),
+    }
+
+
+def instance_ids_for_unload(instances: List[Dict[str, Any]], model_id: str) -> List[str]:
+    """Instance ids accepted by ``POST /api/v1/models/unload``.
+
+    The first loaded copy uses the catalog key as its id
+    (``google/gemma-4-e2b``). The next copy is ``key:2``. Both are real
+    instance ids. Treating the catalog key as "not an instance" skips the
+    unload, then the following load sees the model still loaded and leaves it.
+    """
+    from Kerniq.models.identity import instance_model_key, same_model
+
+    want = instance_model_key(model_id)
+    if not want:
+        return []
+    found: List[str] = []
+    for item in instances or []:
+        if not isinstance(item, dict):
+            continue
+        raw = str(item.get("instance_id") or item.get("id") or "").strip()
+        catalog = instance_model_key(str(item.get("model") or raw))
+        if not same_model(catalog, want):
+            continue
+        iid = raw or want
+        if iid and iid not in found:
+            found.append(iid)
+    return found
 
 
 class LMStudioProvider(ModelProvider):
@@ -195,17 +355,25 @@ class LMStudioProvider(ModelProvider):
                     break
             # Prefer loaded window for fill %; fall back to max
             effective = loaded_ctx or max_ctx
+            weight = estimate_weight(m)
+            from Kerniq.models.vision import model_sees_images
+
             result.append(
                 {
                     "id": mid,
                     "name": m.get("display_name") or mid,
                     "type": m.get("type"),
                     "architecture": m.get("architecture"),
+                    "capabilities": m.get("capabilities"),
                     "quantization": m.get("quantization"),
                     "loaded_instances": m.get("loaded_instances"),
                     "max_context_length": int(max_ctx) if max_ctx else None,
                     "context_length": int(effective) if effective else None,
                     "loaded_context_length": loaded_ctx,
+                    "size_bytes": weight["size_bytes"],
+                    "params": weight["params"],
+                    "weight_bytes": weight["weight_bytes"],
+                    "vision": model_sees_images(m),
                     "raw": m,
                 }
             )
@@ -389,7 +557,16 @@ class LMStudioProvider(ModelProvider):
             raw = m.get("raw") or m
             for inst in (raw.get("loaded_instances") or m.get("loaded_instances") or []):
                 item = dict(inst) if isinstance(inst, dict) else {"value": inst}
-                item.setdefault("model", m.get("id"))
+                from Kerniq.models.identity import instance_model_key
+
+                catalog = instance_model_key(str(m.get("id") or ""))
+                raw_id = str(item.get("model") or item.get("id") or catalog)
+                item["model"] = instance_model_key(raw_id) or catalog
+                if not item.get("instance_id"):
+                    inst_id = item.get("id")
+                    # The catalog key is the instance id of the first loaded copy.
+                    if inst_id:
+                        item["instance_id"] = str(inst_id)
                 loaded.append(item)
         return loaded
 
@@ -414,7 +591,25 @@ class LMStudioProvider(ModelProvider):
             results.append(await self.unload_model(str(iid)))
         return results
 
+    async def model_is_loaded(self, model_key: str) -> bool:
+        """True when this catalog key already has a loaded instance.
+
+        A second copy (``model:2``) counts. A different sibling does not.
+        """
+        from Kerniq.models.identity import instance_model_key, same_model
+
+        want = instance_model_key(model_key)
+        if not want:
+            return False
+        for item in await self.loaded_instances():
+            if same_model(str(item.get("model") or ""), want):
+                return True
+        return False
+
     async def load_model(self, model_key: str, context_length: Optional[int] = None) -> Dict[str, Any]:
+        if await self.model_is_loaded(model_key):
+            logger.info("load skipped, already loaded: %s", model_key)
+            return {"ok": True, "already_loaded": True, "model": model_key}
         payload: Dict[str, Any] = {"model": model_key}
         if context_length is not None:
             payload["context_length"] = context_length
@@ -449,17 +644,13 @@ class LMStudioProvider(ModelProvider):
 
     async def unload_model_instances(self, model_id: str) -> List[Dict[str, Any]]:
         """Unload every loaded instance of one model. Other models stay loaded."""
-        want = (model_id or "").strip()
+        from Kerniq.models.identity import instance_model_key
+
+        want = instance_model_key(model_id)
         if not want:
             return []
         results: List[Dict[str, Any]] = []
-        for item in await self.loaded_instances():
-            mid = str(item.get("model") or "")
-            if mid != want and want not in mid and mid not in want:
-                continue
-            iid = item.get("instance_id") or item.get("id")
-            if not iid or str(iid) == mid:
-                continue
+        for iid in instance_ids_for_unload(await self.loaded_instances(), want):
             results.append(await self.unload_model(str(iid)))
         return results
 
@@ -476,14 +667,20 @@ class LMStudioProvider(ModelProvider):
             if not isinstance(tdef, dict):
                 continue
             if tdef.get("type") == "function" and "function" in tdef:
-                out.append(tdef)
+                fn = dict(tdef.get("function") or {})
+                from Kerniq.models.text_tools import normalize_parameters
+
+                fn["parameters"] = normalize_parameters(fn.get("parameters"))
+                out.append({"type": "function", "function": fn})
                 continue
             name = tdef.get("name") or tdef.get("tool") or ""
             desc = tdef.get("description") or ""
             params = tdef.get("input_schema") or tdef.get("parameters") or {"type": "object", "properties": {}}
+            from Kerniq.models.text_tools import normalize_parameters
+
             out.append({
                 "type": "function",
-                "function": {"name": name, "description": desc, "parameters": params},
+                "function": {"name": name, "description": desc, "parameters": normalize_parameters(params)},
             })
         return out
 
@@ -501,6 +698,8 @@ class LMStudioProvider(ModelProvider):
                 args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
             except Exception:
                 args = {"raw": args_raw}
+            if isinstance(args, list):
+                args = {"items": args}
             tool_calls.append(
                 ToolCall(
                     id=str(tc.get("id") or uuid.uuid4()),
@@ -508,6 +707,10 @@ class LMStudioProvider(ModelProvider):
                     arguments=args if isinstance(args, dict) else {"raw": args},
                 )
             )
+        from Kerniq.models.text_tools import adopt_channel_calls
+
+        content, adopted = adopt_channel_calls(content or "", tool_calls or None)
+        tool_calls = list(adopted or [])
         assistant = Message(
             role=MessageRole.ASSISTANT,
             content=content or "",
@@ -557,7 +760,7 @@ class LMStudioProvider(ModelProvider):
         Priority:
         1. First *loaded* LLM (skip embeddings)
         2. First catalog LLM that has loaded_instances
-        3. None (caller must error — do not silently use an unloaded model)
+        3. First catalog LLM, even if it is not loaded yet
         """
         try:
             models = await self.list_models()
@@ -596,10 +799,13 @@ class LMStudioProvider(ModelProvider):
                     return str(mid)
         except Exception:
             pass
-        logger.warning(
-            "auto model: no loaded LLM found among %s catalog entries",
-            len(models),
-        )
+        for m in models:
+            if not is_llm(m):
+                continue
+            mid = m.get("id")
+            if mid:
+                logger.info("auto model -> first catalog %s", mid)
+                return str(mid)
         return None
 
     async def generate(self, request: ModelRequest) -> ModelResponse:
@@ -794,6 +1000,8 @@ class LMStudioProvider(ModelProvider):
                 args = json.loads(slot["arguments"] or "{}")
             except Exception:
                 args = {"raw": slot["arguments"]}
+            if isinstance(args, list):
+                args = {"items": args}
             tool_calls.append(
                 ToolCall(
                     id=slot["id"] or str(uuid.uuid4()),
@@ -802,6 +1010,10 @@ class LMStudioProvider(ModelProvider):
                 )
             )
         content = "".join(content_parts)
+        from Kerniq.models.text_tools import adopt_channel_calls
+
+        content, adopted = adopt_channel_calls(content, tool_calls or None)
+        tool_calls = list(adopted or [])
         reasoning = "".join(reasoning_parts) or None
         assistant = Message(
             role=MessageRole.ASSISTANT,

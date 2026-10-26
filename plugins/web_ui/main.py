@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
+import os
 import sys
 import threading
 import time
@@ -26,10 +28,66 @@ _TREE_LOCK = threading.Lock()
 
 logger = logging.getLogger("plugin.web_ui")
 
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
+
+def _ui_pid_path(context: Any) -> Optional[Path]:
+    cfg = getattr(context, "config", None)
+    state = getattr(getattr(cfg, "storage", None), "state_dir", None)
+    if not state:
+        return None
+    return Path(state) / "ui.pid"
+
+
+def _write_ui_pid(context: Any) -> None:
+    path = _ui_pid_path(context)
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"pid": os.getpid(), "role": "kerniq-web-ui"}),
+            encoding="utf-8",
+        )
+    except Exception:
+        logger.exception("could not write ui.pid")
+
+
+def _clear_ui_pid(context: Any) -> None:
+    path = _ui_pid_path(context)
+    if path is None or not path.is_file():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if int(data.get("pid") or 0) != os.getpid():
+            return
+        path.unlink()
+    except Exception:
+        logger.exception("could not remove ui.pid")
+
 _BLOCKED_ATTACH = {
-    "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "heic", "heif", "tif", "tiff",
+    "svg", "ico", "heic", "heif", "tif", "tiff",
     "mp4", "mov", "mkv", "webm", "avi", "wmv", "m4v", "mpg", "mpeg",
     "mp3", "wav", "ogg", "flac", "aac", "m4a", "wma", "opus",
     "exe", "dll", "bin", "iso", "dmg", "msi",
@@ -52,12 +110,10 @@ def _heuristic_title(text: str) -> str:
 
 
 def _model_ids_match(a: str, b: str) -> bool:
-    if not a or not b:
-        return False
-    if a == b or a in b or b in a:
-        return True
-    ta, tb = a.split("/")[-1], b.split("/")[-1]
-    return bool(ta and tb and (ta == tb or ta in tb or tb in ta))
+    """Exact id only. A shorter sibling is a different model."""
+    from Kerniq.models.identity import same_model
+
+    return same_model(a, b)
 
 
 def _clean_title(raw: str) -> str:
@@ -73,8 +129,12 @@ def _clean_title(raw: str) -> str:
     return line
 
 
-async def _title_from_loaded_model(provider, model_id: str, text: str) -> str:
-    """Ask one already-loaded model for a short title. Restores provider.model."""
+async def _title_from_loaded_model(provider, model_id: str, text: str) -> tuple:
+    """Ask one already-loaded model for a short title. Restores provider.model.
+
+    Returns (title, model id that actually answered). An empty title and a
+    mismatched id are both discarded by the caller.
+    """
     from uuid import uuid4
 
     from Kerniq.interfaces.models import GenerationOptions, Message, MessageRole, ModelRequest
@@ -103,13 +163,17 @@ async def _title_from_loaded_model(provider, model_id: str, text: str) -> str:
         response = await provider.generate(request)
     except Exception as exc:
         logger.info("embedding model did not return a title: %s", exc)
-        return ""
+        return "", ""
     finally:
         provider.model = saved
     raw = ""
     if response and response.messages:
         raw = response.messages[0].content or ""
-    return _clean_title(raw)
+    answered = ""
+    meta = getattr(response, "metadata", None) or {}
+    if isinstance(meta, dict):
+        answered = str(meta.get("model") or "").strip()
+    return _clean_title(raw), answered
 
 
 def _public_error(exc: BaseException) -> tuple[str, str]:
@@ -227,9 +291,15 @@ class _State:
     cancel_chats: set = set()
     # Absolute paths the file dialog on this process actually returned.
     granted_paths: set = set()
+    jobs: Dict[str, Dict[str, Any]] = {}
+    jobs_lock = threading.Lock()
+    pending: list = []
+    history = None
 
 
 STATE = _State()
+# Per request thread. Concurrent browsers must not share one global user id.
+_ui_user: contextvars.ContextVar[str] = contextvars.ContextVar("kerniq_ui_user", default="")
 from Kerniq.security.approval_broker import ApprovalBroker
 
 STATE.approvals = ApprovalBroker()
@@ -290,6 +360,9 @@ def transcript_rows(messages) -> list:
             name = getattr(msg, "name", None)
         if role not in ("user", "assistant", "tool"):
             continue
+        meta = msg.get("metadata") if isinstance(msg, dict) else getattr(msg, "metadata", None)
+        if isinstance(meta, dict) and meta.get("kerniq_internal"):
+            continue
         if role == "assistant" and not str(content).strip() and not calls:
             continue
         if role != "assistant" and not str(content).strip():
@@ -301,6 +374,14 @@ def transcript_rows(messages) -> list:
             row["tool_call_id"] = tool_call_id
         if name:
             row["name"] = name
+        if isinstance(meta, dict):
+            images = [
+                {"path": item.get("path"), "root": item.get("root"), "mime": item.get("mime")}
+                for item in (meta.get("images") or [])
+                if isinstance(item, dict) and item.get("path") and item.get("root")
+            ]
+            if images:
+                row["metadata"] = {"images": images}
         rows.append(row)
     return rows
 
@@ -429,6 +510,61 @@ def partial_assistant_text(events) -> str:
     return "".join(buf).strip()
 
 
+def _todo_plan_ready(tools: list) -> bool:
+    """Build-a-plan is available only when update_plan is enabled and in Plan mode."""
+    for tool in tools or []:
+        if not isinstance(tool, dict) or tool.get("name") != "update_plan":
+            continue
+        if tool.get("enabled") is False:
+            return False
+        values = tool.get("values") if isinstance(tool.get("values"), dict) else {}
+        if "include_in_plan" in values:
+            return bool(values.get("include_in_plan"))
+        return bool(tool.get("include_in_plan"))
+    return False
+
+
+def _pack_rows_from(tools: list) -> list:
+    from Kerniq.tools.loader import discover_pack_classes
+
+    rows = []
+    for cls in discover_pack_classes():
+        try:
+            pack = cls()
+            schema = pack.settings_schema()
+        except Exception:
+            logger.exception("pack schema")
+            continue
+        members = [
+            tool for tool in tools
+            if (tool.get("pack_id") or tool.get("category")) == pack.pack_id
+        ]
+        enabled = any(tool.get("enabled") is not False for tool in members) if members else False
+        values = {}
+        fields = list(getattr(schema, "fields", None) or [])
+        for field in fields:
+            seen = []
+            for tool in members:
+                raw = (tool.get("values") or {})
+                if field.key in raw:
+                    seen.append(raw.get(field.key))
+                else:
+                    seen.append(field.default)
+            if seen and all(item == seen[0] for item in seen):
+                values[field.key] = seen[0]
+            else:
+                values[field.key] = None
+        rows.append({
+            "id": pack.pack_id,
+            "name": pack.name,
+            "description": pack.description,
+            "enabled": enabled,
+            "schema": schema.to_public() if schema else None,
+            "values": values,
+        })
+    return rows
+
+
 def history_message(row: dict):
     from Kerniq.interfaces.models import Message, MessageRole, ToolCall
 
@@ -437,6 +573,9 @@ def history_message(row: dict):
     role = row.get("role")
     content = row.get("content") or ""
     if role not in ("user", "assistant", "tool"):
+        return None
+    meta = row.get("metadata")
+    if isinstance(meta, dict) and meta.get("kerniq_internal"):
         return None
     calls = []
     for tc in row.get("tool_calls") or []:
@@ -448,12 +587,22 @@ def history_message(row: dict):
         return None
     if role != "assistant" and not str(content).strip():
         return None
+    images = None
+    if isinstance(meta, dict):
+        kept = [
+            {"path": item.get("path"), "root": item.get("root"), "mime": item.get("mime")}
+            for item in (meta.get("images") or [])
+            if isinstance(item, dict) and item.get("path") and item.get("root")
+        ]
+        if kept:
+            images = {"images": kept}
     return Message(
         role=MessageRole(role),
         content=content,
         tool_calls=calls or None,
         tool_call_id=row.get("tool_call_id") or None,
         name=row.get("name") or None,
+        metadata=images,
     )
 
 
@@ -462,6 +611,18 @@ def _grant_path(path: str) -> None:
         STATE.granted_paths.add(str(Path(path).resolve()))
     except Exception:
         return
+
+
+def _forbidden_grant(path: Path) -> bool:
+    """Refuse the filesystem root and a few system trees. A chosen project folder is fine."""
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return True
+    posix = resolved.as_posix().rstrip("/") or "/"
+    if posix in {"/", "/etc", "/usr", "/bin", "/sbin", "/proc", "/sys", "/dev", "/root", "/boot", "/lib", "/var"}:
+        return True
+    return resolved.parent == resolved
 
 
 def _granted(path: str) -> bool:
@@ -476,6 +637,10 @@ def _json(handler: BaseHTTPRequestHandler, code: int, payload: Any) -> None:
     handler.send_response(code)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
+    if getattr(handler, "_kerniq_set_cookie", False) and getattr(handler, "_kerniq_user", ""):
+        from Kerniq.server.identity import cookie_header
+
+        handler.send_header("Set-Cookie", cookie_header(handler._kerniq_user))
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -487,6 +652,69 @@ def _read_json(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
         return json.loads(raw.decode("utf-8"))
     except Exception:
         return {}
+
+
+def _state_dir() -> Path:
+    cfg = getattr(getattr(STATE, "context", None), "config", None)
+    storage = getattr(cfg, "storage", None)
+    state = getattr(storage, "state_dir", None)
+    if state:
+        return Path(state)
+    from Kerniq.settings.loader import SettingsProvider
+
+    return Path(SettingsProvider().config.storage.state_dir)
+
+
+def _server_core() -> dict:
+    from Kerniq.server.settings import load_server_settings
+    from Kerniq.settings.loader import SettingsProvider
+
+    return load_server_settings(_state_dir(), SettingsProvider().config)
+
+
+def _history_store():
+    if STATE.history is not None:
+        return STATE.history
+    from Kerniq.server.store import open_history
+
+    core = _server_core()
+    STATE.history = open_history(_state_dir(), str(core.get("database_url") or ""))
+    return STATE.history
+
+
+def _identify(handler: BaseHTTPRequestHandler) -> tuple[str, str]:
+    from Kerniq.server.identity import resolve_user
+
+    core = _server_core() if STATE.server_mode else {}
+    user_id, set_cookie, kind = resolve_user(
+        handler.headers,
+        server_mode=bool(STATE.server_mode),
+        api_key=str(core.get("api_key") or ""),
+    )
+    handler._kerniq_user = user_id
+    handler._kerniq_set_cookie = set_cookie
+    handler._kerniq_kind = kind
+    _ui_user.set(user_id)
+    if STATE.server_mode and user_id:
+        _arm_user_fs(user_id)
+    return user_id, kind
+
+
+def _arm_user_fs(user_id: str):
+    """Pin this thread to one user folder and its disk limit."""
+    from Kerniq.server.homes import bind_jail, quota_bytes, quota_status, set_quota, user_home
+
+    core = _server_core()
+    folder = user_home(_state_dir(), user_id, core)
+    bind_jail(folder)
+    set_quota(quota_status(folder, quota_bytes(core)))
+    return folder
+
+
+def _history_key(user_id: str, chat_id: str) -> str:
+    if not STATE.server_mode:
+        return chat_id
+    return f"{user_id}\x1f{chat_id}"
 
 
 def _settings_store():
@@ -512,9 +740,28 @@ def _langpacks():
 
 
 def _workspace() -> Path:
+    if STATE.server_mode:
+        from Kerniq.server.homes import user_home
+
+        return user_home(_state_dir(), _ui_user.get() or "local", _server_core())
     store = _settings_store()
-    ws = Path(store.load().agent.workspace or "./workspace")
-    return ws.resolve()
+    raw = Path(store.load().agent.workspace or "./workspace")
+    if raw.is_absolute():
+        return raw.expanduser().resolve()
+    from Kerniq.devtools.paths import anchored_dir
+    from Kerniq.server.homes import gather_stray_workspace
+
+    return gather_stray_workspace(anchored_dir(raw), raw)
+
+
+def _workspace_label(ws: Path) -> str:
+    """What the browser may see. Never the machine path of a relative workspace."""
+    if STATE.server_mode:
+        return "/workspace"
+    configured = str(_settings_store().load().agent.workspace or "./workspace").strip() or "./workspace"
+    if Path(configured).is_absolute():
+        return configured
+    return configured
 
 
 
@@ -530,6 +777,10 @@ def _norm_rel(rel: str) -> str:
 
 
 def _safe(ws: Path, rel: str) -> Path:
+    if STATE.server_mode:
+        from Kerniq.server.homes import logical_path
+
+        return logical_path(rel or ".", ws)
     rel = _norm_rel(rel)
     ws = ws.resolve()
     target = (ws / (rel or ".")).resolve()
@@ -551,13 +802,26 @@ class UIHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
+        _identify(self)
         path, qs = _parse_qs(self.path)
+        if getattr(self, "_kerniq_kind", "") == "denied" and path.startswith("/api/"):
+            return _json(self, 401, {"error": "The API key was rejected."})
         if path in ("/", "/index.html"):
             return self._file(STATIC_DIR / "index.html", "text/html; charset=utf-8")
         if path == "/static/app.js":
             return self._file(STATIC_DIR / "app.js", "application/javascript; charset=utf-8")
         if path == "/static/styles.css":
             return self._file(STATIC_DIR / "styles.css", "text/css; charset=utf-8")
+        if path.startswith("/static/brand/"):
+            name = path.rsplit("/", 1)[-1]
+            if name not in {
+                "kerniq-mark.svg",
+                "kerniq-tile.svg",
+                "kerniq-white-out.svg",
+                "kerniq-black-out.svg",
+            }:
+                return _json(self, 404, {"error": "not found"})
+            return self._file(STATIC_DIR / "brand" / name, "image/svg+xml")
         if path.startswith("/static/vendor/"):
             name = path.rsplit("/", 1)[-1]
             safe = name.replace("-", "").replace("_", "").replace(".", "")
@@ -567,7 +831,10 @@ class UIHandler(BaseHTTPRequestHandler):
             ctype = "text/css; charset=utf-8" if name.endswith(".css") else "application/javascript; charset=utf-8"
             return self._file(f, ctype)
         if path == "/api/settings":
-            return _json(self, 200, _settings_store().load().model_dump())
+            from Kerniq.settings.browser import public_settings
+
+            payload = _settings_store().load().model_dump()
+            return _json(self, 200, public_settings(payload, server_mode=bool(STATE.server_mode)))
         if path == "/api/providers":
             from Kerniq.models.catalog import public_specs
             return _json(self, 200, {"providers": public_specs()})
@@ -582,6 +849,8 @@ class UIHandler(BaseHTTPRequestHandler):
             return _json(self, 200, self._tools())
         if path == "/api/plugins":
             return _json(self, 200, self._plugins())
+        if path == "/api/extensions":
+            return _json(self, 200, self._extensions())
         if path == "/api/models":
             return _json(self, 200, self._models())
         if path == "/api/lms/loaded":
@@ -590,6 +859,8 @@ class UIHandler(BaseHTTPRequestHandler):
             return _json(self, 200, self._tree(fresh=(qs.get("fresh") == "1")))
         if path == "/api/fs/file":
             return _json(self, 200, self._read_file(qs.get("path", "")))
+        if path == "/api/fs/download":
+            return self._download(qs.get("path", ""))
         if path == "/api/chat/events":
             return _json(self, 200, self._events(qs.get("run_id", ""), qs.get("cursor", "0")))
         if path == "/api/chat/snapshot":
@@ -606,15 +877,36 @@ class UIHandler(BaseHTTPRequestHandler):
             broker = STATE.approvals
             pending = broker.list_pending() if broker is not None else []
             return _json(self, 200, {"pending": pending})
+        if path == "/api/ui/chats":
+            return _json(self, 200, self._load_ui_chats())
+        if path == "/api/remote/events":
+            return self._remote_events(qs)
+        if path == "/api/models/load-plan":
+            return _json(self, 200, self._load_plan(qs.get("model", "")))
+        if path == "/api/plugins/job":
+            return _json(self, 200, self._plugin_job(qs.get("id", "")))
+        if path == "/api/benchmark/active":
+            return _json(self, 200, self._benchmark_active())
         _json(self, 404, {"error": "not found"})
 
     def do_POST(self) -> None:
+        _identify(self)
         path, _ = _parse_qs(self.path)
+        if getattr(self, "_kerniq_kind", "") == "denied":
+            return _json(self, 401, {"error": "The API key was rejected."})
         data = _read_json(self)
         if path == "/api/settings":
+            if STATE.server_mode:
+                return _json(self, 200, {"ok": True, "stored": "browser", "client_owned": True})
             store = _settings_store()
             store.update(data)
+            current = store.load()
+            if current.chat.compose_plan and not _todo_plan_ready(self._list_components().get("tools") or []):
+                current.chat.compose_plan = False
+                store.save(current)
             return _json(self, 200, store.load().model_dump())
+        if path == "/api/models":
+            return _json(self, 200, self._models(data if isinstance(data, dict) else None))
         if path == "/api/chat/run":
             return _json(self, 200, self._start_run(data))
         if path == "/api/component/settings":
@@ -642,8 +934,12 @@ class UIHandler(BaseHTTPRequestHandler):
             return _json(self, 200, self._reveal(data))
         if path == "/api/fs/pick_folder":
             return _json(self, 200, self._pick_folder())
+        if path == "/api/fs/pick_attach_folder":
+            return _json(self, 200, self._pick_attach_folder())
         if path == "/api/fs/pick_files":
             return _json(self, 200, self._pick_files())
+        if path == "/api/server/database":
+            return _json(self, 200, self._save_database(data))
         if path == "/api/lms/load":
             return _json(self, 200, self._lms_load(data))
         if path == "/api/shutdown":
@@ -671,16 +967,24 @@ class UIHandler(BaseHTTPRequestHandler):
                     (data or {}).get("comment"),
                 ),
             )
+        if path == "/api/plugins/action":
+            return _json(self, 200, self._start_plugin_action(data))
+        if path == "/api/remote/run":
+            return self._remote_run(data)
         _json(self, 404, {"error": "not found"})
 
     def do_PUT(self) -> None:
+        _identify(self)
         path, _ = _parse_qs(self.path)
         data = _read_json(self)
         if path == "/api/fs/file":
             return _json(self, 200, self._write_file(data))
+        if path == "/api/ui/chats":
+            return _json(self, 200, self._save_ui_chats(data))
         _json(self, 404, {"error": "not found"})
 
     def do_DELETE(self) -> None:
+        _identify(self)
         path, qs = _parse_qs(self.path)
         if path == "/api/fs/file":
             return _json(self, 200, self._delete_file(qs.get("path", "")))
@@ -693,6 +997,10 @@ class UIHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        if getattr(self, "_kerniq_set_cookie", False) and getattr(self, "_kerniq_user", ""):
+            from Kerniq.server.identity import cookie_header
+
+            self.send_header("Set-Cookie", cookie_header(self._kerniq_user))
         self.end_headers()
         self.wfile.write(body)
 
@@ -709,6 +1017,8 @@ class UIHandler(BaseHTTPRequestHandler):
 
         if STATE.context and STATE.context.tool_registry:
             for t in STATE.context.tool_registry.list_tools():
+                if getattr(t, "agent_visible", True) is False:
+                    continue
                 tools.append(_one(t))
         if not tools:
             try:
@@ -731,33 +1041,107 @@ class UIHandler(BaseHTTPRequestHandler):
                     )
         return {"plugins": plugins}
 
-    def _models(self) -> Dict[str, Any]:
+    def _extensions(self) -> Dict[str, Any]:
+        from Kerniq.devtools.paths import find_plugins_dirs
+        from Kerniq.plugins.extensions import scan_extensions
+
+        rows = []
+        seen = set()
+        for folder in find_plugins_dirs():
+            for row in scan_extensions(folder):
+                key = (row.get("host"), row.get("slot"), row.get("plugin_id"), row.get("id"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append(row)
+        return {"extensions": rows}
+
+    def _models(self, client: Dict[str, Any] | None = None) -> Dict[str, Any]:
         from Kerniq.models.factory import build_provider
 
         ui = _settings_store().load()
-        provider_id = ui.api.provider or "lm_studio"
-        try:
-            provider = build_provider(
-                provider_id,
-                api=ui.api,
-                timeout=float(ui.agent.timeout_seconds or 60),
+        client = client or {}
+        provider_id = str(client.get("provider") or ui.api.provider or "lm_studio").strip() or "lm_studio"
+        ui.api.provider = provider_id
+        if "base_url" in client:
+            ui.api.base_url = str(client.get("base_url") or "").strip()
+        if "api_token" in client:
+            ui.api.api_token = str(client.get("api_token") or "")
+        typed = str(ui.api.base_url or "").strip()
+        urls = [typed]
+        if STATE.server_mode:
+            from Kerniq.server.homes import (
+                LOCAL_PROVIDERS,
+                hide_unused_base_url,
+                local_model_candidates,
+                lock_model_api,
             )
-        except Exception as exc:
-            return {"models": [], "reachable": False, "error": str(exc), "provider": provider_id}
-        if not hasattr(provider, "list_models"):
-            return {"models": [], "reachable": True, "provider": provider_id}
-        try:
-            models = asyncio.run(asyncio.wait_for(provider.list_models(), 8))
-            chat = [m for m in models if not _is_junk_model(m)]
-            embeds = [m for m in models if _is_junk_model(m)]
+
+            saved = typed
+            try:
+                ui = hide_unused_base_url(ui)
+                ui = lock_model_api(ui, _server_core())
+            except PermissionError as exc:
+                return {"models": [], "reachable": False, "error": str(exc), "provider": provider_id}
+            if provider_id in LOCAL_PROVIDERS:
+                admin = str(ui.api.base_url or "")
+                stock = {
+                    "http://127.0.0.1:1234",
+                    "http://localhost:1234",
+                    "http://127.0.0.1:11434",
+                    "http://localhost:11434",
+                    "http://127.0.0.1:11434/v1",
+                    "http://localhost:11434/v1",
+                }
+                # A URL the user typed is the only address to ask.
+                # The stock default still falls back to the admin URL.
+                urls = [saved] if saved.rstrip("/") not in stock and saved else local_model_candidates(admin, saved)
+            else:
+                urls = [str(ui.api.base_url or "")]
+        last = ""
+        for url in urls or [""]:
+            if url:
+                ui.api.base_url = url
+            try:
+                provider = build_provider(
+                    provider_id,
+                    api=ui.api,
+                    timeout=float(ui.agent.timeout_seconds or 60),
+                )
+            except Exception as exc:
+                return {"models": [], "reachable": False, "error": str(exc), "provider": provider_id}
+            if not hasattr(provider, "list_models"):
+                return {"models": [], "reachable": True, "provider": provider_id}
+            try:
+                models = asyncio.run(asyncio.wait_for(provider.list_models(), 8))
+                chat = [m for m in models if not _is_junk_model(m)]
+                embeds = [m for m in models if _is_junk_model(m)]
+                return {
+                    "models": chat,
+                    "embeddings": embeds,
+                    "reachable": True,
+                    "provider": provider_id,
+                    "base_url": url or str(ui.api.base_url or ""),
+                }
+            except Exception as e:
+                last = str(e)
+                logger.info("model list failed for %s at %s: %s", provider_id, url, e)
+        if STATE.server_mode and provider_id in {"lm_studio", "ollama"}:
+            tried = urls[0] if urls else "http://127.0.0.1:1234"
             return {
-                "models": chat,
-                "embeddings": embeds,
-                "reachable": True,
+                "models": [],
+                "embeddings": [],
+                "reachable": False,
                 "provider": provider_id,
+                "error": (
+                    f"This server cannot reach the local model at {tried}. "
+                    "Start LM Studio on the server machine. It must listen on that address, "
+                    "usually http://127.0.0.1:1234. Another port: "
+                    "kerniq server set model-url http://127.0.0.1:PORT"
+                ),
+                "detail": last,
             }
-        except Exception as e:
-            return {"models": [], "embeddings": [], "reachable": False, "error": str(e), "provider": provider_id}
+        return {"models": [], "embeddings": [], "reachable": False, "error": last or "unreachable", "provider": provider_id}
 
     def _tree(self, fresh: bool = False) -> Dict[str, Any]:
         try:
@@ -795,7 +1179,8 @@ class UIHandler(BaseHTTPRequestHandler):
                         entries.append({"path": rel, "type": "file", "name": name, "hidden": hidden})
 
             walk(ws, "", 0)
-            data = {"entries": entries, "workspace": key}
+            shown = _workspace_label(ws)
+            data = {"entries": entries, "workspace": shown}
             cost = time.monotonic() - started
             with _TREE_LOCK:
                 _TREE_CACHE["tree"] = {"ws": key, "at": time.monotonic(), "ttl": min(30.0, cost * 10.0), "data": data}
@@ -814,12 +1199,48 @@ class UIHandler(BaseHTTPRequestHandler):
         except Exception as e:
             return {"error": str(e)}
 
+    def _download(self, rel: str) -> None:
+        if not STATE.server_mode:
+            return _json(self, 403, {"error": "Download is available in server mode."})
+        from Kerniq.server.transfer import build_download
+
+        try:
+            ws = _workspace()
+            target = _safe(ws, rel or ".")
+            body, filename, content_type = build_download(ws, target)
+        except FileNotFoundError:
+            return _json(self, 404, {"error": "not found"})
+        except PermissionError as exc:
+            return _json(self, 403, {"error": str(exc)})
+        except ValueError as exc:
+            return _json(self, 413, {"error": str(exc)})
+        except Exception as exc:
+            return _json(self, 400, {"error": str(exc)})
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        if getattr(self, "_kerniq_set_cookie", False) and getattr(self, "_kerniq_user", ""):
+            from Kerniq.server.identity import cookie_header
+
+            self.send_header("Set-Cookie", cookie_header(self._kerniq_user))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _write_file(self, data: Dict[str, Any]) -> Dict[str, Any]:
         try:
             rel = data.get("path") or ""
             path = _safe(_workspace(), rel)
+            content = data.get("content") or ""
+            if STATE.server_mode:
+                from Kerniq.server.homes import admit_bytes
+
+                old = path.stat().st_size if path.is_file() and not path.is_symlink() else 0
+                reason = admit_bytes(len(content.encode("utf-8")), old)
+                if reason:
+                    return {"error": reason}
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(data.get("content") or "", encoding="utf-8")
+            path.write_text(content, encoding="utf-8")
             return {"ok": True, "path": rel}
         except Exception as e:
             return {"error": str(e)}
@@ -878,6 +1299,8 @@ class UIHandler(BaseHTTPRequestHandler):
     def _reveal(self, data: Dict[str, Any]) -> Dict[str, Any]:
         import os
         import subprocess
+        if STATE.server_mode:
+            return {"error": "Show in explorer is not available in server mode."}
         try:
             rel = data.get("path") or ""
             path = _safe(_workspace(), rel)
@@ -916,6 +1339,7 @@ class UIHandler(BaseHTTPRequestHandler):
             status = "discovered"
             err = ""
             sch = None
+            actions = []
             try:
                 with open(folder / "manifest.toml", "rb") as fh:
                     data = normalize_manifest_data(tomllib.load(fh))
@@ -938,6 +1362,18 @@ class UIHandler(BaseHTTPRequestHandler):
                             inst = cls()
                             getter = getattr(inst, "settings_schema", None)
                             sch = getter() if callable(getter) else None
+                            actions = []
+                            try:
+                                raw_actions = inst.actions() if hasattr(inst, "actions") else []
+                                for action in raw_actions or []:
+                                    if isinstance(action, dict) and action.get("id"):
+                                        actions.append({
+                                            "id": str(action.get("id")),
+                                            "label": str(action.get("label") or action.get("id")),
+                                            "description": str(action.get("description") or ""),
+                                        })
+                            except Exception:
+                                logger.info("plugin actions unreadable: %s", folder.name, exc_info=True)
                             from Kerniq.plugins.fields import with_manager_fields
 
                             sch = with_manager_fields(sch, mid, mname)
@@ -961,6 +1397,7 @@ class UIHandler(BaseHTTPRequestHandler):
                 "status": status,
                 "schema": sch.to_public() if sch else None,
                 "values": {},
+                "actions": actions if status == "available" else [],
             }
             if sch is not None:
                 try:
@@ -1064,10 +1501,12 @@ class UIHandler(BaseHTTPRequestHandler):
                     "values": {},
                     "error": str(ex),
                 })
+            packs = _pack_rows_from(tools)
+            plan_ready = _todo_plan_ready(tools)
         except Exception as e:
             logger.exception("list components")
-            return {"tools": tools, "plugins": plugins, "error": str(e)}
-        return {"tools": tools, "plugins": plugins}
+            return {"tools": tools, "plugins": plugins, "packs": [], "plan_compose_available": False, "error": str(e)}
+        return {"tools": tools, "plugins": plugins, "packs": packs, "plan_compose_available": plan_ready}
 
     def _get_component_settings(self, qs):
         kind = qs.get("kind", "tool")
@@ -1085,8 +1524,9 @@ class UIHandler(BaseHTTPRequestHandler):
         values = data.get("values") or {}
         enabled = data.get("enabled", None)
         store = self._component_store()
-        # find schema
         listing = self._list_components()
+        if kind == "pack":
+            return self._save_pack_settings(cid, values, enabled, listing, store)
         coll = listing["tools"] if kind == "tool" else listing["plugins"]
         schema = None
         for item in coll:
@@ -1095,6 +1535,13 @@ class UIHandler(BaseHTTPRequestHandler):
                     from Kerniq.interfaces.settings_schema import SettingsSchema
                     schema = SettingsSchema(**item["schema"])
                 break
+        if kind == "plugin" and cid == "plugin_web_ui":
+            # The browser cannot change where Kerniq listens or turn server mode on.
+            locked = {"host", "port", "server_mode", "lan_access"}
+            current = store.load(kind, cid, schema)
+            for key in locked:
+                if key in current:
+                    values[key] = current[key]
         saved = store.save(kind, cid, values, schema)
         if enabled is not None and kind == "tool":
             from Kerniq.settings.loader import SettingsProvider
@@ -1108,9 +1555,56 @@ class UIHandler(BaseHTTPRequestHandler):
                 if item["id"] == cid:
                     et[item["name"]] = bool(enabled)
             toggles.update(enabled_tools=et)
+        self._lock_compose_plan()
         return {"ok": True, "values": saved}
 
+    def _save_pack_settings(self, pack_id, values, enabled, listing, store):
+        """Pack switches apply to every tool. Enabling a pack turns all of its tools on."""
+        members = [
+            item for item in (listing.get("tools") or [])
+            if (item.get("pack_id") or item.get("category")) == pack_id
+        ]
+        if not members:
+            return {"ok": False, "error": "unknown pack"}
+        from Kerniq.interfaces.settings_schema import SettingsSchema
+        from Kerniq.settings.loader import SettingsProvider
+        from Kerniq.tools.settings import ToolSettingsStore
+
+        toggles = ToolSettingsStore(SettingsProvider().config.storage.state_dir)
+        current = toggles.load()
+        flags = dict(current.enabled_tools or {})
+        applied = {}
+        for item in members:
+            schema = None
+            if item.get("schema"):
+                schema = SettingsSchema(**item["schema"])
+            merged = dict(item.get("values") or {})
+            for key, value in (values or {}).items():
+                if value is None:
+                    continue
+                merged[key] = value
+            applied[item["id"]] = store.save("tool", item["id"], merged, schema)
+            if enabled is not None:
+                flags[item["id"]] = bool(enabled)
+                flags[item["name"]] = bool(enabled)
+        if enabled is not None:
+            toggles.update(enabled_tools=flags)
+        self._lock_compose_plan()
+        return {"ok": True, "enabled": enabled, "values": applied}
+
+    def _lock_compose_plan(self) -> None:
+        if _todo_plan_ready(self._list_components().get("tools") or []):
+            return
+        store = _settings_store()
+        current = store.load()
+        if not current.chat.compose_plan:
+            return
+        current.chat.compose_plan = False
+        store.save(current)
+
     def _reset_settings(self, data):
+        if STATE.server_mode:
+            return {"error": "Server settings are changed on the server, not from a browser."}
         store = self._component_store()
         scope = data.get("scope", "all")
         if scope == "all":
@@ -1167,16 +1661,38 @@ class UIHandler(BaseHTTPRequestHandler):
                 raw = base64.b64decode(content_b64)
                 if len(raw) > 8_000_000:
                     return {"error": "attachment is larger than 8 MB"}
-                safe_name = re.sub(r"[^\w.\-]+", "_", name or "upload.bin")[:120]
-                dest = att / safe_name
-                # unique
-                i = 1
-                while dest.exists():
-                    dest = att / f"{dest.stem}_{i}{dest.suffix}"
-                    i += 1
+                relative = str(data.get("relative") or "").replace("\\", "/").strip().lstrip("/")
+                parts = [part for part in relative.split("/") if part and part not in {".", ".."}]
+                if not parts:
+                    parts = [re.sub(r"[^\w.\-]+", "_", name or "upload.bin")[:120] or "upload.bin"]
+                else:
+                    parts = [re.sub(r"[^\w.\-]+", "_", part)[:80] or "file" for part in parts]
+                dest = att.joinpath(*parts)
+                try:
+                    if not dest.resolve().is_relative_to(att.resolve()):
+                        return {"error": "attachment path leaves the workspace"}
+                except OSError:
+                    return {"error": "attachment path is not valid"}
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if dest.exists():
+                    stem = dest.stem
+                    suffix = dest.suffix
+                    i = 1
+                    while dest.exists():
+                        dest = dest.parent / f"{stem}_{i}{suffix}"
+                        i += 1
                 dest.write_bytes(raw)
                 rel = str(dest.relative_to(ws)).replace(chr(92), "/")
-                return {"ok": True, "path": rel, "workspace_relative": True}
+                folder = ""
+                if len(parts) > 1:
+                    folder = str((att / parts[0]).relative_to(ws)).replace(chr(92), "/")
+                return {
+                    "ok": True,
+                    "path": rel,
+                    "folder": folder,
+                    "directory": bool(folder),
+                    "workspace_relative": True,
+                }
             if not src:
                 return {"error": "source or content required"}
             import shutil
@@ -1203,78 +1719,152 @@ class UIHandler(BaseHTTPRequestHandler):
             return {"error": str(e)}
 
     def _server_info(self) -> Dict[str, Any]:
+        from Kerniq.server.firewall import lan_ipv4s
+
         server_mode = bool(getattr(STATE, "server_mode", False))
-        lan = _detect_lan_ip()
+        ips = lan_ipv4s()
+        lan = ips[0] if ips else _detect_lan_ip()
         bind = getattr(STATE, "host", "127.0.0.1")
         port = int(getattr(STATE, "port", 8765))
-        public = lan if (server_mode or bind in ("0.0.0.0", "::")) else bind
+        public = bind not in ("127.0.0.1", "localhost", "::1")
+        urls = [f"http://{ip}:{port}" for ip in ips] if (server_mode or public or bind in ("0.0.0.0", "::")) else [f"http://{bind}:{port}"]
         return {
             "server_mode": server_mode,
             "bind_host": bind,
             "port": port,
             "lan_ip": lan,
-            "public_url": f"http://{public}:{port}",
+            "urls": urls,
+            "public_url": urls[0] if urls else f"http://127.0.0.1:{port}",
             "local_url": f"http://127.0.0.1:{port}",
-            "folder_picker": "manual" if server_mode else "native",
-            "note": (
-                "Server mode: paths are on the Kerniq host. Use manual workspace path."
-                if server_mode
-                else "Client mode: OS folder dialog runs on this machine."
+            "firewall_note": str(getattr(STATE, "firewall_note", "") or ""),
+            "folder_picker": "upload" if server_mode else "native",
+            "storage_warning": self._storage_warning() if server_mode else "",
+            "workspace_display": "/workspace" if server_mode else "",
+            "model_base_url": str(_server_core().get("model_base_url") or "http://127.0.0.1:1234") if server_mode else "",
+            "disk": self._disk_status() if server_mode else None,
+            "queue": len(STATE.pending),
+            "proxy_note": (
+                "If the browser uses a proxy such as 127.0.0.1:10809, add this server's address "
+                "to the proxy bypass list. The request never reaches Kerniq, even when a port test succeeds."
+                if server_mode or bind in ("0.0.0.0", "::")
+                else ""
             ),
         }
 
-    def _pick_folder(self) -> Dict[str, Any]:
-        """Native folder dialog via tkinter (local desktop)."""
+    def _disk_status(self) -> Dict[str, Any]:
+        from Kerniq.server.homes import disk_note, quota_bytes, quota_status
+
+        try:
+            folder = _workspace()
+            status = quota_status(folder, quota_bytes(_server_core()))
+        except Exception:
+            logger.info("disk status failed", exc_info=True)
+            return {}
+        note = disk_note(status)
+        return {
+            "used": status["used"],
+            "limit": status["limit"],
+            "near": bool(status["near"]),
+            "full": bool(status["full"]),
+            "message": note,
+        }
+
+    def _save_database(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return {"error": "The database is configured on the server: kerniq server db --user USER --password PASS"}
+
+    def _native_dialog(self, kind: str):
+        """Folder and file dialogs only exist on a local desktop with tkinter.
+
+        A missing tkinter is normal on a server. Do not log a traceback and do
+        not ask pip to install it. tkinter is part of Python, not a package.
+        """
+        if STATE.server_mode:
+            return {
+                "error": (
+                    "In server mode each user stays in /workspace. "
+                    "The server cannot open a folder on another computer."
+                )
+            }
         try:
             import tkinter as tk
             from tkinter import filedialog
+        except ModuleNotFoundError:
+            logger.info("folder dialog unavailable: tkinter is not installed")
+            return {"error": "Folder dialog is unavailable on this machine. Type the workspace path instead."}
+        try:
             root = tk.Tk()
             root.withdraw()
-            root.attributes("-topmost", True)
-            path = filedialog.askdirectory(title="Select workspace")
+            try:
+                root.attributes("-topmost", True)
+            except Exception:
+                logger.info("folder dialog could not stay on top")
+            if kind == "files":
+                paths = filedialog.askopenfilenames(
+                    title="Attach files",
+                    filetypes=[
+                        ("Documents and code", "*.md *.txt *.py *.js *.ts *.tsx *.jsx *.json *.toml *.yml *.yaml *.html *.css *.rs *.go *.java *.c *.cpp *.h *.cs *.rb *.php *.sh *.sql *.xml *.csv *.vue *.svelte"),
+                        ("All files", "*.*"),
+                    ],
+                )
+                root.destroy()
+                return {"paths": list(paths or [])}
+            title = "Attach folder" if kind == "attach" else "Select workspace"
+            path = filedialog.askdirectory(title=title)
             root.destroy()
             if not path:
                 return {"cancelled": True}
             return {"path": path}
         except Exception as e:
-            logger.exception("pick_folder")
+            logger.info("folder dialog failed: %s", e)
             return {"error": f"Folder dialog unavailable: {e}"}
 
+    def _pick_attach_folder(self) -> Dict[str, Any]:
+        """Grant one directory chosen on this machine. Server mode uploads instead."""
+        picked = self._native_dialog("attach")
+        if picked.get("error") or picked.get("cancelled") or not picked.get("path"):
+            return picked
+        chosen = Path(picked["path"])
+        if _forbidden_grant(chosen):
+            return {"error": "That folder is too broad to attach."}
+        if not chosen.is_dir():
+            return {"error": "That path is not a folder."}
+        _grant_path(str(chosen))
+        return {"path": str(chosen.resolve()), "external": True, "directory": True}
+
+    def _pick_folder(self) -> Dict[str, Any]:
+        """Native folder dialog via tkinter (local desktop)."""
+        return self._native_dialog("workspace")
+
     def _pick_files(self) -> Dict[str, Any]:
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            paths = filedialog.askopenfilenames(
-                title="Attach files",
-                filetypes=[
-                    ("Documents and code", "*.md *.txt *.py *.js *.ts *.tsx *.jsx *.json *.toml *.yml *.yaml *.html *.css *.rs *.go *.java *.c *.cpp *.h *.cs *.rb *.php *.sh *.sql *.xml *.csv *.vue *.svelte"),
-                    ("All files", "*.*"),
-                ],
-            )
-            root.destroy()
-            if not paths:
-                return {"cancelled": True}
-            allowed = []
-            blocked = []
-            for raw in paths:
-                suffix = Path(raw).suffix.lower().lstrip(".")
-                if suffix in _BLOCKED_ATTACH:
-                    blocked.append(Path(raw).name)
-                    continue
-                allowed.append(raw)
-                _grant_path(raw)
-            return {"paths": allowed, "blocked": blocked}
-        except Exception as e:
-            logger.exception("pick_files")
-            return {"error": f"File dialog unavailable: {e}"}
+        picked = self._native_dialog("files")
+        if picked.get("error") or picked.get("cancelled"):
+            return picked
+        paths = picked.get("paths") or []
+        if not paths:
+            return {"cancelled": True}
+        allowed = []
+        blocked = []
+        for raw in paths:
+            suffix = Path(raw).suffix.lower().lstrip(".")
+            if suffix in _BLOCKED_ATTACH:
+                blocked.append(Path(raw).name)
+                continue
+            allowed.append(raw)
+            _grant_path(raw)
+        return {"paths": allowed, "blocked": blocked}
 
 
     def _lms_provider(self):
         from Kerniq.models.providers.lm_studio import LMStudioProvider
         ui = _settings_store().load()
+        if STATE.server_mode:
+            from Kerniq.server.homes import hide_unused_base_url, lock_model_api
+
+            try:
+                ui = hide_unused_base_url(ui)
+                ui = lock_model_api(ui, _server_core())
+            except PermissionError:
+                logger.info("browser model URL was refused in server mode")
         return LMStudioProvider(
             base_url=ui.api.base_url,
             api_key=ui.api.api_token or None,
@@ -1292,26 +1882,21 @@ class UIHandler(BaseHTTPRequestHandler):
                 "conflict": False,
                 "selected_loaded": bool(selected),
                 "provider": ui.api.provider,
+                "busy": False,
             }
         try:
             loaded = asyncio.run(self._lms_provider().loaded_instances())
             ui = _settings_store().load()
             selected = (ui.api.model or "").strip()
-
-            def _match(a: str, b: str) -> bool:
-                if not a or not b:
-                    return False
-                if a == b:
-                    return True
-                if a in b or b in a:
-                    return True
-                ta, tb = a.split("/")[-1], b.split("/")[-1]
-                return bool(ta and tb and (ta == tb or ta in tb or tb in ta))
+            from Kerniq.models.identity import instance_model_key, same_model
 
             selected_loaded = bool(
                 selected
                 and any(
-                    _match(str(x.get("model") or x.get("id") or ""), selected)
+                    same_model(
+                        instance_model_key(str(x.get("model") or x.get("id") or "")),
+                        instance_model_key(selected),
+                    )
                     for x in loaded
                 )
             )
@@ -1320,16 +1905,104 @@ class UIHandler(BaseHTTPRequestHandler):
                 "selected_model": selected,
                 "conflict": bool(loaded and selected and not selected_loaded),
                 "selected_loaded": selected_loaded,
+                "busy": self._runtime_busy(),
             }
         except Exception as e:
-            return {"loaded": [], "error": str(e), "selected_model": "", "conflict": False, "selected_loaded": False}
+            return {"loaded": [], "error": str(e), "selected_model": "", "conflict": False, "selected_loaded": False, "busy": False}
+
+    def _runtime_busy(self) -> bool:
+        with STATE.runs_lock:
+            return any(
+                not run.get("done") and not run.get("queued")
+                for run in STATE.runs.values()
+            )
+
+    def _storage_warning(self) -> str:
+        if not STATE.server_mode:
+            return ""
+        try:
+            return str(_history_store().warning or "")
+        except Exception:
+            logger.exception("history store")
+            from Kerniq.server.settings import JSON_STORAGE_WARNING
+
+            return JSON_STORAGE_WARNING
+
+    def _ui_chats_path(self) -> Path:
+        return _state_dir() / "ui_chats.json"
+
+    def _load_ui_chats(self) -> Dict[str, Any]:
+        user_id = getattr(self, "_kerniq_user", "local") or "local"
+        warning = self._storage_warning()
+        if STATE.server_mode:
+            try:
+                chats = _history_store().list_chats(user_id)
+            except Exception:
+                logger.exception("server chats")
+                chats = []
+            return {"chats": chats if isinstance(chats, list) else [], "storage_warning": warning}
+        path = self._ui_chats_path()
+        if not path.is_file():
+            return {"chats": [], "storage_warning": warning}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.info("ui chats unreadable", exc_info=True)
+            return {"chats": [], "storage_warning": warning}
+        chats = data.get("chats") if isinstance(data, dict) else data
+        return {"chats": chats if isinstance(chats, list) else [], "storage_warning": warning}
+
+    def _save_ui_chats(self, data) -> Dict[str, Any]:
+        chats = (data or {}).get("chats") if isinstance(data, dict) else None
+        if not isinstance(chats, list):
+            return {"error": "chats must be a list"}
+        user_id = getattr(self, "_kerniq_user", "local") or "local"
+        warning = self._storage_warning()
+        if STATE.server_mode:
+            try:
+                _history_store().save_chats(user_id, chats[-40:])
+            except Exception:
+                logger.exception("server chats save")
+                return {"error": "chats were not saved", "storage_warning": warning}
+            return {"ok": True, "count": len(chats[-40:]), "storage_warning": warning}
+        path = self._ui_chats_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps({"chats": chats[-40:]}, ensure_ascii=False)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(payload, encoding="utf-8")
+        tmp.replace(path)
+        return {"ok": True, "count": len(chats[-40:]), "storage_warning": warning}
+
+    def _load_plan(self, model: str) -> Dict[str, Any]:
+        from Kerniq.models.identity import instance_model_key
+        from Kerniq.models.load_policy import plan_model_load
+
+        info = self._lms_loaded()
+        selected = instance_model_key(model or info.get("selected_model") or "")
+        loaded_ids = [
+            instance_model_key(str(item.get("model") or item.get("id") or ""))
+            for item in (info.get("loaded") or [])
+            if isinstance(item, dict)
+        ]
+        plan = plan_model_load(selected, [item for item in loaded_ids if item], busy=bool(info.get("busy")))
+        body = plan.to_dict()
+        if STATE.server_mode:
+            body["choices"] = [
+                item for item in (body.get("choices") or []) if item.get("id") != "unload"
+            ]
+            body["server_queue"] = True
+            body["prompt"] = (
+                "Server mode keeps loaded models. New work waits until the working model finishes."
+            )
+        if info.get("error"):
+            body["error"] = info["error"]
+        return body
 
     def _chat_title(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Title a chat with the local embedding model, then unload only that model.
+        """Name a chat with the model that is already loaded.
 
-        The chat model is loaded first (LM Studio only) and is left loaded.
-        The embedding model is loaded after it, asked to name the chat, then unloaded.
-        If it cannot produce words, the first three words of the prompt are used.
+        Does not load, unload, or park anything. If no chat model is loaded,
+        the title falls back to the first words of the message.
         """
         text = str((data or {}).get("text") or "").strip()
         fallback = _heuristic_title(text)
@@ -1340,85 +2013,190 @@ class UIHandler(BaseHTTPRequestHandler):
             return {"title": fallback, "source": "heuristic", "error": str(exc)}
 
     async def _chat_title_async(self, text: str, fallback: str) -> Dict[str, Any]:
-        from Kerniq.models.providers.lm_studio import LMStudioProvider
+        """Ask the model that is already loaded. Do not load or unload anything.
 
-        provider = LMStudioProvider(base_url="http://127.0.0.1:1234")
+        LM Studio runs a chat completion on the loaded LLM even when the
+        request names an embedding model, so parking the chat model only
+        duplicated it and threw the real title away.
+        """
+        from Kerniq.models.identity import instance_model_key
+
+        provider = self._lms_provider()
         try:
-            models = await provider.list_models()
+            loaded = await provider.loaded_instances()
         except Exception as exc:
             return {"title": fallback, "source": "heuristic", "error": str(exc)}
-        embed = next((m for m in models if _is_junk_model(m) and m.get("id")), None)
-        if not embed:
-            return {"title": fallback, "source": "heuristic"}
-
-        ui = _settings_store().load()
-        if str(getattr(ui.api, "provider", "") or "") == "lm_studio":
-            selected = str(getattr(ui.api, "model", "") or "").strip()
-            chat = None
-            if selected:
-                chat = next(
-                    (
-                        m for m in models
-                        if m.get("id") and not _is_junk_model(m) and _model_ids_match(str(m.get("id")), selected)
-                    ),
-                    None,
-                )
-            if chat is None:
-                chat = next(
-                    (m for m in models if m.get("id") and not _is_junk_model(m) and (m.get("loaded_instances") or [])),
-                    None,
-                )
-            if chat and not (chat.get("loaded_instances") or []):
-                try:
-                    await provider.load_model(str(chat["id"]))
-                except Exception as exc:
-                    logger.info("chat model load before title skipped: %s", exc)
-
-        embed_id = str(embed["id"])
-        try:
-            await provider.load_model(embed_id)
-        except Exception as exc:
-            logger.info("embedding load for title skipped: %s", exc)
-            return {"title": fallback, "source": "heuristic"}
-
-        title = ""
-        processed = False
-        try:
-            try:
-                vector = await provider.embed_text(embed_id, text[:500])
-                processed = bool(vector)
-            except Exception as exc:
-                logger.info("embedding request failed: %s", exc)
-            title = await _title_from_loaded_model(provider, embed_id, text)
-        finally:
-            try:
-                await provider.unload_model_instances(embed_id)
-            except Exception:
-                logger.info("embedding unload failed", exc_info=True)
+        model_id = ""
+        for item in loaded or []:
+            mid = instance_model_key(str(item.get("model") or item.get("id") or ""))
+            if not mid or _is_junk_model({"id": mid}):
+                continue
+            model_id = mid
+            break
+        if not model_id:
+            return {"title": fallback, "source": "heuristic", "reason": "no-loaded-model"}
+        title, answered = await _title_from_loaded_model(provider, model_id, text)
         if title:
-            return {"title": title, "source": "embedding", "embedding": embed_id, "unloaded": True}
-        return {
-            "title": fallback,
-            "source": "heuristic",
-            "embedding": embed_id,
-            "processed": processed,
-            "unloaded": True,
-        }
+            return {"title": title, "source": "model", "model": answered or model_id}
+        return {"title": fallback, "source": "heuristic", "model": model_id, "answered": answered}
 
     def _lms_load(self, data):
+        """Load one model. ``choice`` comes from the core load plan.
+
+        ``alongside`` loads next to whatever is already in memory.
+        ``unload`` drops only idle foreign models, then loads the selected one.
+        A busy foreign model is never unloaded.
+        """
         try:
-            model = data.get("model") or _settings_store().load().api.model
+            from Kerniq.models.identity import instance_model_key, same_model
+            from Kerniq.models.load_policy import plan_model_load
+
+            model = instance_model_key(str((data or {}).get("model") or _settings_store().load().api.model or ""))
             if not model:
                 return {"error": "no model"}
-            alongside = bool(data.get("alongside"))
+            choice = str((data or {}).get("choice") or "").strip()
+            if (data or {}).get("alongside") and not choice:
+                choice = "alongside"
+            from Kerniq.server.queue import UNLOAD_REFUSED, unload_allowed
+
+            if not unload_allowed(bool(STATE.server_mode), choice):
+                return {"ok": False, "error": UNLOAD_REFUSED, "queued": True}
+            info = self._lms_loaded()
+            loaded_ids = []
+            for item in (info.get("loaded") or []):
+                if not isinstance(item, dict):
+                    continue
+                mid = instance_model_key(str(item.get("model") or item.get("id") or ""))
+                if mid and mid not in loaded_ids:
+                    loaded_ids.append(mid)
+            plan = plan_model_load(model, loaded_ids, busy=bool(info.get("busy")))
+            manual = {item.id for item in plan.choices}
+            automatic = {"alongside", "unload", "unload_busy", "notify", "cancel"}
+            if plan.status == "foreign" and choice not in manual and choice not in automatic:
+                return {"needs_choice": True, "plan": plan.to_dict()}
+            if choice == "cancel" or choice == "notify":
+                return {"ok": False, "cancelled": True, "plan": plan.to_dict()}
             p = self._lms_provider()
-            if not alongside:
-                asyncio.run(p.unload_all())
-            _emit_status = None
+            # unload: idle only. unload_busy: the user explicitly asked to drop a working model.
+            if choice == "unload" and not plan.busy:
+                for mid in loaded_ids:
+                    if not same_model(mid, model):
+                        asyncio.run(p.unload_model_instances(mid))
+            elif choice == "unload_busy":
+                for mid in loaded_ids:
+                    if not same_model(mid, model):
+                        asyncio.run(p.unload_model_instances(mid))
             res = asyncio.run(p.load_model(model))
-            return {"ok": True, "result": res}
+            return {"ok": True, "result": res, "plan": plan.to_dict()}
         except Exception as e:
             return {"error": str(e)}
+
+    def _plugin_impl(self, plugin_id: str):
+        import importlib.util
+
+        root = self._plugins_dir()
+        if not root.is_dir():
+            return None
+        for folder in root.iterdir():
+            main_py = folder / "main.py"
+            if not folder.is_dir() or not main_py.exists():
+                continue
+            spec = importlib.util.spec_from_file_location("kerniq_action_" + folder.name, main_py)
+            if spec is None or spec.loader is None:
+                continue
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            cls = getattr(mod, "PluginImpl", None)
+            if cls is None:
+                continue
+            inst = cls()
+            found = str(getattr(getattr(inst, "manifest", None), "plugin_id", "") or folder.name)
+            if found == plugin_id or folder.name == plugin_id:
+                return inst
+        return None
+
+    def _start_plugin_action(self, data) -> Dict[str, Any]:
+        plugin_id = str((data or {}).get("plugin_id") or "").strip()
+        action_id = str((data or {}).get("action_id") or "").strip()
+        if not plugin_id or not action_id:
+            return {"error": "plugin_id and action_id are required"}
+        if self._runtime_busy():
+            return {"error": "An agent run is active. Wait for it to finish."}
+        if plugin_id == "benchmark_pro" and self._benchmark_busy():
+            return {"error": "A benchmark is already running. It keeps going if you leave this screen."}
+        job_id = str(uuid.uuid4())
+        job = {"id": job_id, "plugin_id": plugin_id, "action_id": action_id, "status": "running", "result": None, "error": ""}
+        with STATE.jobs_lock:
+            STATE.jobs[job_id] = job
+
+        def _work():
+            try:
+                inst = self._plugin_impl(plugin_id)
+                if inst is None:
+                    raise ValueError("Plugin not found")
+                store = self._component_store()
+                schema = inst.settings_schema() if hasattr(inst, "settings_schema") else None
+                values = store.load("plugin", plugin_id, schema) if schema is not None else {}
+                if hasattr(inst, "apply_settings"):
+                    inst.apply_settings(values or {})
+                try:
+                    from Kerniq.plugins.base import PluginContext
+                    from Kerniq.settings.loader import SettingsProvider
+
+                    inst._context = PluginContext(
+                        logger=logger,
+                        config=SettingsProvider().config,
+                        event_bus=None,
+                        tool_registry=None,
+                    )
+                except Exception:
+                    logger.exception("plugin context was not attached")
+                context = {
+                    "workspace": str(_workspace()),
+                    "client_settings": (data or {}).get("client_settings") if isinstance((data or {}).get("client_settings"), dict) else None,
+                }
+                result = asyncio.run(inst.run_action(action_id, context))
+                job["result"] = result
+                job["status"] = "done"
+            except Exception as exc:
+                logger.exception("plugin action failed")
+                job["error"] = str(exc)
+                job["status"] = "failed"
+
+        threading.Thread(target=_work, daemon=False, name="kerniq-plugin-" + plugin_id).start()
+        return {"ok": True, "job_id": job_id, "status": "running"}
+
+    def _plugin_job(self, job_id: str) -> Dict[str, Any]:
+        with STATE.jobs_lock:
+            job = STATE.jobs.get(str(job_id or ""))
+            if job is None:
+                return {"error": "job not found"}
+            return dict(job)
+
+    def _benchmark_busy(self) -> bool:
+        with STATE.jobs_lock:
+            for job in STATE.jobs.values():
+                if job.get("plugin_id") == "benchmark_pro" and job.get("status") == "running":
+                    return True
+        active = self._benchmark_active()
+        return str(active.get("status") or "") == "running"
+
+    def _benchmark_active(self) -> Dict[str, Any]:
+        path = _workspace() / "benchmarks" / "active.json"
+        if not path.is_file():
+            return {"status": "idle"}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {"status": "idle"}
+        if not isinstance(data, dict):
+            return {"status": "idle"}
+        if str(data.get("status") or "") == "running":
+            if not _pid_alive(int(data.get("pid") or 0)):
+                data = dict(data)
+                data["status"] = "failed"
+                data["error"] = data.get("error") or "The benchmark process is gone."
+        return data
 
     def _shutdown_server(self):
         """Close the UI socket. A running task stays in this process."""
@@ -1433,6 +2211,11 @@ class UIHandler(BaseHTTPRequestHandler):
                     active = sum(1 for run in STATE.runs.values() if not run.get("done"))
             except Exception:
                 active = 0
+            try:
+                with STATE.jobs_lock:
+                    active += sum(1 for job in STATE.jobs.values() if job.get("status") == "running")
+            except Exception:
+                pass
             try:
                 srv = STATE.server
                 if srv is not None and hasattr(srv, "shutdown"):
@@ -1449,6 +2232,10 @@ class UIHandler(BaseHTTPRequestHandler):
         return {"ok": True, "message": "ui closed"}
 
     def _lms_unload_all(self):
+        if STATE.server_mode:
+            from Kerniq.server.queue import UNLOAD_REFUSED
+
+            return {"ok": False, "error": UNLOAD_REFUSED}
         try:
             res = asyncio.run(self._lms_provider().unload_all())
             return {"ok": True, "result": res}
@@ -1469,6 +2256,15 @@ class UIHandler(BaseHTTPRequestHandler):
                     break
             run = STATE.runs.get(run_id) if run_id else None
             live = run is not None and not run.get("done")
+            if live and run.get("queued"):
+                STATE.pending[:] = [item for item in STATE.pending if item[0] != run_id]
+                run["queued"] = False
+                run["done"] = True
+                run["cancelled"] = True
+                event = {"type": "status", "status": "cancelled", "text": "Stopped"}
+                run.setdefault("log", []).append(event)
+                run.setdefault("events", []).append(event)
+                return {"ok": True, "run_id": run_id, "chat_id": chat_id, "queued": False}
             if live:
                 run["cancelled"] = True
                 # A live run is flagged directly. Do not arm the next message.
@@ -1495,34 +2291,82 @@ class UIHandler(BaseHTTPRequestHandler):
 
     def _start_run(self, data: Dict[str, Any]) -> Dict[str, Any]:
         run_id = str(uuid.uuid4())
-        chat_id = str((data or {}).get("chat_id") or "default")
+        payload = dict(data or {})
+        chat_id = str(payload.get("chat_id") or "default")
+        user_id = str(payload.get("user_id") or getattr(self, "_kerniq_user", "local") or "local")
+        payload["user_id"] = user_id
+        payload["chat_id"] = chat_id
         with STATE.runs_lock:
             pre_cancelled = chat_id in STATE.cancel_chats
             if pre_cancelled:
                 STATE.cancel_chats.discard(chat_id)
+            busy = any(
+                not run.get("done") and not run.get("queued")
+                for run in STATE.runs.values()
+            )
+            queued = bool(STATE.server_mode and (busy or STATE.pending) and not pre_cancelled)
+            if queued:
+                STATE.pending.append((run_id, payload.get("task") or "", payload))
+            position = len(STATE.pending) if queued else 0
             STATE.runs[run_id] = {
                 "events": [],
                 "log": [],
                 "done": False,
                 "error": None,
                 "chat_id": chat_id,
+                "user_id": user_id,
                 "cancelled": pre_cancelled,
+                "queued": queued,
             }
         try:
             _chat_log().begin(
                 chat_id,
                 run_id,
-                (data or {}).get("task") or "",
-                (data or {}).get("attachments") or [],
+                payload.get("task") or "",
+                payload.get("attachments") or [],
             )
         except Exception:
             logger.exception("chat log begin failed")
+        if queued:
+            _emit(
+                run_id,
+                {
+                    "type": "status",
+                    "status": "queued",
+                    "text": "Queued until the working model finishes.",
+                },
+            )
+            return {"run_id": run_id, "queued": True, "position": position}
         threading.Thread(
             target=_run_agent_thread,
-            args=(run_id, data.get("task") or "", data),
+            args=(run_id, payload.get("task") or "", payload),
             daemon=True,
         ).start()
-        return {"run_id": run_id}
+        return {"run_id": run_id, "queued": False, "position": 0}
+
+    def _remote_run(self, data: Dict[str, Any]):
+        if not STATE.server_mode:
+            return _json(self, 400, {"error": "Server mode is off."})
+        if getattr(self, "_kerniq_kind", "") != "api":
+            return _json(self, 401, {"error": "The API key was rejected."})
+        body = dict(data or {})
+        body["user_id"] = getattr(self, "_kerniq_user", "")
+        if not body.get("chat_id"):
+            body["chat_id"] = "console"
+        return _json(self, 200, self._start_run(body))
+
+    def _remote_events(self, qs: Dict[str, str]):
+        if not STATE.server_mode:
+            return _json(self, 400, {"error": "Server mode is off."})
+        if getattr(self, "_kerniq_kind", "") != "api":
+            return _json(self, 401, {"error": "The API key was rejected."})
+        run_id = qs.get("run_id", "")
+        with STATE.runs_lock:
+            run = STATE.runs.get(run_id)
+            owner = str((run or {}).get("user_id") or "")
+        if run is not None and owner != getattr(self, "_kerniq_user", ""):
+            return _json(self, 404, {"error": "run not found"})
+        return _json(self, 200, self._events(run_id, qs.get("cursor", "0")))
 
     def _snapshot(self, chat_id: str) -> Dict[str, Any]:
         try:
@@ -1541,14 +2385,19 @@ class UIHandler(BaseHTTPRequestHandler):
         with STATE.runs_lock:
             run = STATE.runs.get(run_id)
             if run:
-                log = run.get("log") or []
-                chunk = log[idx:]
-                return {
-                    "events": chunk,
-                    "done": bool(run.get("done")),
-                    "error": run.get("error"),
-                    "cursor": idx + len(chunk),
-                }
+                log = list(run.get("log") or [])
+                finished = bool(run.get("done"))
+                error = run.get("error")
+            else:
+                log = None
+        if log is not None:
+            chunk = log[idx:]
+            return {
+                "events": chunk,
+                "done": finished,
+                "error": error,
+                "cursor": idx + len(chunk),
+            }
         try:
             return _chat_log().events_since(run_id, idx)
         except Exception as exc:
@@ -1589,15 +2438,41 @@ def _finish_run(run_id: str, error: Optional[str] = None) -> None:
         _chat_log().finish(run_id, done=True, error=error)
     except Exception:
         logger.exception("chat log finish failed")
+    _release_queue()
+
+
+def _release_queue() -> None:
+    if not STATE.server_mode:
+        return
+    nxt = None
+    with STATE.runs_lock:
+        busy = any(
+            not run.get("done") and not run.get("queued")
+            for run in STATE.runs.values()
+        )
+        if busy or not STATE.pending:
+            return
+        nxt = STATE.pending.pop(0)
+        run = STATE.runs.get(nxt[0])
+        if run is not None:
+            run["queued"] = False
+    if nxt is None:
+        return
+    threading.Thread(target=_run_agent_thread, args=nxt, daemon=True).start()
 
 
 def _run_agent_thread(run_id: str, task: str, payload: dict | None = None) -> None:
+    payload = payload or {}
+    # A new thread does not inherit the request context. The run payload is the user id.
+    token = _ui_user.set(str(payload.get("user_id") or _ui_user.get() or "local"))
     try:
-        asyncio.run(_run_agent_async(run_id, task, payload or {}))
+        asyncio.run(_run_agent_async(run_id, task, payload))
     except Exception as e:
         logger.exception("run failed")
         _emit(run_id, {"type": "assistant", "content": f"Error: {e}"})
         _finish_run(run_id, str(e))
+    finally:
+        _ui_user.reset(token)
 
 
 def _diff_counts(before: str, after: str) -> tuple[int, int]:
@@ -1623,9 +2498,46 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     from Kerniq.settings.loader import SettingsProvider
 
     ui = _settings_store().load()
-    ws = Path(ui.agent.workspace or "./workspace")
-    ws.mkdir(parents=True, exist_ok=True)
-    ws = ws.resolve()
+    client_settings = data.get("client_settings") if isinstance(data.get("client_settings"), dict) else None
+    if STATE.server_mode or client_settings:
+        from Kerniq.settings.browser import overlay_settings
+
+        dumped = ui.model_dump()
+        if STATE.server_mode:
+            dumped.setdefault("api", {})["api_token"] = ""
+        ui = type(ui).model_validate(dumped)
+        ui = overlay_settings(ui, client_settings)
+    disk_status = None
+    if STATE.server_mode:
+        from Kerniq.server.homes import (
+            bind_jail,
+            disk_note,
+            hide_unused_base_url,
+            lock_model_api,
+            quota_bytes,
+            quota_status,
+            set_quota,
+            user_home,
+        )
+
+        core = _server_core()
+        try:
+            ui = hide_unused_base_url(ui)
+            ui = lock_model_api(ui, core)
+        except PermissionError as exc:
+            _emit(run_id, {"type": "status", "status": "error", "text": "Provider error"})
+            _emit(run_id, {"type": "assistant", "content": str(exc), "completed": False})
+            _finish_run(run_id, str(exc))
+            return
+        user_key = str(data.get("user_id") or _ui_user.get() or "local")
+        ws = user_home(_state_dir(), user_key, core)
+        bind_jail(ws)
+        disk_status = quota_status(ws, quota_bytes(core))
+        set_quota(disk_status)
+    else:
+        ws = Path(ui.agent.workspace or "./workspace")
+        ws.mkdir(parents=True, exist_ok=True)
+        ws = ws.resolve()
 
     _emit(run_id, {"type": "status", "status": "processing", "text": "Processing prompt…"})
 
@@ -1684,7 +2596,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                 goal=ctx.goal,
                 status=str((ctx.metadata or {}).get("outcome") or "running"),
                 result="",
-                workspace=str(ws),
+                workspace="/workspace" if STATE.server_mode else str(ws),
                 messages=transcript,
                 metadata={"outcome": (ctx.metadata or {}).get("outcome")},
             )
@@ -1739,26 +2651,33 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     try:
         models = await provider.list_models() if hasattr(provider, "list_models") else []
         want = (ui.api.model or "").strip()
-        loaded_fallback = 0
+        from Kerniq.models.identity import same_model
+
+        first_loaded = 0
+        first_catalog = 0
+        matched = False
         for m in models or []:
             mid = str(m.get("id") or m.get("key") or "")
-            if "embed" in mid.lower():
+            if not mid or "embed" in mid.lower() or "rerank" in mid.lower():
                 continue
-            lim = (
+            lim = int(
                 m.get("loaded_context_length")
                 or m.get("context_length")
                 or m.get("max_context_length")
                 or m.get("context")
+                or 0
             )
-            if m.get("loaded_context_length"):
-                loaded_fallback = int(m["loaded_context_length"])
-            if not lim:
-                continue
-            if want and (mid == want or want in mid or mid in want):
-                ctx_lim = int(lim)
+            loaded = bool(m.get("loaded_instances") or m.get("loaded_context_length"))
+            if want and same_model(mid, want):
+                ctx_lim = lim
+                matched = True
                 break
-        if not ctx_lim and loaded_fallback:
-            ctx_lim = loaded_fallback
+            if loaded and not first_loaded and lim:
+                first_loaded = lim
+            if not first_catalog and lim:
+                first_catalog = lim
+        if not matched:
+            ctx_lim = first_loaded or first_catalog
     except Exception:
         pass
     agent.orchestrator.context_limit = int(ctx_lim or 0)
@@ -1790,7 +2709,8 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                     finish_reason="cancelled",
                     metadata={"cancelled": True},
                 )
-            return await orig_generate(request)
+            response = await orig_generate(request)
+            return response
         if _is_cancelled():
             from Kerniq.interfaces.models import ModelResponse, Message, MessageRole
             return ModelResponse(
@@ -1862,18 +2782,24 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                     "type": "status",
                     "status": "error",
                     "text": "Model not loaded in LM Studio",
+                    "detail": msg,
                 })
                 _emit(run_id, {
                     "type": "assistant",
-                    "content": (
-                        "The selected model is not loaded in LM Studio. "
-                        "Open LM Studio and load a model, or use API & model settings to load one, then retry."
-                    ),
+                    "content": "Model not loaded in LM Studio",
+                    "error": True,
+                    "detail": msg,
                     "completed": False,
                 })
             else:
-                _emit(run_id, {"type": "status", "status": "error", "text": "Model error"})
-                _emit(run_id, {"type": "assistant", "content": f"Model error: {msg}", "completed": False})
+                _emit(run_id, {"type": "status", "status": "error", "text": "Model error", "detail": msg})
+                _emit(run_id, {
+                    "type": "assistant",
+                    "content": "Model error",
+                    "error": True,
+                    "detail": msg,
+                    "completed": False,
+                })
             hb_stop["v"] = True
             try:
                 hb_task.cancel()
@@ -1897,11 +2823,62 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         if reasoning and str(reasoning).strip():
             _emit(run_id, {"type": "think_done", "text": reasoning})
         from Kerniq.core.runtime_flow import promote_reasoning
+        from Kerniq.models.text_tools import adopt_channel_calls, parse_text_tool_calls
 
         promote_reasoning(resp)
+        known = set()
+        schemas = {}
+        try:
+            for item in (getattr(request, "tools", None) or []):
+                if not isinstance(item, dict):
+                    continue
+                fn = item.get("function") if isinstance(item.get("function"), dict) else item
+                name = str(fn.get("name") or "")
+                if not name:
+                    continue
+                known.add(name)
+                params = fn.get("parameters") or fn.get("input_schema") or {}
+                props = params.get("properties") if isinstance(params, dict) else None
+                if isinstance(props, dict) and props:
+                    schemas[name] = list(props.keys())
+        except Exception:
+            known = set()
+            schemas = {}
+        for msg in resp.messages:
+            if getattr(msg, "tool_calls", None):
+                cleaned, kept = adopt_channel_calls(msg.content or "", msg.tool_calls)
+                msg.content = cleaned
+                msg.tool_calls = kept
+                continue
+            content = msg.content or ""
+            cleaned, calls = adopt_channel_calls(content, None)
+            if calls:
+                msg.content = cleaned
+                msg.tool_calls = calls
+                continue
+            if not known:
+                continue
+            cleaned, calls = parse_text_tool_calls(content, known, schemas)
+            if calls:
+                msg.content = cleaned
+                msg.tool_calls = calls
+                continue
+            meta = getattr(msg, "metadata", None) or {}
+            thought = str(meta.get("reasoning") or "") if isinstance(meta, dict) else ""
+            if thought and not content.strip():
+                _cleaned, calls = adopt_channel_calls(thought, None)
+                if not calls:
+                    _cleaned, calls = parse_text_tool_calls(thought, known, schemas)
+                if calls:
+                    msg.tool_calls = calls
         texts = [m.content for m in resp.messages if (m.content or "").strip()]
         if not texts and not any(m.tool_calls for m in resp.messages):
-            _emit(run_id, {"type": "status", "status": "empty_done", "text": "Empty reply, retrying…"})
+            _emit(run_id, {
+                "type": "status",
+                "status": "empty_done",
+                "text": "Empty reply, retrying…",
+                "detail": str(getattr(resp, "finish_reason", "") or "no content"),
+            })
         tps = (resp.metadata or {}).get("tokens_per_second")
         if tps:
             _emit(run_id, {"type": "tps", "value": float(tps)})
@@ -2044,21 +3021,23 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     from Kerniq.interfaces.models import Message, MessageRole
 
     chat_id = str(data.get("chat_id") or "default")
+    user_id = str(data.get("user_id") or "local")
+    memory_id = _history_key(user_id, chat_id)
     history_msgs: list = []
     with STATE.chat_lock:
-        stored = list(STATE.chat_histories.get(chat_id) or [])
+        stored = list(STATE.chat_histories.get(memory_id) or [])
     if not stored:
         try:
-            stored = _chat_log().model_messages(chat_id)
+            stored = _chat_log().model_messages(memory_id)
         except Exception:
             logger.exception("model history load failed")
             stored = []
         if stored:
             with STATE.chat_lock:
-                if not STATE.chat_histories.get(chat_id):
-                    STATE.chat_histories[chat_id] = list(stored)
+                if not STATE.chat_histories.get(memory_id):
+                    STATE.chat_histories[memory_id] = list(stored)
                 else:
-                    stored = list(STATE.chat_histories[chat_id])
+                    stored = list(STATE.chat_histories[memory_id])
     try:
         client_hist = data.get("history") or []
     except Exception:
@@ -2081,12 +3060,17 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         system = system.rstrip() + "\n\n" + file_link_hint
     else:
         system = file_link_hint
-    if ui.prompt.include_tool_catalog:
-        system = (system or "") + (
-            "\n\nCallable tools for each turn are listed at the end of the system message "
-            "as [Tools this turn]. Only those may be called. "
-            "Until a TODO exists, that list is update_plan and nothing else."
+    if STATE.server_mode:
+        from Kerniq.server.homes import disk_note
+
+        system += (
+            "\n\nThe user's files are rooted at /workspace. "
+            "That name is not a real disk path. Use /workspace or a relative path under it. "
+            "Do not try to read other users, the rest of this machine, or any path outside /workspace."
         )
+        note = disk_note(disk_status)
+        if note:
+            system += "\n\n" + note
 
     # Never bake system into task
     user_task = (task or "").strip()
@@ -2114,11 +3098,16 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                 cancelled=cancelled,
             )
             with STATE.chat_lock:
-                STATE.chat_histories[chat_id] = rows
+                STATE.chat_histories[memory_id] = rows
             try:
-                _chat_log().save_model_messages(chat_id, rows)
+                _chat_log().save_model_messages(memory_id, rows)
             except Exception:
                 logger.exception("model history persist failed")
+            if STATE.server_mode:
+                try:
+                    _history_store().save_replies(user_id, chat_id, rows)
+                except Exception:
+                    logger.exception("server reply save failed")
         except Exception:
             logger.exception("history save failed")
 
@@ -2136,7 +3125,22 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     agent.response_language = lang
     allowed_files = []
     external_files = []
+    image_paths = []
+    from Kerniq.models.vision import is_image_name
+
     for item in data.get("attachments") or []:
+        raw_path = item.get("path") if isinstance(item, dict) else str(item)
+        raw_path = str(raw_path or "").strip()
+        if is_image_name(raw_path):
+            if isinstance(item, dict) and item.get("external"):
+                if _granted(raw_path):
+                    image_paths.append(str(Path(raw_path).resolve()))
+            else:
+                rel = raw_path.replace("\\", "/").lstrip("./")
+                if rel:
+                    image_paths.append(str((ws / rel).resolve()))
+        if STATE.server_mode and isinstance(item, dict) and item.get("external"):
+            continue
         if isinstance(item, dict) and item.get("external"):
             raw = str(item.get("path") or "").strip()
             if raw and _granted(raw):
@@ -2155,12 +3159,19 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             + ", ".join(allowed_files)
             + ". Other workspace paths will be denied."
         )
+    read_only_external = bool(getattr(ui.chat, "read_only_external_attachments", True))
     if external_files:
-        system = (system or "") + (
-            "\n\nThese files are outside the workspace. You may read them. "
-            "Writing, editing, or deleting them requires user approval:\n"
-            + "\n".join(external_files)
-        )
+        if read_only_external:
+            system = (system or "") + (
+                "\n\nThese paths are outside the workspace. You may read them and everything inside an attached folder. "
+                "You may not write, edit, move, or delete them:\n"
+                + "\n".join(external_files)
+            )
+        else:
+            system = (system or "") + (
+                "\n\nThese paths are outside the workspace. You may read and change them, including files inside attached folders:\n"
+                + "\n".join(external_files)
+            )
     mode = str(data.get("mode") or getattr(ui.chat, "agent_mode", None) or "act").lower()
     if mode not in ("plan", "act"):
         mode = "act"
@@ -2173,7 +3184,21 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     compose_plan = bool(getattr(ui.chat, "compose_plan", True))
     if "compose_plan" in data:
         compose_plan = bool(data.get("compose_plan"))
-    agent.orchestrator.finish_open_plan = True
+    from Kerniq.core.runtime_flow import compose_plan_allowed
+    if not compose_plan_allowed(reg):
+        compose_plan = False
+        ui.chat.compose_plan = False
+        if not STATE.server_mode and client_settings is None:
+            try:
+                _settings_store().save(ui)
+            except Exception:
+                logger.exception("could not turn compose_plan off")
+    agent.orchestrator.compose_plan = compose_plan
+    agent.orchestrator.finish_open_plan = False
+    if compose_plan:
+        system = (system or "") + (
+            " Until a TODO exists, the first turn is update_plan and nothing else."
+        )
     initial_plan = data.get("plan") if isinstance(data.get("plan"), list) else None
     initial_archive = data.get("archive") if isinstance(data.get("archive"), list) else None
 
@@ -2249,11 +3274,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         _finish_cancelled()
         return
 
-    async def _one(task_text, hist, run_mode, plan0, archive0=None):
+    async def _one(task_text, hist, run_mode, plan0, archive0=None, system_text=None, plan_gate=True, pictures=None):
         return await agent.run(
             task_text,
             workspace=str(ws),
-            system_prompt=system,
+            system_prompt=system if system_text is None else system_text,
             history=hist,
             response_language=lang,
             allowed_files=allowed_files or None,
@@ -2261,8 +3286,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             agent_mode=run_mode,
             initial_plan=plan0,
             plan_archive=archive0,
-            plan_handoff=bool(run_mode == "plan" and auto_act),
+            plan_handoff=bool(run_mode == "plan" and auto_act and compose_plan),
+            plan_gate=plan_gate,
             external_files=external_files or None,
+            external_read_only=read_only_external,
+            image_paths=pictures or None,
         )
 
     if _is_cancelled():
@@ -2270,13 +3298,13 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         return
 
     try:
-        result = await _one(user_task, history_msgs or None, mode, initial_plan, initial_archive)
+        result = await _one(user_task, history_msgs or None, mode, initial_plan, initial_archive, None, True, image_paths)
     except Exception as e:
         if _is_cancelled():
             _finish_cancelled()
         else:
             title, detail = _public_error(e)
-            _emit(run_id, {"type": "status", "status": "error", "text": title})
+            _emit(run_id, {"type": "status", "status": "error", "text": title, "detail": detail})
             _emit(run_id, {
                 "type": "assistant",
                 "content": title,
@@ -2358,10 +3386,23 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             draft,
             max_iterations=agent.orchestrator.max_iterations,
         )
+        plan_hist = []
         if agent.last_context is not None:
-            prior_rows = transcript_rows(agent.last_context.messages)
+            for row in transcript_rows(agent.last_context.messages):
+                msg = history_message(row)
+                if msg is not None:
+                    plan_hist.append(msg)
+        act_system = ((system or "") + "\n\n" + act_task).strip()
         try:
-            act_result = await _one(act_task, None, "act", None, research or None)
+            act_result = await _one(
+                user_task,
+                plan_hist or None,
+                "act",
+                None,
+                research or None,
+                act_system,
+                False,
+            )
         except Exception as e:
             if _is_cancelled():
                 _finish_cancelled()
@@ -2406,6 +3447,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             "type": "status",
             "status": final_status,
             "text": outcome or ("Error" if failed else "Done"),
+            "detail": outcome if failed else "",
             "completed": not failed,
         },
     )
@@ -2429,6 +3471,9 @@ class PluginImpl(Plugin):
     def manifest(self) -> PluginManifest:
         return self._manifest
 
+    def extension_slots(self) -> list:
+        return ["settings", "panel"]
+
     def settings_schema(self):
         return SettingsSchema(
             component_id="plugin_web_ui",
@@ -2440,7 +3485,8 @@ class PluginImpl(Plugin):
                     label="Bind host",
                     type=SettingType.STRING,
                     default="127.0.0.1",
-                    description="127.0.0.1 = only local; 0.0.0.0 = LAN",
+                    server_default="0.0.0.0",
+                    description="127.0.0.1 = only this computer; 0.0.0.0 = every interface. Applied when Kerniq starts.",
                 ),
                 SettingField(
                     key="port",
@@ -2455,13 +3501,15 @@ class PluginImpl(Plugin):
                     label="Server mode",
                     type=SettingType.BOOL,
                     default=False,
-                    description="Remote UI host: auto LAN bind, show LAN IP, disable OS folder dialog for clients",
+                    server_default=True,
+                    description="One Kerniq for every client. Chats are separated by a cookie. Models stay loaded and new work waits. Listens on 0.0.0.0 after a restart.",
                 ),
                 SettingField(
                     key="lan_access",
                     label="Allow LAN access",
                     type=SettingType.BOOL,
                     default=False,
+                    server_default=True,
                     description="Bind 0.0.0.0 for LAN (also enabled by server mode)",
                 ),
                 SettingField(
@@ -2474,10 +3522,9 @@ class PluginImpl(Plugin):
                 SettingField(
                     key="ui_locale",
                     label="UI language",
-                    type=SettingType.SELECT,
+                    type=SettingType.STRING,
                     default="en",
                     description="Interface language. English is built in. Other languages are imported packs.",
-                    options=[{"value": "en", "label": "English"}],
                 ),
                 SettingField(
                     key="log_level",
@@ -2512,45 +3559,92 @@ class PluginImpl(Plugin):
 
     async def initialize(self, context: PluginContext) -> bool:
         STATE.context = context
-        host, port = "127.0.0.1", 8765
+        STATE.history = None
+        config_host, config_port = "127.0.0.1", 8765
+        state_dir = None
         cfg = getattr(context, "config", None)
         try:
             ui = getattr(cfg, "ui", None)
             if ui is not None:
-                host = getattr(ui, "host", host)
-                port = int(getattr(ui, "port", port))
+                config_host = str(getattr(ui, "host", config_host) or config_host)
+                config_port = int(getattr(ui, "port", config_port) or config_port)
+            storage = getattr(cfg, "storage", None)
+            if storage is not None:
+                state_dir = getattr(storage, "state_dir", None)
         except Exception:
-            pass
-        # persisted plugin settings override
+            logger.exception("ui config was not read")
+        if not state_dir:
+            state_dir = _state_dir()
+        vals: Dict[str, Any] = {}
         try:
             from Kerniq.settings.component_store import ComponentSettingsStore
-            from Kerniq.settings.loader import SettingsProvider
-            store = ComponentSettingsStore(SettingsProvider().config.storage.state_dir)
-            vals = store.load("plugin", "plugin_web_ui", self.settings_schema())
+
+            vals = ComponentSettingsStore(state_dir).load(
+                "plugin", "plugin_web_ui", self.settings_schema()
+            )
             self.apply_settings(vals)
-            host = getattr(self, "_ui_host", host)
-            port = int(getattr(self, "_ui_port", port))
         except Exception:
-            pass
-        server_mode = bool(getattr(self, "_server_mode", False))
-        if server_mode:
-            host = "0.0.0.0"
+            logger.exception("web ui settings were not loaded")
+        from Kerniq.server.listen import resolve_listen
+        from Kerniq.server.settings import ensure_api_key, load_server_settings
+
+        core = load_server_settings(state_dir, cfg)
+        cli_host = os.environ.get("KERNIQ_CLI_HOST") or None
+        cli_port_text = os.environ.get("KERNIQ_CLI_PORT") or ""
+        cli_port = int(cli_port_text) if cli_port_text.isdigit() else None
+        resolved = resolve_listen(
+            config_host=config_host,
+            config_port=config_port,
+            plugin=vals,
+            core=core,
+            cli_host=cli_host,
+            cli_port=cli_port,
+        )
+        host = str(resolved["host"])
+        port = int(resolved["port"])
+        server_mode = bool(resolved["server_mode"])
+        self._ui_host = host
+        self._ui_port = port
+        self._server_mode = server_mode
         STATE.host, STATE.port = host, port
         STATE.server_mode = server_mode
+        if server_mode:
+            try:
+                store = _history_store()
+                if store.warning:
+                    logger.warning("%s", store.warning)
+                    print(store.warning, flush=True)
+            except Exception:
+                logger.exception("history store")
+            try:
+                key, created = ensure_api_key(state_dir)
+                if created:
+                    lan = _detect_lan_ip()
+                    print(
+                        "Remote consoles need this server address and API key:\n"
+                        f"  kerniq run --server http://{lan}:{port} --api-key {key} --task \"...\"\n"
+                        "The key is not an address. Run `kerniq server key` to show it again.",
+                        flush=True,
+                    )
+            except Exception:
+                logger.exception("api key was not prepared")
 
         def serve() -> None:
             try:
+                ThreadingHTTPServer.allow_reuse_address = True
                 httpd = ThreadingHTTPServer((host, port), UIHandler)
             except OSError as e:
                 logger.error("Failed to bind Web UI on %s:%s — %s", host, port, e)
                 return
             STATE.server = httpd
-            logger.info("Web UI listening on http://%s:%s", host, port)
-            if host in ("0.0.0.0", "::") or server_mode:
-                logger.info(
-                    "LAN URL: http://%s:%s (server_mode=%s)",
-                    _detect_lan_ip(), port, server_mode,
-                )
+            _write_ui_pid(context)
+            from Kerniq.server.firewall import listen_lines, try_open_port
+
+            note = try_open_port(port) if host in ("0.0.0.0", "::") else ""
+            STATE.firewall_note = note
+            for line in listen_lines(host, port, firewall_note=note):
+                logger.info("%s", line)
+                print(line, flush=True)
             try:
                 httpd.serve_forever()
             except Exception:
@@ -2564,6 +3658,7 @@ class PluginImpl(Plugin):
         return True
 
     async def shutdown(self) -> None:
+        _clear_ui_pid(STATE.context)
         if STATE.server:
             STATE.server.shutdown()
             STATE.server = None

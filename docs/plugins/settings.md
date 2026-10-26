@@ -36,6 +36,9 @@ Settings → Tools / Plugins:
 
 ## CLI
 
+The full command list, including `settings set`, `tools set`, and `plugins set`,
+is in [docs/cli.md](../cli.md).
+
 ```bash
 python -m Kerniq settings show
 python -m Kerniq settings reset

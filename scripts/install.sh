@@ -5,6 +5,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 META="$ROOT/.kerniq"
 mkdir -p "$META"
+SERVER_INIT=0
+for arg in "$@"; do
+  if [ "$arg" = "--server" ]; then
+    SERVER_INIT=1
+  fi
+done
 
 py_ok() {
   local exe="$1"
@@ -111,10 +117,12 @@ fi
 
 "$TARGET" "$ROOT/scripts/env_manifest.py" freeze "$TARGET" > "$META/before.json"
 echo "Installing with python -m pip. Packages already present are left for uninstall to keep."
+# Debian/Ubuntu ship typing_extensions without a pip RECORD. A normal install
+# tries to uninstall that file and aborts, so the kerniq command is never created.
 if ! "$TARGET" -m pip install -e ".[dev,mcp]"; then
   if [ "$CREATED_VENV" = "0" ]; then
-    echo "Retrying with --break-system-packages"
-    "$TARGET" -m pip install --break-system-packages -e ".[dev,mcp]"
+    echo "System Python refused the install. Retrying without removing Debian packages."
+    "$TARGET" -m pip install --break-system-packages --ignore-installed -e ".[dev,mcp]"
   else
     exit 1
   fi
@@ -136,7 +144,46 @@ chmod +x "$META/kerniq"
 
 echo
 "$TARGET" -m Kerniq --version
+echo "Checking plugin settings..."
+"$TARGET" -c "from Kerniq.plugins.cli_settings import validate_installed_defaults; raise SystemExit(validate_installed_defaults())"
+if [ "$SERVER_INIT" = "1" ]; then
+  echo "Writing server defaults for plugins that declare them..."
+  "$TARGET" -c "from Kerniq.plugins.cli_settings import apply_server_plugin_defaults; apply_server_plugin_defaults()"
+fi
+
+# pip without write access to system site-packages drops `kerniq` in ~/.local/bin.
+# An older shell may still hash /usr/local/bin/kerniq, which then does not exist.
+USER_BIN="$("$TARGET" -c 'import os,site; print(os.path.join(site.USER_BASE, "bin"))')"
+mkdir -p "$USER_BIN"
+ln -sf "$META/kerniq" "$USER_BIN/kerniq"
+LINKED=""
+IFS=':' read -r -a PATH_DIRS <<< "${PATH}"
+for dir in "${PATH_DIRS[@]}"; do
+  [ -n "$dir" ] && [ -d "$dir" ] && [ -w "$dir" ] || continue
+  ln -sf "$META/kerniq" "$dir/kerniq"
+  LINKED="$dir/kerniq"
+  break
+done
+hash -r 2>/dev/null || true
+if [ -n "$LINKED" ] && command -v kerniq >/dev/null 2>&1; then
+  echo "Command: $(command -v kerniq)"
+else
+  echo "kerniq is not on PATH in this shell."
+  echo "Use now:  $META/kerniq"
+  echo "The pip copy is:  $USER_BIN/kerniq"
+  echo "This shell may still remember a deleted /usr/local/bin/kerniq. Run:  hash -r"
+  echo "Then add the new directory:  export PATH=\"$USER_BIN:\$PATH\""
+  echo "Or install as root so the old path is replaced:  sudo ./install.sh"
+fi
 echo "Done."
+if [ "$SERVER_INIT" = "1" ]; then
+  echo "Server setup: Kerniq looks for a database, then asks for the login."
+  if [ -t 0 ]; then
+    "$TARGET" -m Kerniq server init || echo "Server setup did not finish. Run: $TARGET -m Kerniq server init"
+  else
+    echo "No terminal, so server setup was skipped. Run: $TARGET -m Kerniq server init"
+  fi
+fi
 if [ "$CREATED_VENV" = "1" ]; then
   echo "UI:  $TARGET -m Kerniq plugins ui"
   echo "Or:  $META/kerniq plugins ui"

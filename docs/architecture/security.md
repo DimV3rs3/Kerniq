@@ -73,6 +73,8 @@ mode is turned on. Do not enable server mode on an untrusted network.
 
 ## 5. Indirect prompt injection
 
-Tool and file text is wrapped as `<untrusted_tool_output>`. The system prompt
-tells the model that this text is data. That is a mitigation, not a guarantee
-that a model will obey it.
+Tool results and file contents are passed to the model as the facts of the task.
+They are not wrapped as untrusted data, because that made the model ignore real
+findings. The context compactor still refuses to follow instructions that appear
+inside a transcript, and it keeps tool results as facts. That is a mitigation,
+not a guarantee that a model will ignore a hostile page.

@@ -72,6 +72,15 @@ class UISettings(BaseModel):
     port: int = 8765
 
 
+class ServerSettings(BaseModel):
+    """One process, many users. The web plugin reads this; it does not own it."""
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8765
+    database_url: str = ""
+
+
 class PlatformConfig(BaseModel):
     application: ApplicationSettings = Field(default_factory=ApplicationSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
@@ -82,10 +91,11 @@ class PlatformConfig(BaseModel):
     mcp: MCPSettings = Field(default_factory=MCPSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     ui: UISettings = Field(default_factory=UISettings)
+    server: ServerSettings = Field(default_factory=ServerSettings)
 
     @field_validator(
         "application", "logging", "runtime", "models", "security",
-        "tools", "mcp", "storage", "ui", mode="before",
+        "tools", "mcp", "storage", "ui", "server", mode="before",
     )
     @classmethod
     def validate_section(cls, v: Any) -> Any:

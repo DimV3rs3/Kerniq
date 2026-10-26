@@ -13,6 +13,8 @@ class SettingType(str, Enum):
     INT = "int"
     FLOAT = "float"
     STRING = "string"
+    TEXT = "text"
+    PATH = "path"
     SELECT = "select"
 
 
@@ -28,9 +30,16 @@ class SettingField(BaseModel):
     maximum: Optional[float] = None
     options: Optional[List[Dict[str, str]]] = None  # [{value, label}]
     group: str = "general"
+    slot: Optional[int] = None  # hide when a sibling slot_count field is lower
+    # Used only by `install.sh --server`. Absent means the desktop default stays.
+    server_default: Any = None
 
     def to_public(self) -> Dict[str, Any]:
-        return self.model_dump(mode="json")
+        data = self.model_dump(mode="json")
+        if data.get("slot") is None:
+            data.pop("slot", None)
+        data.pop("server_default", None)
+        return data
 
 
 class SettingsSchema(BaseModel):

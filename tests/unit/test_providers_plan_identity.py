@@ -32,7 +32,8 @@ def test_identity_is_before_the_operator_prompt():
     assert text.startswith(KERNIQ_IDENTITY)
     assert text.index(KERNIQ_IDENTITY) < text.index("OPERATOR RULE")
     assert "нескольк" in text or "several project files" in text
-    assert PLAN_MODE_TEXT in text
+    assert "MODE: PLAN." in text
+    assert "A research TODO is optional." in text
     assert "Russian" in text
 
 
@@ -183,7 +184,7 @@ def test_frozen_blocks_and_failed_does_not():
     ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="act")
     ctx.metadata["agent_mode"] = "act"
     orch = Orchestrator(provider=None, tool_registry=None)
-    orch.finish_open_plan = True
+    orch.compose_plan = True
     ctx.metadata["plan"] = [{"id": "a", "title": "hold", "status": "frozen"}]
     assert orch._continue_open_plan(ctx, 3) is True
     ctx.metadata["plan"] = [{"id": "a", "title": "boom", "status": "failed"}]
@@ -194,6 +195,8 @@ def test_frozen_blocks_and_failed_does_not():
     ctx.metadata["plan"] = []
     ctx.metadata["plan_archive"] = [{"id": "research:1", "title": "Read router", "status": "done"}]
     assert orch._continue_open_plan(ctx, 0) is True
+    orch.compose_plan = False
+    assert orch._continue_open_plan(ctx, 0) is False
 
 
 def test_tools_stay_hidden_until_a_todo_exists():
@@ -211,7 +214,7 @@ def test_tools_stay_hidden_until_a_todo_exists():
             ]
 
     orch = Orchestrator(provider=None, tool_registry=Reg())
-    orch.finish_open_plan = True
+    orch.compose_plan = True
     ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="look")
     ctx.metadata["agent_mode"] = "plan"
     ctx.metadata["plan"] = []
@@ -221,6 +224,20 @@ def test_tools_stay_hidden_until_a_todo_exists():
         names.append(fn.get("name"))
     assert names == ["update_plan"]
     ctx.metadata["plan"] = [{"id": "1", "title": "Find the entry point", "status": "active"}]
+    names = []
+    for spec in orch._tools_for_mode(ctx):
+        fn = spec.get("function") or {}
+        names.append(fn.get("name"))
+    assert names == ["update_plan", "list_directory"]
+    ctx.metadata["skip_plan_gate"] = True
+    names = []
+    for spec in orch._tools_for_mode(ctx):
+        fn = spec.get("function") or {}
+        names.append(fn.get("name"))
+    assert names == ["update_plan", "list_directory"]
+    orch.compose_plan = False
+    ctx.metadata["plan"] = []
+    ctx.metadata.pop("skip_plan_gate", None)
     names = []
     for spec in orch._tools_for_mode(ctx):
         fn = spec.get("function") or {}
@@ -236,7 +253,7 @@ def test_exhausted_lookup_marks_the_current_item_failed():
         {"id": "2", "title": "Find the entry point", "status": "pending"},
     ]
     orch = Orchestrator(provider=None, tool_registry=SimpleNamespace(get_tools_for_model=lambda: [], list_tools=lambda: []))
-    orch.finish_open_plan = True
+    orch.compose_plan = True
     title = asyncio.run(orch._exhaust_current_item(ctx))
     assert title == "Study the project"
     assert [item["status"] for item in ctx.metadata["plan"]] == ["failed", "active"]
@@ -244,6 +261,14 @@ def test_exhausted_lookup_marks_the_current_item_failed():
     assert orch._continue_open_plan(ctx, 3) is True
     ctx.metadata["plan"][1]["status"] = "done"
     assert orch._continue_open_plan(ctx, 3) is False
+
+
+def test_one_prose_reply_does_not_close_an_open_plan():
+    orch = Orchestrator(provider=None, tool_registry=None)
+    orch.max_plan_continuations = 4
+    assert orch._should_close_open_plan("Я начну с рефакторинга и перейду к плану.", 1) is False
+    assert orch._should_close_open_plan("task is complete", 0) is True
+    assert orch._should_close_open_plan("still working", 4) is True
 
 
 def test_agent_does_not_repeat_the_same_trailing_user_text():
@@ -331,7 +356,7 @@ def test_plan_mode_blocks_writes():
     assert Orchestrator.plan_blocks_tool(ctx, low_write) is True
     assert Orchestrator.plan_blocks_tool(ctx, read) is False
     assert Orchestrator.plan_blocks_tool(ctx, opted_in) is False
-    assert Orchestrator.plan_blocks_tool(ctx, plan) is False
+    assert Orchestrator.plan_blocks_tool(ctx, plan) is True
     ctx.metadata["agent_mode"] = "act"
     assert Orchestrator.plan_blocks_tool(ctx, write) is False
 

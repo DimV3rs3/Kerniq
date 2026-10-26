@@ -31,11 +31,12 @@ from Kerniq.plugins.base import PluginContext
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 
-def maybe_auto_update(argv: Optional[list] = None) -> Optional[int]:
+async def maybe_auto_update(argv: Optional[list] = None) -> Optional[int]:
     """If a newer release exists, apply it and re-exec the same command.
 
-    Skipped for: uninstall/remove/update --help, and when KERNIQ_NO_AUTO_UPDATE=1.
-    Settings/state are preserved (no wipe).
+    Skipped for: uninstall/remove/update/server, --help, and when KERNIQ_NO_AUTO_UPDATE=1.
+    Settings/state are preserved (no wipe). Must be awaited: calling the
+    coroutine without await is what LM Studio reported as a RuntimeWarning.
     """
     import os
     import sys
@@ -46,14 +47,13 @@ def maybe_auto_update(argv: Optional[list] = None) -> Optional[int]:
     args = list(argv) if argv is not None else sys.argv[1:]
     if not args:
         return None
-    skip = {"uninstall", "remove", "update", "--help", "-h", "--version"}
+    skip = {"uninstall", "remove", "update", "server", "--help", "-h", "--version"}
     if args[0] in skip:
         return None
     try:
-        import asyncio
         from Kerniq.devtools.update_check import check_for_update, apply_update
 
-        info = asyncio.run(check_for_update())
+        info = await check_for_update()
         if not info.is_newer:
             return None
         print(
@@ -65,7 +65,6 @@ def maybe_auto_update(argv: Optional[list] = None) -> Optional[int]:
         if not ok:
             print("Auto-update failed; continuing with current version.")
             return None
-        # Re-exec original command with fresh code
         env = os.environ.copy()
         env["KERNIQ_UPDATING"] = "1"
         os.execvpe(sys.executable, [sys.executable, "-m", "Kerniq", *args], env)
@@ -115,6 +114,28 @@ def _apply_ui_log_level():
     except Exception:
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+def _quiet_mcp_logs(state_dir: Path) -> None:
+    """LM Studio shows MCP stderr as errors. INFO goes to a file, not stderr."""
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    for handler in list(root.handlers):
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            handler.setLevel(logging.ERROR)
+    try:
+        folder = Path(state_dir)
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "mcp.log"
+        if not any(isinstance(handler, logging.FileHandler) and getattr(handler, "baseFilename", "") == str(path) for handler in root.handlers):
+            handle = logging.FileHandler(path, encoding="utf-8")
+            handle.setLevel(logging.INFO)
+            handle.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+            root.addHandler(handle)
+    except Exception:
+        logger.debug("MCP file log was not created", exc_info=True)
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
 
 logger = logging.getLogger("cli")
 
@@ -215,19 +236,24 @@ async def run_agent(args: argparse.Namespace, config) -> int:
         )
 
     agent.orchestrator.on_progress = _checkpoint
-    system = system_prompt_from_settings(ui, [t.name for t in registry.list_tools()])
+    visible = registry.agent_tools() if hasattr(registry, "agent_tools") else registry.list_tools()
+    system = system_prompt_from_settings(ui, [t.name for t in visible])
     lang = ui.chat.response_language or "auto"
     mode = str(ui.chat.agent_mode or "act").lower()
     if mode not in ("plan", "act"):
         mode = "act"
     if ui.chat.mode_auto:
-        mode = await route_mode(provider, args.task, compose_plan=bool(ui.chat.compose_plan))
+        mode = await route_mode(
+            provider,
+            args.task,
+            compose_plan=bool(getattr(agent.orchestrator, "compose_plan", False)),
+        )
     auto_act = bool(ui.chat.auto_act_after_plan)
     switched = await use_model_for_mode(provider, ui.api, mode)
     if switched:
         print(f"Could not load the {mode} model: {switched}", file=sys.stderr)
     print(f"Provider: {provider_name} | Model: {getattr(provider, 'model', None) or ui.api.model or '(auto)'} | Workspace: {workspace_path}")
-    print(f"Mode: {mode} | Tools: {[t.name for t in registry.list_tools()]}")
+    print(f"Mode: {mode} | Tools: {[t.name for t in visible]}")
     result = await agent.run(
         args.task,
         workspace=str(workspace_path),
@@ -253,13 +279,17 @@ async def run_agent(args: argparse.Namespace, config) -> int:
             result if isinstance(result, str) else "",
         )
         research = handoff_archive(agent.last_context)
+        act_system = (system or "") + "\n\n" + act_followup_task(
+            args.task, draft, max_iterations=agent.orchestrator.max_iterations
+        )
         result = await agent.run(
-            act_followup_task(args.task, draft, max_iterations=agent.orchestrator.max_iterations),
+            args.task,
             workspace=str(workspace_path),
-            system_prompt=system,
+            system_prompt=act_system,
             response_language=lang,
             agent_mode="act",
             plan_archive=research or None,
+            plan_gate=False,
         )
         if agent.last_context is not None:
             outcome = str((agent.last_context.metadata or {}).get("outcome") or "")
@@ -350,6 +380,16 @@ async def async_main(argv: Optional[list] = None) -> int:
     run_parser.add_argument("--task", type=str, required=True)
     run_parser.add_argument("--workspace", type=str)
     run_parser.add_argument("--provider", type=str, help="Provider id (kerniq models list)")
+    run_parser.add_argument(
+        "--server",
+        default=None,
+        help="Remote Kerniq address, for example http://10.0.0.8:8765. Required on another PC.",
+    )
+    run_parser.add_argument(
+        "--api-key",
+        default=None,
+        help="API key for --server. The key does not replace the address.",
+    )
 
     subparsers.add_parser("doctor", help="System health, deps, LM Studio")
 
@@ -360,7 +400,8 @@ async def async_main(argv: Optional[list] = None) -> int:
     model_parser = subparsers.add_parser("models")
     model_parser.add_argument("action", choices=["list", "check", "loaded", "load", "unload-all"])
     model_parser.add_argument("--model", default=None, help="Model key for load")
-    model_parser.add_argument("--alongside", action="store_true", help="Load without unloading others")
+    model_parser.add_argument("--alongside", action="store_true", help="Load next to the models already in memory")
+    model_parser.add_argument("--unload", action="store_true", help="Unload idle models, then load this one")
 
     tool_parser = subparsers.add_parser("tools")
     tool_sub = tool_parser.add_subparsers(dest="action")
@@ -374,15 +415,52 @@ async def async_main(argv: Optional[list] = None) -> int:
     plugin_sub = plugin_parser.add_subparsers(dest="action")
     plugin_sub.add_parser("list")
     plugin_sub.add_parser("validate")
+    plugin_set = plugin_sub.add_parser("set", help="Set one plugin value: plugins set ID -s name value")
+    plugin_set.add_argument("plugin_id")
+    plugin_set.add_argument(
+        "-s", "--set",
+        dest="settings",
+        nargs=2,
+        action="append",
+        metavar=("NAME", "VALUE"),
+        help="Setting name and value. Repeat -s for more than one. Invalid values are refused.",
+    )
     ui_parser = plugin_sub.add_parser("ui")
     ui_parser.add_argument("--host", default=None)
     ui_parser.add_argument("--port", type=int, default=None)
+    ui_parser.add_argument(
+        "-s", "--set",
+        dest="settings",
+        nargs=2,
+        action="append",
+        metavar=("NAME", "VALUE"),
+        help="Save a Web UI setting before the server starts, for example -s host 0.0.0.0",
+    )
 
     session_parser = subparsers.add_parser("sessions")
     session_sub = session_parser.add_subparsers(dest="action")
     session_sub.add_parser("list")
     show_session = session_sub.add_parser("show")
     show_session.add_argument("id", type=str)
+
+    server_parser = subparsers.add_parser("server", help="Server mode address, storage, and API key")
+    server_sub = server_parser.add_subparsers(dest="action")
+    server_sub.add_parser("show", help="Show bind, storage, and whether an API key exists")
+    server_key = server_sub.add_parser("key", help="Print the API key a remote console must send")
+    server_key.add_argument("--rotate", action="store_true", help="Replace the current API key")
+    server_sub.add_parser("init", help="Choose a database and create it. Kerniq creates the database.")
+    server_db = server_sub.add_parser("db", help="Create a MySQL database and save its URL")
+    server_db.add_argument("--host", default="127.0.0.1")
+    server_db.add_argument("--port", type=int, default=3306)
+    server_db.add_argument("--user", default="")
+    server_db.add_argument("--password", default="")
+    server_db.add_argument("--name", default="kerniq")
+    server_set = server_sub.add_parser(
+        "set",
+        help="Set users-root, quota-gb, or model-url. Run this on the server, not in the browser.",
+    )
+    server_set.add_argument("key", choices=["users-root", "quota-gb", "model-url"])
+    server_set.add_argument("value")
 
     settings_parser = subparsers.add_parser("settings", help="Manage component settings")
     settings_sub = settings_parser.add_subparsers(dest="action")
@@ -469,7 +547,7 @@ async def async_main(argv: Optional[list] = None) -> int:
         )
 
     # Soft auto-update (skip uninstall/update itself)
-    maybe_auto_update(argv)
+    await maybe_auto_update(argv)
 
     try:
         config = SettingsProvider().config
@@ -522,6 +600,14 @@ async def async_main(argv: Optional[list] = None) -> int:
         return 2 if info.is_newer else 0
 
     if args.command == "run":
+        import os
+
+        remote = (getattr(args, "server", None) or os.environ.get("KERNIQ_SERVER") or "").strip()
+        key = (getattr(args, "api_key", None) or os.environ.get("KERNIQ_API_KEY") or "").strip()
+        if remote or getattr(args, "api_key", None):
+            from Kerniq.server.remote import run_remote
+
+            return await run_remote(remote, key, args.task or "", args.workspace)
         return await run_agent(args, config)
     if args.command == "doctor":
         return await cmd_doctor(config)
@@ -574,19 +660,54 @@ async def async_main(argv: Optional[list] = None) -> int:
             print(f"Unloaded: {len(res)}")
             return 0
         if args.action == "load":
-            model = args.model or ls_cfg.get("model") or config.models.default_model
+            from Kerniq.models.load_policy import plan_model_load
+            from Kerniq.settings.ui_store import UiSettingsStore
+
+            ui = UiSettingsStore(config.storage.state_dir).load()
+            model = args.model or ui.api.model or ls_cfg.get("model") or config.models.default_model
             if not model:
                 print("Specify --model")
                 return 1
             loaded = await ls.loaded_instances()
-            if loaded and not args.alongside:
-                print("WARNING: other models loaded:")
-                for item in loaded:
-                    print(f"  {item.get('model')}")
-                print("Use --alongside to load next to them, or models unload-all first.")
-                return 2
+            loaded_ids = [str(item.get("model") or item.get("id") or "").strip() for item in loaded]
+            loaded_ids = [item for item in loaded_ids if item]
+            plan = plan_model_load(str(model), loaded_ids, busy=False)
+            choice = ""
+            if args.alongside:
+                choice = "alongside"
+            elif args.unload:
+                choice = "unload"
+            if plan.status == "foreign" and not choice:
+                print(plan.prompt())
+                for item in loaded_ids:
+                    print(f"  {item}")
+                print("Choose:")
+                for index, item in enumerate(plan.choices, start=1):
+                    print(f"  {index}. {item.label}")
+                if not sys.stdin.isatty():
+                    print("Pass --alongside or --unload. A non-interactive shell does not guess.")
+                    return 2
+                answer = input("> ").strip()
+                picked = None
+                if answer.isdigit() and 1 <= int(answer) <= len(plan.choices):
+                    picked = plan.choices[int(answer) - 1]
+                else:
+                    for item in plan.choices:
+                        if answer == item.id or answer.lower() == item.label.lower():
+                            picked = item
+                            break
+                if picked is None or picked.id == "cancel":
+                    print("Cancelled.")
+                    return 2
+                choice = picked.id
+            if choice == "unload":
+                from Kerniq.models.identity import same_model
+
+                for mid in loaded_ids:
+                    if not same_model(mid, str(model)):
+                        await ls.unload_model_instances(mid)
             print(f"Loading {model}...")
-            res = await ls.load_model(model)
+            res = await ls.load_model(str(model))
             print(res)
             return 0
     if args.command == "tools":
@@ -650,22 +771,70 @@ async def async_main(argv: Optional[list] = None) -> int:
                 print("No plugins to list. Hidden plugins stay out of this list until Show in plugin list is on.")
             return 0
         if args.action == "validate":
-            from Kerniq.settings.file import settings_path
+            from Kerniq.plugins.cli_settings import validate_installed_defaults
 
+            code = validate_installed_defaults(anchored_dir(config.storage.state_dir), plugin_dirs)
             for d in plugin_dirs:
                 await pm.discover_and_load(d)
-            path = settings_path(config.storage.state_dir)
-            print(f"Validated {len(pm.manifests)} plugin(s).")
-            print(f"Settings: {path}")
             if pm.errors:
                 for pid, err in pm.errors.items():
                     print(f"  {pid}: {err}")
                 return 1
-            return 0
+            return code
+        if args.action == "set":
+            from Kerniq.plugins.cli_settings import apply_named_settings
+
+            code, lines = apply_named_settings(
+                anchored_dir(config.storage.state_dir),
+                args.plugin_id,
+                [(name, value) for name, value in (args.settings or [])],
+                plugin_dirs,
+            )
+            for line in lines:
+                print(line, file=sys.stderr if code else sys.stdout)
+            return code
         if args.action == "ui":
+            import os
+
             _apply_ui_log_level()
-            host = args.host or getattr(config.ui, "host", "127.0.0.1")
-            port = int(args.port or getattr(config.ui, "port", 8765))
+            state_dir = anchored_dir(config.storage.state_dir)
+            if getattr(args, "settings", None):
+                from Kerniq.plugins.cli_settings import apply_named_settings
+
+                code, lines = apply_named_settings(
+                    state_dir,
+                    "plugin_web_ui",
+                    [(name, value) for name, value in args.settings],
+                    plugin_dirs,
+                )
+                for line in lines:
+                    print(line, file=sys.stderr if code else sys.stdout)
+                if code:
+                    return code
+            from Kerniq.server.listen import resolve_listen
+            from Kerniq.server.settings import load_server_settings
+            from Kerniq.settings.component_store import ComponentSettingsStore
+
+            plugin_values = ComponentSettingsStore(state_dir).load("plugin", "plugin_web_ui")
+            core = load_server_settings(state_dir, config)
+            if args.host:
+                os.environ["KERNIQ_CLI_HOST"] = str(args.host)
+            else:
+                os.environ.pop("KERNIQ_CLI_HOST", None)
+            if args.port:
+                os.environ["KERNIQ_CLI_PORT"] = str(args.port)
+            else:
+                os.environ.pop("KERNIQ_CLI_PORT", None)
+            resolved = resolve_listen(
+                config_host=str(getattr(config.ui, "host", "127.0.0.1")),
+                config_port=int(getattr(config.ui, "port", 8765)),
+                plugin=plugin_values,
+                core=core,
+                cli_host=args.host,
+                cli_port=args.port,
+            )
+            host = str(resolved["host"])
+            port = int(resolved["port"])
             config.ui.host = host
             config.ui.port = port
             ui_dir = None
@@ -704,20 +873,22 @@ async def async_main(argv: Optional[list] = None) -> int:
                     # still continue if server thread might have started
             # Give server thread a moment
             await asyncio.sleep(0.3)
-            display = host if host not in ("0.0.0.0", "::") else "127.0.0.1"
-            if host in ("0.0.0.0", "::"):
-                try:
-                    import socket
-                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    s.connect(("8.8.8.8", 80))
-                    lan = s.getsockname()[0]
-                    s.close()
-                except Exception:
-                    lan = "127.0.0.1"
-                print(f"Web UI (LAN): http://{lan}:{port}")
-                print(f"Web UI (local): http://127.0.0.1:{port}")
-            else:
-                print(f"Web UI: http://{display}:{port}")
+            from Kerniq.server.firewall import lan_ipv4s, listen_lines, try_open_port
+
+            ips = lan_ipv4s()
+            lan = ips[0] if ips else "127.0.0.1"
+            note = try_open_port(port) if host in ("0.0.0.0", "::") else ""
+            for line in listen_lines(host, port, firewall_note=note):
+                print(line)
+            if resolved.get("server_mode"):
+                from Kerniq.server.settings import JSON_STORAGE_WARNING, load_server_settings
+
+                print("Server mode: one Kerniq. Browser users are a cookie id. Chats stay separated.")
+                print("A remote console must know the address. The API key only authenticates.")
+                print(f"  kerniq run --server http://{lan if host in ('0.0.0.0', '::') else host}:{port} --api-key KEY --task \"...\"")
+                core_now = load_server_settings(state_dir, config)
+                if not str(core_now.get("database_url") or "").strip():
+                    print(JSON_STORAGE_WARNING)
             print("Press Ctrl+C to stop.")
             try:
                 while True:
@@ -725,6 +896,113 @@ async def async_main(argv: Optional[list] = None) -> int:
             except (KeyboardInterrupt, asyncio.CancelledError):
                 await pm.shutdown_all()
             return 0
+    if args.command == "server":
+        from Kerniq.server.listen import resolve_listen
+        from Kerniq.server.settings import (
+            JSON_STORAGE_WARNING,
+            ensure_api_key,
+            load_server_settings,
+            save_server_settings,
+        )
+        from Kerniq.settings.component_store import ComponentSettingsStore
+
+        state_dir = anchored_dir(config.storage.state_dir)
+        if args.action == "key":
+            if getattr(args, "rotate", False):
+                import secrets
+
+                key = secrets.token_urlsafe(24)
+                save_server_settings(state_dir, {"api_key": key})
+                print(key)
+                return 0
+            key, _created = ensure_api_key(state_dir)
+            print(key)
+            return 0
+        if args.action == "show":
+            plugin_values = ComponentSettingsStore(state_dir).load("plugin", "plugin_web_ui")
+            core = load_server_settings(state_dir, config)
+            resolved = resolve_listen(
+                config_host=str(getattr(config.ui, "host", "127.0.0.1")),
+                config_port=int(getattr(config.ui, "port", 8765)),
+                plugin=plugin_values,
+                core=core,
+            )
+            print(f"server_mode={'on' if resolved['server_mode'] else 'off'}")
+            print(f"listen={resolved['host']}:{resolved['port']}")
+            print(f"api_key={'set' if core.get('api_key') else 'missing'}")
+            from Kerniq.server.homes import users_root
+
+            root = users_root(state_dir, core)
+            print(f"users_root={root}")
+            quota = int(core.get("user_quota_bytes") or 0)
+            print(f"user_quota_gb={quota / (1024 * 1024 * 1024):.1f}")
+            print(f"model_base_url={core.get('model_base_url') or 'http://127.0.0.1:1234'}")
+            if core.get("database_url"):
+                print("storage=mysql")
+            else:
+                print("storage=json")
+                print(JSON_STORAGE_WARNING)
+            print("A remote console must know the address. Example:")
+            print(f"  kerniq run --server http://HOST:{resolved['port']} --api-key KEY --task \"...\"")
+            return 0
+        if args.action == "init":
+            from Kerniq.server.database import init_server_database
+
+            return init_server_database(state_dir)
+        if args.action == "db":
+            from Kerniq.server.database import provision_mysql
+
+            result = provision_mysql(
+                host=args.host,
+                port=args.port,
+                user=args.user,
+                password=args.password,
+                name=args.name,
+            )
+            if not result.get("ok"):
+                print(result.get("error") or "Database was not created.", file=sys.stderr)
+                return 1
+            save_server_settings(state_dir, {"database_url": result["url"], "enabled": True})
+            print(f"Database {result['database']} is ready. Restart the Web UI so chats use it.")
+            print("Kerniq created the database if it did not exist. The password is not printed.")
+            return 0
+        if args.action == "set":
+            from Kerniq.server.homes import assert_users_root
+
+            key = str(args.key)
+            value = str(args.value or "").strip()
+            if key == "users-root":
+                try:
+                    root = assert_users_root(value)
+                except ValueError as exc:
+                    print(str(exc), file=sys.stderr)
+                    return 1
+                save_server_settings(state_dir, {"users_root": str(root)})
+                print(f"User folders: {root}")
+                print("Restart the Web UI so new users are created there. Existing folders stay where they are.")
+                return 0
+            if key == "quota-gb":
+                try:
+                    gib = float(value)
+                except ValueError:
+                    print("quota-gb must be a number, for example 8.", file=sys.stderr)
+                    return 1
+                if gib < 1 or gib > 10240:
+                    print("quota-gb must be from 1 to 10240.", file=sys.stderr)
+                    return 1
+                save_server_settings(state_dir, {"user_quota_bytes": int(gib * 1024 * 1024 * 1024)})
+                print(f"Each user can use {gib:g} GB. Restart is not required.")
+                return 0
+            if key == "model-url":
+                if not (value.startswith("http://") or value.startswith("https://")):
+                    print("model-url must start with http:// or https://", file=sys.stderr)
+                    return 1
+                save_server_settings(state_dir, {"model_base_url": value.rstrip("/")})
+                print(f"Local models are reached at {value.rstrip('/')}")
+                print("This is LM Studio or Ollama on the server machine, usually http://127.0.0.1:1234.")
+                return 0
+        print("Usage: server show | server key [--rotate] | server init | server db --user USER --password PASS | server set users-root|quota-gb|model-url VALUE")
+        return 1
     if args.command == "sessions":
         if args.action == "list":
             sessions = await sm.list_sessions()
@@ -891,6 +1169,7 @@ async def async_main(argv: Optional[list] = None) -> int:
             else:
                 workspace_path = workspace_path.resolve()
             workspace_path.mkdir(parents=True, exist_ok=True)
+            _quiet_mcp_logs(Path(config.storage.state_dir))
             store = ToolSettingsStore(config.storage.state_dir)
             registry, policy = _build_registry(config, workspace_path, store)
             from Kerniq.mcp.publish import resolve_published_names
@@ -902,16 +1181,11 @@ async def async_main(argv: Optional[list] = None) -> int:
                 workspace=workspace_path,
                 security_policy=policy,
             )
-            # Diagnostics on stderr only (stdio is the MCP protocol stream)
-            import sys as _sys
-            print(
-                f"Starting MCP server (stdio). Published: {published}\n"
-                f"workspace={workspace_path}\n"
-                f"python={_sys.executable}\n"
-                f"cwd={Path.cwd()}",
-                file=_sys.stderr,
+            logger.info(
+                "MCP server stdio. Published: %s workspace=%s",
+                published,
+                workspace_path,
             )
-            print("Connect an MCP client to this process stdin/stdout.", file=_sys.stderr)
             await adapter.run_stdio()
             return 0
         if args.action == "install":

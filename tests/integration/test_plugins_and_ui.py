@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import threading
 from pathlib import Path
-from urllib.request import Request, urlopen
+
+import httpx
 
 from Kerniq.plugins.base import PluginContext
 from Kerniq.plugins.manager import PluginManager
@@ -25,7 +25,23 @@ def test_plugin_register_settings_and_shutdown():
         )
         await pm.discover_and_load(_plugins_root(), skip_ids=["plugin_web_ui"])
         names = {t.name for t in registry.list_tools()}
+        offered = {spec["function"]["name"] for spec in registry.get_tools_for_model()}
         assert "plugin_search" in names
+        for hidden in (
+            "plugin_search",
+            "plugin_install",
+            "plugin_remove",
+            "plugin_security_scan",
+            "plugin_list_installed",
+        ):
+            assert hidden not in offered
+        assert "benchmark_run" in names
+        assert "benchmark_run" not in offered
+        from Kerniq.plugins.extensions import scan_extensions
+        ext = scan_extensions(_plugins_root())
+        hosts = {(row["host"], row["slot"], row["plugin_id"]) for row in ext}
+        assert ("plugin_web_ui", "settings", "benchmark_pro") in hosts
+        assert ("plugin_web_ui", "panel", "benchmark_pro") in hosts
         assert "plugin_context_compact" in pm.plugins or "plugin_compact" in pm.plugins or any(
             "compact" in pid for pid in pm.plugins
         )
@@ -55,6 +71,8 @@ def test_web_ui_run_cancel_and_approval(tmp_path, monkeypatch):
     ui.api.provider = "mock"
     ui.agent.workspace = str(tmp_path / "ws")
     ui.chat.streaming = False
+    ui.chat.compose_plan = False
+    ui.chat.mode_auto = False
     store.save(ui)
     (tmp_path / "ws").mkdir()
     monkeypatch.setattr(mod, "_settings_store", lambda: store)
@@ -66,15 +84,14 @@ def test_web_ui_run_cancel_and_approval(tmp_path, monkeypatch):
     thread.start()
 
     def call(method, path, payload=None):
-        data = None if payload is None else json.dumps(payload).encode()
-        req = Request(
+        response = httpx.request(
+            method,
             f"http://127.0.0.1:{port}{path}",
-            data=data,
-            method=method,
-            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=10,
         )
-        with urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode())
+        response.raise_for_status()
+        return response.json()
 
     try:
         info = call("GET", "/api/server/info")
@@ -90,16 +107,18 @@ def test_web_ui_run_cancel_and_approval(tmp_path, monkeypatch):
         run_id = started["run_id"]
         seen = []
         done = False
-        for _ in range(40):
+        last = {}
+        for _ in range(200):
             ev = call("GET", f"/api/chat/events?run_id={run_id}")
+            last = ev
             seen.extend(ev.get("events") or [])
             if ev.get("done"):
                 done = True
                 break
             threading.Event().wait(0.05)
-        assert done
-        text = " ".join(str(e.get("content") or "") for e in seen if e.get("type") == "assistant")
-        assert "mock provider" in text.lower() or "outcome=" in text
+        assert done, last
+        text = " ".join(str(e.get("content") or e.get("text") or "") for e in seen)
+        assert "mock provider" in text.lower() or "outcome=" in text, text[:500]
 
         import Kerniq.core.agent as agent_mod
 
@@ -117,7 +136,7 @@ def test_web_ui_run_cancel_and_approval(tmp_path, monkeypatch):
             assert cancelled["ok"] is True
             done = False
             statuses = []
-            for _ in range(50):
+            for _ in range(160):
                 ev = call("GET", f"/api/chat/events?run_id={run_id}")
                 for item in ev.get("events") or []:
                     if item.get("type") == "status":

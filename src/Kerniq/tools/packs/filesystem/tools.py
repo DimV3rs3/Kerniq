@@ -35,6 +35,7 @@ class FileSystemToolBase(Tool):
         "list_directory",
         "get_file_info",
         "search_code",
+        "view_image",
     })
 
     def __init__(self, workspace: pathlib.Path):
@@ -42,10 +43,14 @@ class FileSystemToolBase(Tool):
         self._cfg_keys: tuple = ()
         self.cfg_auto_accept = False
         self.cfg_collapsible = True
+
+    def plan_membership_default(self) -> bool:
+        """Read and search stay in Plan. Writes and archives do not."""
         try:
-            self._include_in_plan = self.name in self._PLAN_NAMES
+            name = self.name
         except Exception:
-            self._include_in_plan = False
+            return False
+        return name in self._PLAN_NAMES
 
     @property
     def category(self) -> str:
@@ -76,6 +81,7 @@ class FileSystemToolBase(Tool):
             "list_directory": "dirs listed",
             "get_file_info": "info reads",
             "search_code": "code searches",
+            "view_image": "images viewed",
             "zip": "archives packed",
             "unzip": "archives unpacked",
             "move_file": "files moved",
@@ -83,7 +89,23 @@ class FileSystemToolBase(Tool):
         return phrases.get(self.name, "file operations")
 
     def settings_schema(self) -> SettingsSchema | None:
-        return None
+        from Kerniq.interfaces.settings_schema import SettingField, SettingType
+        return SettingsSchema(
+            component_id=self.tool_id,
+            component_type="tool",
+            title=self.name,
+            fields=[
+                SettingField(
+                    key="include_in_plan",
+                    label="Include in Plan mode",
+                    type=SettingType.BOOL,
+                    default=self.plan_membership_default(),
+                    description="Allow this tool to be offered in Plan mode. "
+                               "When on, the orchestrator may call this tool "
+                               "according to its plan settings.",
+                ),
+            ],
+        )
 
     def apply_settings(self, values: dict) -> None:
         values = values or {}
@@ -113,7 +135,84 @@ class FileSystemToolBase(Tool):
             "zip": "medium",
         }.get(name, "low")
 
-    def _safe_path(self, path_str: str, *, must_exist: bool = False) -> pathlib.Path:
+    def _match_external(self, target: pathlib.Path) -> tuple[pathlib.Path | None, bool]:
+        """An attached file or directory that contains ``target``, plus the read-only flag."""
+        task = current_task()
+        meta = getattr(task, "metadata", None) or {} if task is not None else {}
+        read_only = bool(meta.get("external_read_only", True))
+        for item in meta.get("external_files") or []:
+            try:
+                root = pathlib.Path(str(item)).resolve()
+            except OSError:
+                continue
+            try:
+                inside = target == root or target.is_relative_to(root)
+            except (OSError, ValueError):
+                inside = False
+            if inside:
+                return root, read_only
+        return None, read_only
+
+    def _shown_path(self, path: pathlib.Path) -> str | None:
+        from Kerniq.server.homes import display_path, jail_root
+
+        if jail_root() is not None:
+            return display_path(path)
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        try:
+            return resolved.relative_to(self.workspace).as_posix()
+        except ValueError:
+            root, _read_only = self._match_external(resolved)
+            if root is None:
+                return None
+            return str(resolved)
+
+    def _admit(self, path: pathlib.Path, payload: str | bytes) -> None:
+        from Kerniq.server.homes import admit_bytes, jail_root
+
+        if jail_root() is None:
+            return
+        raw = payload.encode("utf-8") if isinstance(payload, str) else payload
+        old = 0
+        try:
+            if path.is_file() and not path.is_symlink():
+                old = path.stat().st_size
+        except OSError:
+            old = 0
+        reason = admit_bytes(len(raw), old)
+        if reason:
+            raise PermissionError(reason)
+
+    def _safe_path(self, path_str: str, *, must_exist: bool = False, write: bool | None = None) -> pathlib.Path:
+        from Kerniq.server.homes import jail_root, logical_path
+
+        jail = jail_root()
+        if jail is not None:
+            try:
+                target = logical_path(str(path_str), jail)
+            except PermissionError as exc:
+                raise PermissionError("Access denied: that path is outside /workspace") from exc
+            writing = self.name in {
+                "write_file", "create_file", "edit_file", "delete_file", "create_directory",
+                "move_file",
+            } if write is None else bool(write)
+            if writing:
+                from Kerniq.server.homes import write_blocked_reason
+
+                blocked = write_blocked_reason()
+                if blocked:
+                    raise PermissionError(blocked)
+            rel = target.relative_to(jail).as_posix()
+            if rel not in ("", "."):
+                blocked = strict_allows(rel, current_task())
+                if blocked:
+                    raise PermissionError(blocked)
+            if must_exist and not target.exists():
+                raise FileNotFoundError(f"File not found: {path_str}")
+            return target
         raw = str(path_str)
         if "\x00" in raw or raw.startswith("\\\\") or raw.startswith("//"):
             raise PermissionError(f"Access denied: {path_str} is outside workspace")
@@ -124,15 +223,19 @@ class FileSystemToolBase(Tool):
             target = candidate.resolve()
         else:
             target = (base / candidate).resolve()
-        task = current_task()
-        external = []
-        if task is not None:
-            for item in ((getattr(task, "metadata", None) or {}).get("external_files") or []):
-                try:
-                    external.append(pathlib.Path(item).resolve())
-                except Exception:
-                    continue
-        if target in external:
+        writing = self.name in {
+            "write_file", "create_file", "edit_file", "delete_file", "create_directory",
+        } if write is None else bool(write)
+        if writing:
+            from Kerniq.server.homes import write_blocked_reason
+
+            blocked = write_blocked_reason()
+            if blocked:
+                raise PermissionError(blocked)
+        root, read_only = self._match_external(target)
+        if root is not None:
+            if writing and read_only:
+                raise PermissionError("External attachments are read-only.")
             if must_exist and not target.exists():
                 raise FileNotFoundError(f"File not found: {path_str}")
             return target
@@ -255,6 +358,20 @@ class ReadFileTool(FileSystemToolBase):
             path = self._safe_path(arguments["path"], must_exist=True)
             if not path.is_file():
                 return self._create_error_result(call_id, f"Not a file: {arguments['path']}", "FS_ERROR")
+            from Kerniq.models.vision import sniff_image
+
+            head = path.read_bytes()[:32]
+            if sniff_image(head):
+                return ToolResult(
+                    tool_call_id=call_id,
+                    tool_id=self.tool_id,
+                    status="success",
+                    output={"image": True, "path": arguments["path"]},
+                    human_readable=(
+                        "This file is an image. The bytes were not returned. "
+                        "Call view_image with this path to see the picture itself."
+                    ),
+                )
             max_bytes = int(arguments.get("max_bytes", self.cfg_max_bytes))
             data = path.read_bytes()
             truncated = len(data) > max_bytes
@@ -262,17 +379,85 @@ class ReadFileTool(FileSystemToolBase):
                 data = data[:max_bytes]
             content = data.decode("utf-8", errors="replace")
             note = "\n...[truncated]" if truncated else ""
-            wrapped = (
-                f'<untrusted_file_content path="{arguments["path"]}">\n'
-                f"{content}{note}\n"
-                "</untrusted_file_content>"
-            )
+            text = content + note
             return ToolResult(
                 tool_call_id=call_id,
                 tool_id=self.tool_id,
                 status="success",
-                output={"content": wrapped, "truncated": truncated, "size": path.stat().st_size},
-                human_readable=wrapped,
+                output={"content": text, "truncated": truncated, "size": path.stat().st_size},
+                human_readable=text,
+            )
+        except Exception as e:
+            return self._create_error_result(call_id, str(e), "FS_ERROR")
+
+
+class ViewImageTool(FileSystemToolBase):
+    @property
+    def tool_id(self) -> str:
+        return "fs_view_image"
+
+    @property
+    def name(self) -> str:
+        return "view_image"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Show one image file so you can see it. "
+            "Use this for a photo or picture in the workspace, or for a file the user attached. "
+            "The result is the picture itself, not a byte array and not a text dump. "
+            "path is relative to the workspace. Do not use read_file on an image."
+        )
+
+    @property
+    def input_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "Workspace path of the image."}},
+            "required": ["path"],
+        }
+
+    async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
+        from Kerniq.models.vision import MAX_IMAGE_BYTES, image_record, sniff_image
+
+        call_id = arguments.get("tool_call_id", "unknown")
+        try:
+            path = self._safe_path(arguments["path"], must_exist=True)
+            if not path.is_file():
+                return self._create_error_result(call_id, f"Not a file: {arguments['path']}", "FS_ERROR")
+            size = path.stat().st_size
+            if size > MAX_IMAGE_BYTES:
+                return self._create_error_result(
+                    call_id,
+                    "That image is larger than 6 MB, so it was not sent.",
+                    "FS_ERROR",
+                )
+            if sniff_image(path.read_bytes()[:32]) is None:
+                return self._create_error_result(
+                    call_id,
+                    "That file is not a PNG, JPEG, GIF, WEBP, or BMP image.",
+                    "FS_ERROR",
+                )
+            try:
+                root = self.workspace if path.is_relative_to(self.workspace) else path.parent
+            except OSError:
+                root = path.parent
+            record = image_record(path, root)
+            if record is None:
+                return self._create_error_result(call_id, "The image could not be prepared.", "FS_ERROR")
+            try:
+                label = path.relative_to(self.workspace).as_posix()
+            except ValueError:
+                label = path.name
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="success",
+                output={"path": label, "mime": record["mime"], "bytes": size, "image": record},
+                human_readable=(
+                    f"Image loaded: {label} ({record['mime']}, {size} bytes). "
+                    "The picture is attached for you to look at. Do not ask for the raw bytes."
+                ),
             )
         except Exception as e:
             return self._create_error_result(call_id, str(e), "FS_ERROR")
@@ -341,12 +526,14 @@ class WriteFileTool(FileSystemToolBase):
             path = self._safe_path(arguments["path"])
             if arguments.get("create_dirs", True):
                 path.parent.mkdir(parents=True, exist_ok=True)
+            self._admit(path, arguments["content"])
             path.write_text(arguments["content"], encoding="utf-8")
+            shown = self._shown_path(path) or arguments["path"]
             return ToolResult(
                 tool_call_id=call_id,
                 tool_id=self.tool_id,
                 status="success",
-                output={"path": str(path.relative_to(self.workspace)), "bytes": path.stat().st_size},
+                output={"path": shown, "bytes": path.stat().st_size},
                 human_readable=f"Successfully wrote to {arguments['path']}",
             )
         except Exception as e:
@@ -386,6 +573,7 @@ class CreateFileTool(FileSystemToolBase):
                     call_id, f"File already exists: {arguments['path']}", "FS_EXISTS"
                 )
             path.parent.mkdir(parents=True, exist_ok=True)
+            self._admit(path, arguments.get("content", ""))
             path.write_text(arguments.get("content", ""), encoding="utf-8")
             return ToolResult(
                 tool_call_id=call_id,
@@ -464,6 +652,7 @@ class EditFileTool(FileSystemToolBase):
                 return self._create_error_result(call_id, f"Not a file: {arguments['path']}", "FS_ERROR")
 
             if "content" in arguments and arguments["content"] is not None and "old_string" not in arguments:
+                self._admit(path, arguments["content"])
                 path.write_text(arguments["content"], encoding="utf-8")
                 return ToolResult(
                     tool_call_id=call_id,
@@ -512,6 +701,7 @@ class EditFileTool(FileSystemToolBase):
                     )
                 updated = text.replace(old, new, 1)
                 count = 1
+            self._admit(path, updated)
             path.write_text(updated, encoding="utf-8")
             return ToolResult(
                 tool_call_id=call_id,
@@ -705,7 +895,9 @@ class ListDirectoryTool(FileSystemToolBase):
 
             if not recursive:
                 for f in sorted(path.iterdir(), key=lambda p: p.name):
-                    rel = str(f.relative_to(self.workspace))
+                    rel = self._shown_path(f)
+                    if rel is None:
+                        continue
                     entries.append(
                         {
                             "name": f.name,
@@ -726,11 +918,9 @@ class ListDirectoryTool(FileSystemToolBase):
                         continue
                     for name in sorted(dirs) + sorted(files):
                         item = root_path / name
-                        try:
-                            item.resolve().relative_to(self.workspace)
-                        except ValueError:
+                        rel = self._shown_path(item)
+                        if rel is None:
                             continue
-                        rel = str(item.relative_to(self.workspace))
                         entries.append(
                             {
                                 "name": name,
@@ -990,7 +1180,7 @@ class ZipTool(FileSystemToolBase):
             archive_rel = arguments.get("archive") or "archive.zip"
             if not str(archive_rel).lower().endswith(".zip"):
                 archive_rel = str(archive_rel) + ".zip"
-            out = self._safe_path(archive_rel)
+            out = self._safe_path(archive_rel, write=True)
             out.parent.mkdir(parents=True, exist_ok=True)
             added = []
             with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -1062,7 +1252,7 @@ class UnzipTool(FileSystemToolBase):
                 return self._create_error_result(call_id, "Not a .zip file", "UNZIP_TYPE")
             dest_rel = arguments.get("destination")
             if dest_rel:
-                dest = self._safe_path(dest_rel)
+                dest = self._safe_path(dest_rel, write=True)
             else:
                 dest = src.with_suffix("")
             dest.mkdir(parents=True, exist_ok=True)
@@ -1123,21 +1313,27 @@ class MoveFileTool(FileSystemToolBase):
     async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
         call_id = arguments.get("tool_call_id", "unknown")
         try:
-            src = self._safe_path(arguments["src"], must_exist=True)
-            dst = self._safe_path(arguments["dst"])
+            src = self._safe_path(arguments["src"], must_exist=True, write=True)
+            dst = self._safe_path(arguments["dst"], write=True)
             if dst == src:
                 raise PermissionError("Source and destination are the same")
             if dst.is_relative_to(src):
                 raise PermissionError("Cannot move a directory into itself")
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(src), str(dst))
+            def _label(path: pathlib.Path) -> str:
+                try:
+                    return path.relative_to(self.workspace).as_posix()
+                except ValueError:
+                    return str(path)
+
             return ToolResult(
                 tool_call_id=call_id,
                 tool_id=self.tool_id,
                 status="success",
                 output={
-                    "src": src.relative_to(self.workspace).as_posix(),
-                    "dst": dst.relative_to(self.workspace).as_posix(),
+                    "src": _label(src),
+                    "dst": _label(dst),
                 },
                 human_readable=f"Moved {arguments['src']} -> {arguments['dst']}",
             )
@@ -1159,6 +1355,7 @@ class FileSystemTools:
             ListDirectoryTool(self.workspace),
             GetFileInfoTool(self.workspace),
             SearchCodeTool(self.workspace),
+            ViewImageTool(self.workspace),
             ZipTool(self.workspace),
             UnzipTool(self.workspace),
             MoveFileTool(self.workspace),

@@ -31,10 +31,14 @@ class ToolRegistry:
     def list_tools(self) -> List[Tool]:
         return list(self._tools_by_id.values())
 
+    def agent_tools(self) -> List[Tool]:
+        """Tools the model and the CLI may see. Plugin commands stay out."""
+        return [tool for tool in self._tools_by_id.values() if getattr(tool, "agent_visible", True) is not False]
+
     def get_tools_for_model(self) -> List[Dict[str, Any]]:
-        # Convert tools to the format expected by LLMs (e.g., OpenAI tool spec)
+        # Plugin commands and other non-agent tools stay registered but are not offered.
         tools_spec = []
-        for tool in self._tools_by_id.values():
+        for tool in self.agent_tools():
             tools_spec.append({
                 "type": "function",
                 "function": {

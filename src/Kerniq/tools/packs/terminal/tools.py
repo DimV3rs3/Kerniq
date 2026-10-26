@@ -39,8 +39,14 @@ def _scrub_env(workspace: Path) -> dict:
     env["KERNIQ_WORKSPACE"] = str(workspace)
     try:
         from Kerniq.sandbox.venv import apply_sandbox_env
+        from Kerniq.security.task_scope import current_task
 
-        env = apply_sandbox_env(env, workspace)
+        roots = []
+        task = current_task()
+        meta = getattr(task, "metadata", None) or {}
+        if meta.get("external_read_only", True):
+            roots = [str(item) for item in (meta.get("external_files") or []) if item]
+        env = apply_sandbox_env(env, workspace, external_roots=roots)
     except Exception as exc:
         logger.warning("Sandbox env was not applied: %s", exc)
     return env
@@ -114,8 +120,10 @@ class TerminalTools(Tool):
     def description(self) -> str:
         return (
             "Run a shell command in the workspace. "
-            "python and pip in this shell are the workspace sandbox .kerniq-venv, "
-            "not the host interpreter and not a project .venv. Do not use Docker for Python tests. "
+            "python and pip in this shell are the workspace sandbox .kerniq-venv. "
+            "The shell cannot see programs installed on this computer "
+            "(dotnet, node, cmd, or the system PATH). "
+            "Do not use Docker for Python tests. "
             "Absolute paths, UNC paths, '..', encoded PowerShell, and network utilities are denied. "
             "On Windows this is PowerShell (not cmd). On Linux/macOS this is bash/sh. "
             "Examples (Windows): Get-Date; Get-ChildItem . Examples (Unix): date; ls -la."
@@ -238,17 +246,23 @@ class TerminalTools(Tool):
             cwd=str(cwd_abs),
             env=_scrub_env(self._workspace_root),
         )
+        # Ensure the spawned process never creates a visible window or attaches to a console.
         if sys.platform == "win32":
             kwargs["stdin"] = asyncio.subprocess.DEVNULL
             flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            kwargs["creationflags"] = flags
-
+            # Additionally hide any possible console window that might be opened by PowerShell.
+            kwargs["creationflags"] = flags | 0x00000010  # DETACHED_PROCESS
         try:
             import shlex
             if sys.platform == "win32":
-                # PowerShell — avoids cmd.exe quirks and interactive `date` hangs
+                # The shell binary is the host PowerShell. Its PATH is only the sandbox,
+                # so the command itself cannot see dotnet, node, or cmd.
+                windir = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+                ps_exe = os.path.join(windir, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+                if not os.path.isfile(ps_exe):
+                    ps_exe = "powershell.exe"
                 ps = [
-                    "powershell.exe",
+                    ps_exe,
                     "-NoProfile",
                     "-NonInteractive",
                     "-ExecutionPolicy", "Bypass",
@@ -257,6 +271,7 @@ class TerminalTools(Tool):
                 ]
                 process = await asyncio.create_subprocess_exec(*ps, **kwargs)
             else:
+                # On POSIX we use a plain shell but suppress any pseudo‑tty allocation that could bring up a terminal.
                 process = await asyncio.create_subprocess_shell(command, **kwargs)
             try:
                 waited = await _wait_command(process, float(timeout), context, started)

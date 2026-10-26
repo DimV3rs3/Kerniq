@@ -38,7 +38,8 @@ def test_pin_todo_keeps_the_system_prompt_on_later_turns():
     assert system.role == MessageRole.SYSTEM
     assert system.content.startswith("[Pinned TODO.")
     assert prompt in system.content
-    assert system.content.rstrip().endswith(prompt)
+    assert "[Tools this turn:" not in system.content
+    assert "Available tools:" not in system.content
     assert sum(1 for m in ctx.messages if m.role == MessageRole.SYSTEM) == 1
 
 
@@ -128,7 +129,7 @@ def test_answer_without_a_todo_is_not_a_finished_task():
             list_tools=lambda: [],
         ),
     )
-    orch.finish_open_plan = True
+    orch.compose_plan = True
     orch.max_iterations = 6
     ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="find bugs")
     ctx.metadata["agent_mode"] = "act"
@@ -136,7 +137,77 @@ def test_answer_without_a_todo_is_not_a_finished_task():
     result = asyncio.run(orch.run(ctx))
     assert ctx.metadata.get("outcome") == "no_plan"
     assert "update_plan" in result
-    assert "Tools this turn: update_plan only" in ctx.messages[0].content
+    assert "Until a TODO exists, call update_plan through the tool interface" in ctx.messages[0].content
+    assert "[Tools this turn:" not in ctx.messages[0].content
+
+
+def test_task_completed_stops_even_without_a_plan():
+    import asyncio
+    from types import SimpleNamespace
+
+    from Kerniq.interfaces.models import ModelResponse
+
+    calls = []
+
+    class Prov:
+        async def generate(self, request):
+            calls.append(request)
+            return ModelResponse(
+                messages=[Message(role=MessageRole.ASSISTANT, content="The bug list is above.\nTASK_COMPLETED")],
+                finish_reason="stop",
+            )
+
+    orch = Orchestrator(
+        Prov(),
+        SimpleNamespace(
+            get_tools_for_model=lambda: [{"type": "function", "function": {"name": "update_plan"}}],
+            list_tools=lambda: [],
+        ),
+    )
+    orch.compose_plan = True
+    orch.max_iterations = 6
+    ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="find bugs")
+    ctx.metadata["agent_mode"] = "act"
+    ctx.add_message(Message(role=MessageRole.USER, content="прочитай проект и найди баги"))
+    result = asyncio.run(orch.run(ctx))
+    assert len(calls) == 1
+    assert ctx.metadata.get("outcome") != "no_plan"
+    assert "bug list" in result
+    assert not any(
+        m.role == MessageRole.SYSTEM and "There is no TODO" in (m.content or "")
+        for m in ctx.messages
+    )
+
+
+def test_answer_without_a_todo_finishes_when_a_plan_is_not_required():
+    import asyncio
+    from types import SimpleNamespace
+
+    from Kerniq.interfaces.models import ModelResponse
+
+    class Prov:
+        async def generate(self, request):
+            return ModelResponse(
+                messages=[Message(role=MessageRole.ASSISTANT, content="Here is the bug list.")],
+                finish_reason="stop",
+            )
+
+    orch = Orchestrator(
+        Prov(),
+        SimpleNamespace(
+            get_tools_for_model=lambda: [{"type": "function", "function": {"name": "update_plan"}}],
+            list_tools=lambda: [],
+        ),
+    )
+    orch.compose_plan = False
+    orch.max_iterations = 6
+    ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="find bugs")
+    ctx.metadata["agent_mode"] = "act"
+    ctx.add_message(Message(role=MessageRole.USER, content="прочитай проект и найди баги"))
+    result = asyncio.run(orch.run(ctx))
+    assert ctx.metadata.get("outcome") != "no_plan"
+    assert "bug list" in result
+    assert not any(m.role.value == "user" and m.content != "прочитай проект и найди баги" for m in ctx.messages)
 
 
 def test_fetch_url_blocks_local_targets():

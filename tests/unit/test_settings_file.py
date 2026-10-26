@@ -1,6 +1,7 @@
 import asyncio
 import importlib.util
 import json
+import os
 from pathlib import Path
 
 from Kerniq.interfaces.settings_schema import SettingField, SettingType, SettingsSchema
@@ -24,8 +25,10 @@ def test_uninstall_drops_project_workspace_not_an_external_one(tmp_path):
 
     project = tmp_path / "proj"
     (project / "workspace").mkdir(parents=True)
+    (project / "workspace" / ".kerniq-venv").mkdir()
     (project / "state").mkdir()
     (project / "src").mkdir()
+    (project / "src" / ".kerniq-venv").mkdir()
     (project / "custom").mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -38,6 +41,8 @@ def test_uninstall_drops_project_workspace_not_an_external_one(tmp_path):
     assert not (project / "custom").exists()
     assert not (project / "state").exists()
     assert (project / "src").is_dir()
+    assert (project / "src" / ".kerniq-venv").is_dir()
+    assert not (project / "workspace" / ".kerniq-venv").exists()
     assert outside.is_dir()
     assert any("workspace" in line for line in report)
 
@@ -52,6 +57,54 @@ def test_uninstall_drops_project_workspace_not_an_external_one(tmp_path):
     assert outside.is_dir()
     assert not (project2 / "workspace").exists()
     assert not (project2 / "state").exists()
+
+
+def test_uninstall_stops_the_ui_process_and_not_itself(tmp_path):
+    from Kerniq.devtools import uninstall as u
+
+    project = tmp_path / "proj"
+    (project / "state").mkdir(parents=True)
+    (project / "state" / "ui.pid").write_text(
+        json.dumps({"pid": 4242, "role": "kerniq-web-ui"}),
+        encoding="utf-8",
+    )
+    killed = []
+
+    def fake_cmd(pid):
+        if pid in (os.getpid(), 4242):
+            return "python -m Kerniq plugins ui"
+        return "python other"
+
+    def fake_term(pid):
+        killed.append(pid)
+        return f"stopped pid {pid}"
+
+    report = u._stop_ui_processes(
+        project,
+        cmdline=fake_cmd,
+        terminate=fake_term,
+        scan=lambda: [os.getpid(), 4242, 77],
+    )
+    assert killed == [4242]
+    assert any("skipped" in line and str(os.getpid()) in line for line in report)
+    assert any("77" in line and "not the Kerniq UI" in line for line in report)
+
+
+def test_purge_reports_failure_when_a_directory_stays(tmp_path, monkeypatch):
+    from Kerniq.devtools import uninstall as u
+
+    project = tmp_path / "proj"
+    (project / "workspace").mkdir(parents=True)
+    (project / "state").mkdir()
+
+    def boom(path, ignore_errors=False):
+        raise OSError("busy")
+
+    monkeypatch.setattr(u.shutil, "rmtree", boom)
+    report = u._purge_project_state(project)
+    assert any("FAILED" in line and "workspace" in line for line in report)
+    assert (project / "workspace").is_dir()
+    assert (project / "state").is_dir()
 
 
 def test_defaults_land_in_settings_json(tmp_path):

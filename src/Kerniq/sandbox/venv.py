@@ -33,7 +33,62 @@ def _has_pip(python: Path) -> bool:
     return result.returncode == 0
 
 
+def _project_root_of(path: Path) -> Path | None:
+    cur = path.resolve()
+    for _ in range(8):
+        if (cur / "pyproject.toml").is_file() and (cur / "src" / "Kerniq").is_dir():
+            return cur
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
+
+
+def sandbox_workspace(workspace: Path) -> Path | None:
+    """The private venv lives in the configured workspace, never in the install tree.
+
+    ``<project>/workspace`` is allowed. ``<project>``, ``src``, and ``plugins`` are not.
+    """
+    root = Path(workspace).resolve()
+    project = _project_root_of(root)
+    if project is None:
+        return root
+    allowed = (project / "workspace").resolve()
+    try:
+        root.relative_to(allowed)
+    except ValueError:
+        logger.warning(
+            "Refusing to create a sandbox in the Kerniq install tree (%s). Use the workspace folder.",
+            root,
+        )
+        return None
+    return root
+
+
+def _venv_site(python: Path) -> Path:
+    """site-packages of this venv, asked from that interpreter when it runs."""
+    result = hidden_run(
+        [str(python), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    text = (result.stdout or "").strip()
+    if result.returncode == 0 and text:
+        return Path(text)
+    if os.name == "nt":
+        return python.parent.parent / "Lib" / "site-packages"
+    return (
+        python.parent.parent
+        / "lib"
+        / f"python{sys.version_info.major}.{sys.version_info.minor}"
+        / "site-packages"
+    )
+
+
 def _bootstrap_pip(python: Path) -> None:
+    """Give the sandbox a pip. Debian often disables ensurepip."""
     if _has_pip(python):
         return
     hidden_run(
@@ -45,14 +100,33 @@ def _bootstrap_pip(python: Path) -> None:
     )
     if _has_pip(python):
         return
+    site = _venv_site(python)
     try:
-        import urllib.request
-
-        script = python.parent.parent / "get-pip.py"
-        urllib.request.urlretrieve("https://bootstrap.pypa.io/get-pip.py", script)
-        hidden_run([str(python), str(script)], capture_output=True, text=True, timeout=180, check=False)
-    except Exception as exc:
-        logger.warning("Could not install pip into the workspace sandbox: %s", exc)
+        site.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning("Workspace sandbox has no pip. %s", exc)
+        return
+    logger.info("ensurepip did not install pip. Using the host pip instead.")
+    hidden_run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--target",
+            str(site),
+            "pip",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if not _has_pip(python):
+        logger.warning(
+            "Workspace sandbox has no pip. ensurepip failed, and the host pip could not install it."
+        )
 
 
 def _python_runs(python: Path) -> bool:
@@ -69,7 +143,9 @@ def _python_runs(python: Path) -> bool:
 
 
 def ensure_sandbox_python(workspace: Path) -> Path | None:
-    root = Path(workspace).resolve()
+    root = sandbox_workspace(workspace)
+    if root is None:
+        return None
     root.mkdir(parents=True, exist_ok=True)
     python = sandbox_python_path(root)
     if _python_runs(python) and _has_pip(python):
@@ -126,20 +202,59 @@ def _is_other_venv_bin(path: str, sandbox_bin: Path) -> bool:
     return (candidate.parent / "pyvenv.cfg").is_file()
 
 
-def apply_sandbox_env(env: dict, workspace: Path) -> dict:
-    """Point python/pip at the workspace sandbox and hide any other venv on PATH."""
+def install_guard(python: Path) -> None:
+    """Install the process guard into the venv so scripts cannot call host programs."""
+    from Kerniq.sandbox.guard import sitecustomize_source
+
+    if os.name == "nt":
+        site = python.parent.parent / "Lib" / "site-packages"
+    else:
+        site = (
+            python.parent.parent
+            / "lib"
+            / f"python{sys.version_info.major}.{sys.version_info.minor}"
+            / "site-packages"
+        )
+    try:
+        site.mkdir(parents=True, exist_ok=True)
+        dest = site / "sitecustomize.py"
+        text = sitecustomize_source()
+        if dest.is_file() and dest.read_text(encoding="utf-8") == text:
+            return
+        dest.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Sandbox guard was not installed: %s", exc)
+
+
+def apply_sandbox_env(env: dict, workspace: Path, *, external_roots: list | None = None) -> dict:
+    """Point python/pip at the workspace sandbox and hide the computer's PATH.
+
+    The shell can use the private venv. It cannot see dotnet, node, cmd, or
+    anything else installed on the machine. ``external_roots`` are attached
+    folders the script may read but must not modify.
+    """
     python = ensure_sandbox_python(workspace)
     if python is None:
         return env
+    install_guard(python)
     out = dict(env)
     bindir = python.parent.resolve()
-    out["VIRTUAL_ENV"] = str(bindir.parent)
+    venv_root = bindir.parent
+    out["VIRTUAL_ENV"] = str(venv_root)
     out.pop("PYTHONHOME", None)
-    kept: list[str] = []
-    for part in out.get("PATH", "").split(os.pathsep):
-        if not part or _is_other_venv_bin(part, bindir):
-            continue
-        kept.append(part)
-    out["PATH"] = os.pathsep.join([str(bindir), *kept])
-    out["KERNIQ_SANDBOX"] = str(bindir.parent)
+    parts = [str(bindir)]
+    if os.name == "nt":
+        parts.append(str(venv_root))
+    out["PATH"] = os.pathsep.join(parts)
+    out["PYTHONNOUSERSITE"] = "1"
+    out["PYTHONSAFEPATH"] = "1"
+    out.pop("PYTHONPATH", None)
+    out.pop("PYTHONSTARTUP", None)
+    out["KERNIQ_SANDBOX"] = str(venv_root)
+    roots = [str(item) for item in (external_roots or []) if str(item).strip()]
+    if roots:
+        out["KERNIQ_EXTERNAL_RO"] = os.pathsep.join(roots)
+    else:
+        out.pop("KERNIQ_EXTERNAL_RO", None)
     return out
+

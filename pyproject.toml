@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Kerniq"
-version = "0.1.5"
+version = "0.1.6"
 description = "A modular Open Source AI Agent Platform"
 readme = "README.md"
 license = { text = "MIT" }
@@ -22,6 +22,9 @@ dev = [
 ]
 mcp = [
     "mcp>=1.0.0",
+]
+mysql = [
+    "pymysql>=1.1.0",
 ]
 
 [project.scripts]

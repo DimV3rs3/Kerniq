@@ -50,8 +50,42 @@ class ToolPack(ABC):
         return None
 
     def settings_schema(self) -> Optional[SettingsSchema]:
-        """Optional pack-level settings (applied to all tools or the pack itself)."""
-        return None
+        """Pack-level switches. The UI renders these fields; it does not invent them.
+
+        Applying a field writes it onto every tool in the pack. A single tool
+        can still override the same key afterwards.
+        """
+        return SettingsSchema(
+            component_id=self.pack_id,
+            component_type="pack",
+            title=self.name,
+            fields=[
+                SettingField(
+                    key="include_in_plan",
+                    label="Include this pack in Plan mode",
+                    type=SettingType.BOOL,
+                    default=bool(self.include_in_plan),
+                    description=(
+                        "Plan mode may call the tools in this pack. "
+                        "A tool can still opt out on its own settings."
+                    ),
+                ),
+                SettingField(
+                    key="auto_accept",
+                    label="Auto-accept every tool in this pack",
+                    type=SettingType.BOOL,
+                    default=False,
+                    description="Skip confirmation for every tool in this pack. Critical risk still always asks.",
+                ),
+                SettingField(
+                    key="collapsible",
+                    label="Merge calls for every tool in this pack",
+                    type=SettingType.BOOL,
+                    default=True,
+                    description="Consecutive calls of these tools merge into one chat block.",
+                ),
+            ],
+        )
 
     def apply_settings(self, values: Dict[str, Any]) -> None:
         return None

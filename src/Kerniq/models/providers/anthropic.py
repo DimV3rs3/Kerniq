@@ -108,7 +108,17 @@ class AnthropicProvider(ModelProvider):
                     system_parts.append(msg.content)
                 continue
             if msg.role == MessageRole.USER:
-                out.append({"role": "user", "content": msg.content or ""})
+                from Kerniq.models.vision import anthropic_image_parts
+
+                pictures = anthropic_image_parts(getattr(msg, "metadata", None))
+                if pictures:
+                    blocks = []
+                    if msg.content:
+                        blocks.append({"type": "text", "text": msg.content})
+                    blocks.extend(pictures)
+                    out.append({"role": "user", "content": blocks})
+                else:
+                    out.append({"role": "user", "content": msg.content or ""})
             elif msg.role == MessageRole.ASSISTANT:
                 blocks: List[Dict[str, Any]] = []
                 if msg.content:
@@ -126,10 +136,18 @@ class AnthropicProvider(ModelProvider):
                     blocks = [{"type": "text", "text": ""}]
                 out.append({"role": "assistant", "content": blocks})
             elif msg.role == MessageRole.TOOL:
+                from Kerniq.models.vision import anthropic_image_parts
+
+                pictures = anthropic_image_parts(getattr(msg, "metadata", None))
+                if pictures:
+                    content: Any = [{"type": "text", "text": msg.content or "Image attached."}]
+                    content.extend(pictures)
+                else:
+                    content = msg.content or ""
                 block = {
                     "type": "tool_result",
                     "tool_use_id": msg.tool_call_id or "",
-                    "content": msg.content or "",
+                    "content": content,
                 }
                 if (
                     out

@@ -72,6 +72,8 @@ def apply_stored_tool_settings(tools: Iterable[Any], state_dir: Path | str) -> N
     store = ComponentSettingsStore(state_dir)
     schemas = {}
     for tool in tools:
+        if getattr(tool, "agent_visible", True) is False:
+            continue
         schema = ensure_common_fields(tool.settings_schema() if hasattr(tool, "settings_schema") else None, tool)
         schemas[tool.tool_id] = schema
         values = store.load("tool", tool.tool_id, schema)

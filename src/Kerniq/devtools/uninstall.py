@@ -11,12 +11,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import site
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 
 def _run(cmd: List[str], timeout: int = 180) -> Tuple[int, str]:
@@ -144,6 +145,21 @@ def _project_workspace(project_root: Path) -> Optional[Path]:
     return path
 
 
+def _remove_dir(path: Path) -> str:
+    """Delete a directory and say so only when it is actually gone."""
+    if not path.exists():
+        return ""
+    if (path / "__init__.py").is_file():
+        return f"{path} (kept: python package)"
+    try:
+        shutil.rmtree(path)
+    except Exception as exc:
+        return f"{path} FAILED: {exc}"
+    if path.exists():
+        return f"{path} FAILED: still present"
+    return str(path)
+
+
 def _purge_project_state(project_root: Path) -> List[str]:
     cleaned: List[str] = []
     extra = _project_workspace(project_root)
@@ -162,6 +178,14 @@ def _purge_project_state(project_root: Path) -> List[str]:
     ]
     if extra is not None:
         targets.append(extra)
+    venv_hits: List[Path] = []
+    try:
+        for found in project_root.rglob(".kerniq-venv"):
+            if found.is_dir():
+                venv_hits.append(found)
+    except Exception:
+        venv_hits = []
+    targets.extend(venv_hits)
     seen: set[str] = set()
     for p in targets:
         try:
@@ -171,29 +195,31 @@ def _purge_project_state(project_root: Path) -> List[str]:
         if key in seen:
             continue
         seen.add(key)
-        if not p.is_dir():
-            continue
-        # Never delete a Python package. User data dirs have no __init__.py.
-        if (p / "__init__.py").is_file():
-            cleaned.append(f"{p} (kept: python package)")
+        if not p.exists():
             continue
         try:
             rel = p.resolve().relative_to(project_root.resolve())
         except Exception:
             cleaned.append(f"{p} (kept: outside the project)")
             continue
-        if not rel.parts or "src" in rel.parts:
-            cleaned.append(f"{p} (kept: inside src)")
+        if not rel.parts or rel.parts[0] in {"src", "plugins", "tests", "config", ".git"}:
+            cleaned.append(f"{p} (kept: inside {rel.parts[0] if rel.parts else 'root'})")
+            continue
+        line = _remove_dir(p)
+        if line:
+            cleaned.append(line)
+    for p in list(project_root.rglob("__pycache__")):
+        if not p.is_dir():
             continue
         try:
-            shutil.rmtree(p, ignore_errors=True)
-            cleaned.append(str(p))
-        except Exception as e:
-            cleaned.append(f"{p} (failed: {e})")
-    for p in project_root.rglob("__pycache__"):
-        if p.is_dir():
-            shutil.rmtree(p, ignore_errors=True)
-            cleaned.append(str(p))
+            rel = p.resolve().relative_to(project_root.resolve())
+        except Exception:
+            continue
+        if rel.parts and rel.parts[0] == "src":
+            continue
+        line = _remove_dir(p)
+        if line:
+            cleaned.append(line)
     return cleaned
 
 
@@ -255,16 +281,162 @@ def _spawn_deferred(purge: bool, wipe_project: bool = False) -> int:
     return 0
 
 
+def _cmdline(pid: int) -> str:
+    if pid <= 0:
+        return ""
+    if sys.platform == "win32":
+        code, out = _run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f"(Get-CimInstance Win32_Process -Filter \"ProcessId={int(pid)}\").CommandLine",
+            ],
+            timeout=20,
+        )
+        return out if code == 0 else ""
+    path = Path(f"/proc/{int(pid)}/cmdline")
+    try:
+        raw = path.read_bytes()
+    except Exception:
+        return ""
+    return raw.replace(b"\0", b" ").decode("utf-8", "replace")
+
+
+def _is_ui_cmdline(text: str) -> bool:
+    low = (text or "").lower()
+    if "kerniq" not in low:
+        return False
+    if "uninstall" in low or " remove" in low:
+        return False
+    if "web_ui" in low or "kerniq-web-ui" in low:
+        return True
+    return "plugins" in low and " ui" in low
+
+
+def _scan_ui_pids() -> List[int]:
+    found: List[int] = []
+    if sys.platform == "win32":
+        code, out = _run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_Process | "
+                "Where-Object { $_.CommandLine -match 'Kerniq' -and $_.CommandLine -match 'web_ui|plugins ui' } | "
+                "Select-Object -ExpandProperty ProcessId",
+            ],
+            timeout=20,
+        )
+        if code == 0:
+            for part in out.split():
+                if part.isdigit():
+                    found.append(int(part))
+        return found
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return found
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if _is_ui_cmdline(_cmdline(pid)):
+            found.append(pid)
+    return found
+
+
+def _terminate_pid(pid: int) -> str:
+    if pid == os.getpid() or pid <= 0:
+        return f"skipped pid {pid} (this uninstall process)"
+    try:
+        if sys.platform == "win32":
+            code, out = _run(["taskkill", "/PID", str(pid), "/T", "/F"], timeout=20)
+            if code != 0 and "not found" not in out.lower():
+                return f"pid {pid} FAILED: {out or code}"
+            return f"stopped pid {pid}"
+        os.kill(pid, signal.SIGTERM)
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return f"stopped pid {pid}"
+            time.sleep(0.1)
+        os.kill(pid, signal.SIGKILL)
+        return f"killed pid {pid}"
+    except ProcessLookupError:
+        return f"pid {pid} already gone"
+    except Exception as exc:
+        return f"pid {pid} FAILED: {exc}"
+
+
+def _pid_file_ids(project_root: Optional[Path]) -> List[int]:
+    if project_root is None:
+        return []
+    path = project_root / "state" / "ui.pid"
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        pid = int(data.get("pid") or 0)
+    except Exception:
+        try:
+            pid = int(path.read_text(encoding="utf-8").strip().split()[0])
+        except Exception:
+            return []
+    return [pid] if pid > 0 else []
+
+
+def _stop_ui_processes(
+    project_root: Optional[Path],
+    *,
+    cmdline: Optional[Callable[[int], str]] = None,
+    terminate: Optional[Callable[[int], str]] = None,
+    scan: Optional[Callable[[], List[int]]] = None,
+) -> List[str]:
+    """Stop the Kerniq UI process. Never the process that is running uninstall."""
+    read_cmd = cmdline or _cmdline
+    stop = terminate or _terminate_pid
+    look = scan or _scan_ui_pids
+    me = os.getpid()
+    report: List[str] = []
+    pids: List[int] = []
+    for pid in _pid_file_ids(project_root) + list(look()):
+        if pid not in pids:
+            pids.append(pid)
+    for pid in pids:
+        if pid == me:
+            report.append(f"skipped pid {pid} (this uninstall process)")
+            continue
+        text = read_cmd(pid)
+        from_file = pid in _pid_file_ids(project_root)
+        if not text:
+            report.append(f"skipped pid {pid} (cannot confirm it is the Kerniq UI)")
+            continue
+        allowed = _is_ui_cmdline(text) or (from_file and "kerniq" in text.lower() and "uninstall" not in text.lower())
+        if not allowed:
+            report.append(f"skipped pid {pid} (not the Kerniq UI)")
+            continue
+        report.append(stop(pid))
+    return report
+
+
 def _do_uninstall(*, purge: bool = False, wipe_project: bool = False) -> int:
     """Actual uninstall body (must not hold a lock on kerniq.exe)."""
     print(f"Python: {sys.executable}")
     if "--deferred" in sys.argv or os.environ.get("KERNIQ_UNINSTALL_DEFERRED") == "1":
         time.sleep(1.2)
 
+    root = _project_root()
+    print("Stopping the Kerniq UI if it is still running")
+    state_report = list(_stop_ui_processes(root))
+    for line in state_report:
+        print(f"  - {line}")
+
     # Settings and runtime dirs go first, while this package can still be imported.
     # The source tree is left in place unless --wipe-project is set.
     if not wipe_project:
-        _reset_user_state()
+        state_report.extend(_reset_user_state())
 
     print("Running: python -m pip uninstall Kerniq -y")
     code, out = _run([sys.executable, "-m", "pip", "uninstall", "Kerniq", "-y"])
@@ -342,6 +514,9 @@ def _do_uninstall(*, purge: bool = False, wipe_project: bool = False) -> int:
         print("Close any terminal still running kerniq, then:")
         print(f'  "{sys.executable}" -m Kerniq uninstall -y')
         return 1
+    if any("FAILED" in line for line in state_report):
+        print("Uninstall did not finish: the UI or a user directory is still present.")
+        return 1
     return 0 if code == 0 else 0  # package often already gone after partial uninstall
 
 
@@ -358,19 +533,24 @@ def _project_root() -> Optional[Path]:
     return root
 
 
-def _reset_user_state() -> None:
+def _reset_user_state() -> List[str]:
     """Drop settings and runtime directories. Leave the installed source tree."""
     root = _project_root()
+    lines: List[str] = []
     if root is None:
         print("Could not detect project root; user settings were not reset.")
-        return
+        return ["FAILED: project root was not found"]
     print(f"Resetting user settings and runtime data under {root}")
-    for line in _purge_project_state(root):
+    lines.extend(_purge_project_state(root))
+    for line in lines:
         print(f"  - {line}")
     home = Path.home() / ".kerniq"
     if home.is_dir():
-        shutil.rmtree(home, ignore_errors=True)
-        print(f"  - {home}")
+        line = _remove_dir(home)
+        if line:
+            lines.append(line)
+            print(f"  - {line}")
+    return lines
 
 
 def _find_install_roots() -> List[Path]:
@@ -463,9 +643,10 @@ def uninstall(
     """
     Uninstall Kerniq from the current Python environment.
 
-    Does NOT delete the source tree. User settings, sessions, logs, and state
-    are removed so the next install starts from defaults. --wipe-project deletes
-    the source tree as well.
+    Does NOT delete the source tree. It stops the Kerniq UI process first, then
+    removes settings, sessions, logs, state, in-project sandboxes, and the
+    project workspace so the next install starts from defaults. An external
+    workspace is left alone. --wipe-project deletes the source tree as well.
     """
     if not yes and not deferred:
         print(

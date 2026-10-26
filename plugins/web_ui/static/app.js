@@ -11,7 +11,8 @@ const UI_I18N = {
     autoApprove: 'Auto-approve risk up to',
     attach: 'Attach', attachSearch: 'Search project files…',
     createFile: 'New file', createDir: 'New folder', reveal: 'Show in explorer',
-    delete: 'Delete', rename: 'Rename', promptPh: 'Message agent…',
+    download: 'Download',
+    delete: 'Delete', rename: 'Rename', promptPh: 'Ask to edit a file, explain code, or plan the next change…',
     serverMode: 'Server mode',
     chatSettings: 'Chat settings', agentSettings: 'Agent settings',
     apiModel: 'API & model', systemPrompt: 'System prompt',
@@ -45,6 +46,8 @@ const UI_I18N = {
     autoAct: 'After Plan, run Act automatically',
     modeAuto: 'Auto Plan / Act',
     planCompleted: 'Completed',
+    planFailed: 'Failed',
+    planPartial: 'Partially completed',
     actDivider: 'Act',
     contextCompacted: 'Context compacted. Older turns were replaced by a memory note.',
     contextTrimmed: 'Context trimmed. Older turns were dropped. The latest turns were kept.',
@@ -57,16 +60,23 @@ const UI_I18N = {
     packMerge: 'Merge calls for every tool in this pack',
     fromProject: 'From the project',
     fromOutside: 'From outside',
+    photo: 'Photo',
+    photoHint: 'The current model can look at it',
+    modelNoVision: 'This model cannot view images.',
+    hide: 'Hide',
+    back: 'Back',
     scrollDown: 'Scroll to bottom',
     tempTip: 'Higher temperature makes replies more varied and less predictable. Lower keeps them closer to the most likely wording. 0.7 is the default.',
-    providersEmpty: 'Provider list did not load.',
-    toolsEmpty: 'No tools discovered.',
-    pluginsEmpty: 'No plugins discovered.',
-    attachBlocked: 'Photos, video, audio, and archives cannot be attached.',
-    fileDialogFailed: 'File dialog failed.',
-    settingsFailed: 'Settings did not load.',
+    providersEmpty: 'No providers yet. Check the base URL under API & model, then refresh.',
+    toolsEmpty: 'No tools showed up. If you just added one, restart Kerniq and open this tab again.',
+    pluginsEmpty: 'No plugins showed up. Put a plugin folder in plugins/ and it will appear here.',
+    attachBlocked: 'Video, audio, and archives cannot be attached. Pick a text or source file instead.',
+    fileDialogFailed: 'The folder picker did not open. Type the path in the field instead.',
+    settingsFailed: 'Settings did not load. Kerniq may still be starting — wait a moment and open Settings again.',
+    downloadFailed: 'That download did not start. Try again, or download a smaller folder.',
+    nameTitle: 'Name',
 
-    selectTool: 'Select a tool', selectPlugin: 'Select a plugin',
+    selectTool: 'Pick a tool on the left.\nIts options show up here.', selectPlugin: 'Pick a plugin to change its options.',
     noMatches: 'No matches', typeToSearch: 'Type to search project files',
     seconds: 'seconds', minutes: 'minutes', hours: 'hours',
     groupOutput: 'Reply',
@@ -82,15 +92,35 @@ const UI_I18N = {
     langPacks: 'Language packs',
     fromProjectHint: 'Search files in the workspace',
     fromOutsideHint: 'Pick files from your computer',
+    attachFolder: 'Attach a folder',
+    attachFolderHint: 'A whole directory, not one file at a time',
+    externalRo: 'Attached folders and files are read-only',
+    externalRoTip: 'On: the agent can read folders and files attached from outside the workspace, and cannot change them. Off: it can change those attachments. Turning this off asks you to wait 3 seconds.',
+    externalTitle: 'Allow changes outside the workspace',
+    externalBody: 'Attached folders and files will no longer be read-only. The agent can change them. Wait 3 seconds, then confirm. Anything else keeps them read-only.',
+    externalAllow: 'Allow changes',
+    dbHost: 'Database host',
+    dbPort: 'Database port',
+    dbUser: 'Database user',
+    dbPassword: 'Database password',
+    dbName: 'Database name',
+    dbSave: 'Create database and connect',
+    dbTip: 'Kerniq creates the MySQL database. You do not create it first. Leave this empty to keep JSON files.',
+    dbReady: 'Database is ready. Restart Kerniq so new chats use it.',
+    browserSettings: 'These options stay in this browser. The API key is encrypted here and is not saved on the server.',
+    windowsOpen: 'From another computer, open one of these addresses. 127.0.0.1 is only this machine.',
+    proxyBypass: 'If this PC uses a proxy (for example 127.0.0.1:10809), add the server address to the proxy bypass list. The browser otherwise sends the page to the proxy, so it never arrives. A port test can still succeed.',
     tabInterface: 'Interface',
     interfaceSettings: 'Interface settings',
-    prefsLocal: 'These options apply immediately and are stored in this browser.',
+    prefsLocal: 'These options apply immediately and are stored in this project\'s settings.',
     groupMotion: 'Motion',
     animations: 'Animations',
     animationsTip: 'Transitions and motion effects. "Follow system" respects the reduce-motion setting of your operating system.',
     motionOn: 'On',
     motionAuto: 'Follow system',
     motionOff: 'Off',
+    backgroundBlur: 'Background blur',
+    backgroundBlurTip: 'On: dialogs blur the page and dim it slightly. Off: the page only dims, with no blur.',
     groupEditor: 'Editor',
     syntaxHl: 'Syntax highlighting',
     syntaxHlTip: 'Colour code in the editor. Turn it off for very large files.',
@@ -104,24 +134,67 @@ const UI_I18N = {
     langPacksBtn: 'Language packs…',
     groupStatus: 'Status bar',
     showFooter: 'Show status footer',
+    groupNotifications: 'Notifications',
+    showNotifications: 'Show notifications',
+    autoDismissNotifications: 'Automatically dismiss notifications',
+    autoDismissTip: 'On: notifications leave on their own. Off: they stay until you close them.',
     agentLabel: 'Agent',
     chats: 'Chats',
     newChatLong: 'New chat',
     editorLabel: 'Editor',
     modeToAgent: 'Switch to agent mode',
     modeToEditor: 'Switch to editor mode',
+    groupAppearance: 'Appearance',
+    colorTheme: 'Colour theme',
+    colorThemeTip: 'Dark keeps colour quiet. Light uses stronger colour. System follows this computer.',
+    themeDark: 'Dark',
+    themeLight: 'Light',
+    themeSystem: 'System',
+    emptyChatTitle: 'Nothing in this chat yet',
+    emptyChatBody: 'Ask the agent to edit a file, explain the code, or sketch the next change.',
+    errorNext: 'You can send the request again. If the provider did not answer, open API & model and check the address.',
     groupLayout: 'Layout',
     workspaceLayout: 'Workspace layout',
     layoutTip: 'Agent only hides the editor: chats on the left, the conversation in the centre.',
     layoutEditorOpt: 'Editor + chat',
     layoutAgentOpt: 'Agent only',
+    groupServer: 'Server',
+    bindHost: 'Bind host',
+    bindHostTip: '127.0.0.1 = only this computer; 0.0.0.0 = every interface. Applied when Kerniq starts.',
+    port: 'Port',
+    serverMode: 'Server mode',
+    serverModeTip: 'One Kerniq for every client. Chats are separated by a cookie. Models stay loaded and new work waits. Listens on 0.0.0.0 after a restart.',
+    lanAccess: 'Allow LAN access',
+    lanAccessTip: 'Bind 0.0.0.0 for LAN (also enabled by server mode)',
+    logLevel: 'Console log level',
+    logLevelTip: 'How much the terminal prints while UI runs',
+    autoModelLoad: 'Decide load and unload automatically',
+    autoModelLoadTip: 'Off: ask when another model is already loaded. On: apply the action below without asking.',
+    modelLoadAction: 'When another model is loaded',
+    loadAlongsideWorking: 'Load alongside the working model',
+    unloadIdleAndLoad: 'Unload the idle model and load',
+    unloadWorkingAndLoad: 'Unload the working model and load',
+    notifyModelBusy: 'Show a busy notification',
+    modelBusyNotice: 'Another model is loaded. This one was not loaded.',
+    modelBusyWorking: 'A model is working. It was left loaded.',
+    modelBusyIdle: 'An idle model is loaded. This one was not loaded.',
+    storageJson: 'No database is connected. Chats and replies are stored in JSON.',
+    queuedWork: 'Queued until the working model finishes.',
   },
 };
 let autoThink = false;     // open reasoning while the model thinks, fold it when it is done
-try { autoThink = localStorage.getItem('kerniq_auto_think') === '1'; } catch (e) {}
 let layoutMode = 'editor';
-try { layoutMode = localStorage.getItem('kerniq_layout') === 'agent' ? 'agent' : 'editor'; } catch (e) {}
+let desktopLayout = 'editor';
 let uiLocale = 'en';
+let uiLocaleWanted = 'en';
+function preferredLocale(explicit) {
+  let stored = '';
+  try { stored = localStorage.getItem('kerniq.ui_locale') || ''; } catch (_) {}
+  const want = String(explicit || '').trim();
+  if (want && want !== 'en') return want;
+  if (stored) return stored;
+  return want || 'en';
+}
 let langPacks = {};
 /* Counted phrases: a pack may give one form per plural category, separated by "|"
    ("файл прочитан|файла прочитано|файлов прочитано"). The form is chosen with Intl.PluralRules
@@ -158,8 +231,8 @@ let providerCatalog = [];
 let agentMode = 'act';
 let modeAuto = true;
 let liveModel = '';
+let runModel = '';
 let runSawPlan = false;
-try { agentMode = localStorage.getItem('kerniq_agent_mode') || 'act'; } catch (e) { agentMode = 'act'; }
 if (agentMode !== 'plan' && agentMode !== 'act') agentMode = 'act';
 function applyUiLocale(locale) {
   uiLocale = (locale && locale !== 'en' && langPacks[locale]) ? locale : 'en';
@@ -186,7 +259,10 @@ function applyUiLocale(locale) {
   };
   document.querySelectorAll('.stab').forEach(el => {
     const k = tabMap[el.dataset.tab];
-    if (k) el.textContent = t(k);
+    if (!k) return;
+    const label = el.querySelector('.stab-tx');
+    if (label) { label.textContent = t(k); el.title = label.textContent; }
+    else el.textContent = t(k);
   });
   const ex = document.querySelector('#explorer h3 .grow');
   if (ex) ex.textContent = t(layoutMode === 'agent' ? 'chats' : 'explorer');
@@ -198,17 +274,19 @@ function applyUiLocale(locale) {
   const pr = document.getElementById('prompt');
   if (pr) pr.placeholder = t('promptPh');
   const ed = document.getElementById('editor');
-  if (ed) ed.placeholder = t('openFile');
+  if (ed) ed.placeholder = '';
   const save = document.getElementById('btn-settings-save');
   if (save) save.textContent = t('save');
   const cancel = document.getElementById('btn-settings-cancel');
   if (cancel) cancel.textContent = t('cancel');
+  const backBtn = document.getElementById('btn-settings-back');
+  if (backBtn) { backBtn.title = t('back'); backBtn.setAttribute('aria-label', t('back')); }
+  const benchHide = document.getElementById('bench-note-hide');
+  if (benchHide) { benchHide.title = t('hide'); benchHide.setAttribute('aria-label', t('hide')); }
   const und = document.getElementById('btn-undo');
   if (und) { und.title = t('undo'); und.setAttribute('aria-label', t('undo')); }
   const red = document.getElementById('btn-redo');
   if (red) { red.title = t('redo'); red.setAttribute('aria-label', t('redo')); }
-  const clo = document.getElementById('btn-close-tab');
-  if (clo) clo.textContent = t('close');
   const sav = document.getElementById('btn-save');
   if (sav) { sav.title = t('save'); sav.setAttribute('aria-label', t('save')); }
   const br = document.getElementById('btn-pick-ws');
@@ -258,6 +336,7 @@ function applyUiLocale(locale) {
   updateActionBtn();
   if (!running) setStatus(t('ready'), false);
   setFooterContext(null, _modelContextLimit);
+  if (typeof syncComposePlanLock === 'function') syncComposePlanLock();
 }
 const LS_CHATS = 'kerniq_chats_v1';
 const LS_PANEL = 'kerniq_panels_v1';
@@ -858,12 +937,85 @@ function ensureCaretVisible() {
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
-function toast(msg, err) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast show' + (err ? ' err' : '');
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => { el.className = 'toast'; }, 2200);
+function developerOn() {
+  const box = document.getElementById('s-chat-debug');
+  if (box) return !!box.checked;
+  return !!(settings && settings.chat && settings.chat.developer_mode);
+}
+function motionOff() {
+  const mode = document.documentElement.dataset.motion || 'on';
+  if (mode === 'off') return true;
+  if (mode === 'auto') {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; }
+  }
+  return false;
+}
+let showNotifications = true;
+let autoDismissToasts = true;
+function explainStatus(text) {
+  const raw = String(text || '');
+  const known = {
+    empty_response: 'Empty response',
+    provider_error: 'Provider error',
+    no_plan: 'The model did not write a plan',
+    max_iterations: 'Iteration limit reached',
+    content_loop: 'The model repeated itself',
+    tool_loop: 'The model repeated a tool',
+    verification_failed: 'Verification failed',
+  };
+  return translate(known[raw] || raw);
+}
+function toast(msg, err, detail, sticky) {
+  if (!showNotifications) return;
+  let stack = document.getElementById('toast-stack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.id = 'toast-stack';
+    stack.className = 'toast-stack';
+    document.body.appendChild(stack);
+  }
+  const el = document.createElement('div');
+  el.className = 'toast' + (err ? ' err' : '');
+  const text = document.createElement('span');
+  text.className = 'toast-text';
+  text.textContent = msg == null ? '' : String(msg);
+  el.appendChild(text);
+  const extra = detail == null ? '' : String(detail).trim();
+  if (extra && extra !== String(msg || '').trim() && (err || developerOn())) {
+    const more = document.createElement('span');
+    more.className = 'toast-detail';
+    more.textContent = extra.length > 900 ? extra.slice(0, 900) + '…' : extra;
+    text.appendChild(document.createElement('br'));
+    text.appendChild(more);
+  }
+  if (sticky || !autoDismissToasts) {
+    el.classList.add('sticky');
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'toast-x';
+    close.setAttribute('aria-label', 'Close');
+    close.textContent = '×';
+    close.onclick = (ev) => { ev.stopPropagation(); dismissToast(el); };
+    el.appendChild(close);
+  }
+  stack.appendChild(el);
+  const reveal = () => el.classList.add('show');
+  if (motionOff()) reveal();
+  else requestAnimationFrame(() => requestAnimationFrame(reveal));
+  if (!sticky && autoDismissToasts) {
+    const life = err ? 4200 : 2400;
+    el._timer = setTimeout(() => dismissToast(el), life);
+  }
+}
+function dismissToast(el) {
+  if (!el || !el.parentNode || el.classList.contains('leave')) return;
+  clearTimeout(el._timer);
+  el.classList.remove('show');
+  el.classList.add('leave');
+  const drop = () => { if (el.parentNode) el.parentNode.removeChild(el); };
+  if (motionOff()) drop();
+  else el.addEventListener('transitionend', drop, { once: true });
+  setTimeout(drop, motionOff() ? 0 : 400);
 }
 
 function setStatus(text, spinning) {
@@ -882,21 +1034,7 @@ function setStatus(text, spinning) {
   } catch (_) {}
 }
 function loadChats() {
-  try {
-    let raw = localStorage.getItem(LS_CHATS);
-    // migrate from older keys that saveChats accidentally used
-    if (!raw) raw = localStorage.getItem('kerniq_chats');
-    chats = JSON.parse(raw || '[]');
-    if (!Array.isArray(chats)) chats = [];
-    // normalize per-chat context fields
-    chats.forEach(c => {
-      if (c.prompt_tokens == null) c.prompt_tokens = null;
-      if (c.context_limit == null) c.context_limit = null;
-    });
-    if (chats.length > MAX_CHATS) chats = chats.slice(-MAX_CHATS);
-  } catch {
-    chats = [];
-  }
+  chats = [];
 }
 function saveChats() {
   if (chats.length > MAX_CHATS) {
@@ -905,10 +1043,33 @@ function saveChats() {
       activeChatId = chats.length ? chats[chats.length - 1].id : null;
     }
   }
+  clearTimeout(saveChats._t);
+  saveChats._t = setTimeout(() => {
+    api('/api/ui/chats', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chats }),
+    }).catch(() => {});
+  }, 250);
+}
+async function loadChatsFromServer() {
+  dropBrowserState();
   try {
-    localStorage.setItem(LS_CHATS, JSON.stringify(chats));
-    // remove legacy key so deleted chats cannot resurrect
-    localStorage.removeItem('kerniq_chats');
+    const data = await api('/api/ui/chats');
+    chats = Array.isArray(data && data.chats) ? data.chats : [];
+  } catch (_) { chats = []; }
+  if (chats.length > MAX_CHATS) chats = chats.slice(-MAX_CHATS);
+  chats.forEach(c => {
+    if (c.prompt_tokens == null) c.prompt_tokens = null;
+    if (c.context_limit == null) c.context_limit = null;
+    if (!Array.isArray(c.messages)) c.messages = [];
+  });
+  if (!chats.find(c => c.id === activeChatId)) activeChatId = chats.length ? chats[chats.length - 1].id : null;
+}
+function dropBrowserState() {
+  try {
+    ['kerniq_chats_v1', 'kerniq_chats', 'kerniq_layout', 'kerniq_motion', 'kerniq_hl',
+     'kerniq_auto_think', 'kerniq_agent_mode', 'kerniq_plan_collapsed', 'kerniq_panels_v1',
+     'kerniq_side_open'].forEach(key => localStorage.removeItem(key));
   } catch (_) {}
 }
 
@@ -1124,11 +1285,16 @@ function setFooterModelStatus(text, ok) {
   el.textContent = text || '';
   el.classList.toggle('bad', ok === false);
   el.classList.toggle('ok', ok === true);
+  el.classList.toggle('foreign', ok === 'foreign');
 }
 
 function settingsOpen() { return document.body.classList.contains('settings-mode'); }
 function showView(n) {
   const open = n === 'settings';
+  if (open) {
+    document.documentElement.classList.remove('chats-open');
+    document.body.classList.remove('chats-open');
+  }
   const bar = document.querySelector('.settings-actions');
   if (open) bar.style.display = 'flex';
   else setTimeout(() => { if (!settingsOpen()) bar.style.display = 'none'; }, 420);   // after the slide-up
@@ -1348,7 +1514,7 @@ async function refreshTree(silent) {
   if (silent && key === refreshTree._last) return;
   refreshTree._last = key;
   treeData = data.entries || [];
-  if (data.workspace) document.getElementById('top-workspace').textContent = data.workspace;
+  paintWorkspaceLabel(data.workspace);
   renderTree();
 }
 const TWIST_SVG = '<svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M4 2.5 7.5 6 4 9.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -1412,7 +1578,8 @@ function showCtx(ev, path, isDir, isRoot) {
   if (!isRoot && !isDir) html += `<button data-a="open">${'Open'}</button>`;
   html += `<button data-a="newfile">${t('createFile')}</button>`;
   html += `<button data-a="newdir">${t('createDir')}</button>`;
-  html += `<button data-a="reveal">${t('reveal')}</button>`;
+  if (serverModeOn()) html += `<button data-a="download">${t('download')}</button>`;
+  if (!serverModeOn()) html += `<button data-a="reveal">${t('reveal')}</button>`;
   if (!isRoot && path) {
     html += `<button data-a="rename">${t('rename')}</button>`;
     html += `<button data-a="delete" style="color:var(--err)">${t('delete')}</button>`;
@@ -1427,7 +1594,7 @@ function showCtx(ev, path, isDir, isRoot) {
       const a = b.dataset.a;
       if (a === 'open') openFile(path);
       else if (a === 'newfile' || a === 'newdir') {
-        const name = prompt(a === 'newdir' ? t('createDir') : t('createFile'));
+        const name = await askName(a === 'newdir' ? t('createDir') : t('createFile'), '');
         if (!name) return;
         const full = parent ? (parent + '/' + name) : name;
         const r = await api('/api/fs/create', {
@@ -1441,18 +1608,20 @@ function showCtx(ev, path, isDir, isRoot) {
           if (a === 'newfile') openFile(full);
           toast('Created');
         }
+      } else if (a === 'download') {
+        await downloadWorkspacePath(isRoot ? '' : path);
       } else if (a === 'reveal') {
         const r = await api('/api/fs/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: path || '.' }) });
         if (r.error) toast(r.error, true); else toast('Opened');
       } else if (a === 'rename') {
         const base = path.split('/').pop();
-        const nn = prompt(t('rename'), base);
+        const nn = await askName(t('rename'), base);
         if (!nn || nn === base) return;
         const r = await api('/api/fs/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, new_name: nn }) });
         if (r.error) toast(r.error, true);
         else { toast('Renamed'); await refreshTree(); }
       } else if (a === 'delete') {
-        if (!confirm('Delete ' + path + '?')) return;
+        if (!await askConfirm(translate('Delete this path?') + '\n' + path, { danger: true, ok: translate('Delete') })) return;
         const r = await api('/api/fs/file?path=' + encodePath(path), { method: 'DELETE' });
         if (r.error) toast(r.error, true);
         else { toast('Deleted'); openTabs = openTabs.filter(t => t.path !== path); if (activeTab === path) clearEditor(); await refreshTree(); renderTabs(); }
@@ -1465,6 +1634,109 @@ function hideCtx() {
   const ctx = document.getElementById('ctx');
   if (ctx) ctx.style.display = 'none';
 }
+let confirmChain = Promise.resolve();
+function askConfirm(message, opts) {
+  const run = () => new Promise(resolve => {
+    const bg = document.getElementById('confirm-modal');
+    const text = document.getElementById('confirm-text');
+    const title = document.getElementById('confirm-title');
+    const okBtn = document.getElementById('confirm-ok');
+    const cancelBtn = document.getElementById('confirm-cancel');
+    if (!bg || !okBtn || !cancelBtn) { resolve(window.confirm(message)); return; }
+    if (title) title.textContent = (opts && opts.title) || translate('Confirm');
+    if (text) text.textContent = message || '';
+    okBtn.textContent = (opts && opts.ok) || translate('Confirm');
+    cancelBtn.textContent = (opts && opts.cancel) || translate('Cancel');
+    okBtn.classList.toggle('danger', !!(opts && opts.danger));
+    okBtn.classList.toggle('save-active', !(opts && opts.danger));
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      bg.classList.remove('on');
+      if (!document.querySelector('.modal-bg.on')) document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+      resolve(!!value);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      else if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    };
+    okBtn.onclick = () => finish(true);
+    cancelBtn.onclick = () => finish(false);
+    bg.onclick = (e) => { if (e.target === bg) finish(false); };
+    document.addEventListener('keydown', onKey);
+    bg.classList.add('on');
+    document.body.classList.add('modal-open');
+    okBtn.focus();
+  });
+  const next = confirmChain.then(run, run);
+  confirmChain = next.then(() => {}, () => {});
+  return next;
+}
+function askName(title, initial) {
+  return new Promise(resolve => {
+    const bg = document.getElementById('name-modal');
+    const input = document.getElementById('name-input');
+    const heading = document.getElementById('name-title');
+    const okBtn = document.getElementById('name-ok');
+    const cancelBtn = document.getElementById('name-cancel');
+    if (!bg || !input || !okBtn || !cancelBtn) { resolve(null); return; }
+    if (heading) heading.textContent = title || t('nameTitle');
+    input.value = initial || '';
+    okBtn.textContent = translate('OK');
+    cancelBtn.textContent = translate('Cancel');
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      bg.classList.remove('on');
+      if (!document.querySelector('.modal-bg.on')) document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey);
+      resolve(value);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); finish(null); }
+      else if (e.key === 'Enter') { e.preventDefault(); finish(String(input.value || '').trim() || null); }
+    };
+    okBtn.onclick = () => finish(String(input.value || '').trim() || null);
+    cancelBtn.onclick = () => finish(null);
+    bg.onclick = (e) => { if (e.target === bg) finish(null); };
+    document.addEventListener('keydown', onKey);
+    bg.classList.add('on');
+    document.body.classList.add('modal-open');
+    setTimeout(() => { input.focus(); input.select(); }, 30);
+  });
+}
+async function downloadWorkspacePath(path) {
+  try {
+    const response = await fetch('/api/fs/download?path=' + encodeURIComponent(path || ''), { credentials: 'same-origin' });
+    const type = response.headers.get('content-type') || '';
+    if (!response.ok || type.indexOf('application/json') >= 0) {
+      let msg = t('downloadFailed');
+      try {
+        const body = await response.json();
+        if (body && body.error) msg = body.error;
+      } catch (_) {}
+      toast(msg, true);
+      return;
+    }
+    const blob = await response.blob();
+    const disp = response.headers.get('content-disposition') || '';
+    const match = /filename="([^"]+)"/.exec(disp);
+    const name = match ? match[1] : 'download';
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (_) {
+    toast(t('downloadFailed'), true);
+  }
+}
 document.addEventListener('click', hideCtx);
 
 /* editor */
@@ -1474,7 +1746,7 @@ function clearEditor() {
   document.getElementById('editor').disabled = true;
   document.getElementById('open-path').textContent = '';
   document.getElementById('btn-save').disabled = true;
-  document.getElementById('btn-close-tab').disabled = true;
+  setEditorMark(false);
   updateLineNumbers();
 }
 async function openFile(path, skipUndo) {
@@ -1494,7 +1766,7 @@ async function openFile(path, skipUndo) {
   ed.value = tab.content;
   document.getElementById('open-path').textContent = path;
   document.getElementById('btn-save').disabled = !tab.dirty;
-  document.getElementById('btn-close-tab').disabled = false;
+  setEditorMark(true);
   updateLineNumbers();
   renderTree();
 }
@@ -1514,12 +1786,15 @@ function renderTabs() {
   });
 }
 function closeTab(path, force, skipUndo) {
-  const t = openTabs.find(x => x.path === path);
-  if (!t) return;
-  if (t.dirty && !force) {
-    if (!confirm('File has changes. Close without saving?')) return;
+  const tab = openTabs.find(x => x.path === path);
+  if (!tab) return;
+  if (tab.dirty && !force) {
+    askConfirm(translate('File has changes. Close without saving?')).then(ok => {
+      if (ok) closeTab(path, true, skipUndo);
+    });
+    return;
   }
-  if (!skipUndo) pushUndo({ type: 'close', path, content: t.content, dirty: t.dirty });
+  if (!skipUndo) pushUndo({ type: 'close', path, content: tab.content, dirty: tab.dirty });
   openTabs = openTabs.filter(x => x.path !== path);
   if (activeTab === path) {
     activeTab = openTabs.length ? openTabs[openTabs.length - 1].path : null;
@@ -1596,7 +1871,6 @@ window.addEventListener('keydown', handleAppShortcut, true);
 document.getElementById('editor').addEventListener('keydown', handleAppShortcut, true);
 
 document.getElementById('btn-save').onclick = saveActive;
-document.getElementById('btn-close-tab').onclick = () => { if (activeTab) closeTab(activeTab, false); };
 document.getElementById('btn-undo').onclick = doUndo;
 document.getElementById('btn-redo').onclick = doRedo;
 
@@ -1968,7 +2242,8 @@ function renderMessagesNow() {
   }
   const el = document.getElementById('msgs');
   if (!el) return;
-  const c = currentChat(); if (!c) return;
+  const c = currentChat();
+  if (!c) { el.innerHTML = ''; refreshChatHeading(); return; }
   const prevTop = el.scrollTop;
   // every rebuild creates new elements; starting their animations at the shared clock's phase keeps
   // the shimmer / pulse running instead of restarting on each update
@@ -1976,7 +2251,15 @@ function renderMessagesNow() {
   el.style.setProperty('--shimmer-delay', '-' + ((clock % 1900) / 1000).toFixed(3) + 's');
   el.style.setProperty('--pulse-delay', '-' + ((clock % 1200) / 1000).toFixed(3) + 's');
   el.innerHTML = '';
-  aggregateMessages(c.messages).filter(m => !(m.kind === 'think_collapsed' && !(m.text || '').trim())).forEach(m => {
+  const rows = aggregateMessages(c.messages).filter(m => !(m.kind === 'think_collapsed' && !(m.text || '').trim()));
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty-chat"><strong></strong><span></span></div>';
+    el.querySelector('strong').textContent = t('emptyChatTitle');
+    el.querySelector('span').textContent = t('emptyChatBody');
+    refreshChatHeading();
+    return;
+  }
+  rows.forEach(m => {
     const d = document.createElement('div');
     try {
     if (m.kind === 'think_collapsed' || m.kind === 'think_live') {
@@ -1997,6 +2280,10 @@ function renderMessagesNow() {
         pre.textContent = m.detail;
         d.appendChild(pre);
       }
+      const next = document.createElement('p');
+      next.className = 'err-next';
+      next.textContent = t('errorNext');
+      d.appendChild(next);
     } else if (m.role === 'assistant') {
       d.className = 'msg bot assistant' + (m.completed ? ' completed' : '');
       d.innerHTML = renderMarkdown(m.content || '');
@@ -2078,7 +2365,9 @@ const actionBtn = document.getElementById('btn-action');
 function hasMeaningfulText(s) { return /[^\s\u200b]/.test(s || ''); }
 function autoGrow() {
   promptEl.style.height = 'auto';
-  const max = 1.4 * 13 * 15 + 12;
+  const phone = document.documentElement.dataset.phone === '1';
+  const lines = phone ? 5 : 15;
+  const max = 1.4 * 13 * lines + 12;
   const h = Math.min(promptEl.scrollHeight, max);
   promptEl.style.height = h + 'px';
   promptEl.style.overflowY = promptEl.scrollHeight > max ? 'auto' : 'hidden';
@@ -2105,62 +2394,75 @@ function updateActionBtn() {
 }
 promptEl.addEventListener('input', () => { autoGrow(); updateActionBtn(); trackMention(); });
 function _modelMatch(a, b) {
-  if (!a || !b) return false;
-  a = String(a); b = String(b);
-  if (a === b) return true;
-  if (a.includes(b) || b.includes(a)) return true;
-  const ta = a.split(/[\\/]/).pop();
-  const tb = b.split(/[\\/]/).pop();
-  return !!(ta && tb && (ta === tb || ta.includes(tb) || tb.includes(ta)));
+  a = String(a || '').trim();
+  b = String(b || '').trim();
+  return !!a && a === b;
 }
 
-/** Ensure a usable model is loaded. Never hangs on a modal. */
-async function ensureModelReady() {
+function syncAutoLoad() {
+  const on = !!document.getElementById('s-auto-load')?.checked;
+  const sel = document.getElementById('s-load-action');
+  if (sel) sel.disabled = !on;
+}
+function savedLoadAction() {
+  const api = (settings && settings.api) || {};
+  const allowed = { alongside: 1, unload_idle: 1, unload_busy: 1, notify: 1 };
+  const action = String(api.model_load_action || 'notify');
+  return allowed[action] ? action : 'notify';
+}
+/** Load the selected model using the plan the server computed. */
+async function ensureModelReady(override) {
   const prov = (settings && settings.api && settings.api.provider) || 'lm_studio';
   if (prov !== 'lm_studio') return true;
-  let info;
+  const forced = override != null && String(override).trim();
+  const selected = forced
+    ? String(override).trim()
+    : String((settings && settings.api && settings.api.model) || '').trim();
+  if (!selected) return true;
+  let plan;
   try {
-    info = await api('/api/lms/loaded');
+    plan = await api('/api/models/load-plan?model=' + encodeURIComponent(selected));
   } catch (e) {
     toast('Cannot reach LM Studio status: ' + e, true);
-    return true; // still try /api/chat/run — provider may work
-  }
-  if (info && info.error) {
-    toast('LM Studio: ' + info.error, true);
     return true;
   }
-  const selected = String((info && info.selected_model) || '').trim();
-  const loaded = (info && info.loaded) || [];
-  const loadedIds = loaded.map(x => x.model || x.id || x.key || '').filter(Boolean);
-  const selectedLoaded = selected && loadedIds.some(id => _modelMatch(id, selected));
-
-  // auto or already loaded
-  if (!selected || selectedLoaded) return true;
-
+  if (plan && plan.error && plan.status !== 'foreign') {
+    toast('LM Studio: ' + plan.error, true);
+    return true;
+  }
+  if (plan && (plan.status === 'ready' || plan.selected_loaded)) return true;
+  const auto = !!(settings && settings.api && settings.api.auto_model_load);
+  let choice = '';
+  if (plan && plan.status === 'foreign') {
+    if (auto) choice = autoLoadChoice(plan, savedLoadAction());
+    else choice = await askLoadChoice(plan);
+  }
+  if (choice === 'cancel' || choice === 'notify') {
+    if (choice === 'notify') toast(translate(busyNotice(plan)), true);
+    return false;
+  }
+  if (choice === '' && plan && plan.status === 'foreign') return false;
   setFooterActivity('loading');
   setFooterModelStatus('', null);
   setStatus(t('loading'), true);
   try {
-    if (loadedIds.length) {
-      const u = await api('/api/lms/unload_all', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-      });
-      if (u && u.error) {
-        toast('Unload failed: ' + u.error, true);
-        // continue try load anyway
-      }
-    }
     const l = await api('/api/lms/load', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: selected, alongside: false }),
+      body: JSON.stringify({ model: selected, choice: choice || 'alongside' }),
     });
+    if (l && l.needs_choice && l.plan) {
+      const again = auto ? autoLoadChoice(l.plan, savedLoadAction()) : await askLoadChoice(l.plan);
+      if (!again || again === 'cancel' || again === 'notify') {
+        if (again === 'notify') toast(translate(busyNotice(l.plan)), true);
+        settleFooter();
+        return false;
+      }
+      return ensureModelReady(selected);
+    }
     modelLoaded = !(l && l.error);
     settleFooter();
     setStatus(t('ready'), false);
-    if (l && l.error) {
-      toast('Load failed: ' + l.error, true);
-      return false;
-    }
+    if (l && l.error) { toast('Load failed: ' + l.error, true); return false; }
     await refreshModelFooter().catch(() => {});
     return true;
   } catch (e) {
@@ -2170,6 +2472,37 @@ async function ensureModelReady() {
     toast('Model load error: ' + e, true);
     return false;
   }
+}
+function autoLoadChoice(plan, action) {
+  if (!plan || plan.status !== 'foreign') return 'alongside';
+  if (action === 'notify') return 'notify';
+  if (action === 'unload_busy') return 'unload_busy';
+  if (action === 'unload_idle') return plan.busy ? 'alongside' : 'unload';
+  return 'alongside';
+}
+function busyNotice(plan) {
+  if (plan && plan.busy) return 'A model is working. It was left loaded.';
+  return 'Another model is loaded. This one was not loaded.';
+}
+function askLoadChoice(plan) {
+  return new Promise(resolve => {
+    const bg = document.getElementById('model-modal');
+    const text = document.getElementById('model-modal-text');
+    const box = document.getElementById('model-modal-actions');
+    if (!bg || !box) { resolve('cancel'); return; }
+    if (text) text.textContent = translate(plan.prompt || '');
+    box.innerHTML = '';
+    (plan.choices || []).forEach(choice => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = translate(choice.label || choice.id);
+      b.className = choice.id === 'cancel' ? 'cancel-active' : (choice.id === 'unload' ? 'save-active' : '');
+      b.onclick = () => { bg.classList.remove('on'); resolve(choice.id); };
+      box.appendChild(b);
+    });
+    if (!(plan.choices || []).length) { resolve(''); return; }
+    bg.classList.add('on');
+  });
 }
 
 
@@ -2204,24 +2537,41 @@ actionBtn.onclick = async () => {
   running = true;
   updateActionBtn();
   try {
-    const ok = await ensureModelReady();
+    const savedModel = String((settings && settings.api && settings.api.model) || '').trim();
+    let readyFor = savedModel;
+    if (!savedModel) {
+      const listed = await fetchModels().catch(() => ({ models: [] }));
+      readyFor = pickAutoModel((listed && listed.models) || modelChoices || []);
+      autoFooterModel = readyFor;
+      if (readyFor) paintModelFooter(readyFor, (listed && listed.models) || modelChoices, true);
+    }
+    const ok = await ensureModelReady(readyFor);
     if (sendAbort || !ok) {
+      autoFooterModel = '';
       if (!ok && !sendAbort) toast(translate('Model not ready — send cancelled'), true);
       running = false;
       updateActionBtn();
+      refreshModelFooter().catch(() => {});
       return;
     }
     if (!activeChatId) newChat(true);
     const c = currentChat();
     if (!c) {
+      autoFooterModel = '';
       toast('No active chat', true);
       running = false;
       updateActionBtn();
+      refreshModelFooter().catch(() => {});
       return;
     }
     let taskToSend = text.trim();
     if (chatAttachments.length) {
-      taskToSend = text.trim() + '\n\nAttached files (use these paths):\n' + chatAttachments.map(a => a.path).join('\n');
+      const pictures = chatAttachments.filter(a => isImagePath(a.path));
+      const files = chatAttachments.filter(a => !isImagePath(a.path));
+      const notes = [];
+      if (files.length) notes.push('Attached files (use these paths):\n' + files.map(a => a.path).join('\n'));
+      if (pictures.length) notes.push('Attached pictures are included in this message for you to see:\n' + pictures.map(a => a.path).join('\n'));
+      if (notes.length) taskToSend = text.trim() + '\n\n' + notes.join('\n\n');
     }
     c.messages.push({ role: 'user', content: text.trim(), attachments: chatAttachments.slice() });
     if (c.title === 'New chat' || c.title === 'Chat') {
@@ -2231,7 +2581,7 @@ actionBtn.onclick = async () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.trim() }),
       }).then(r => {
-        if (r && r.title) { c.title = r.title; saveChats(); renderChatList(); }
+        if (r && r.title) { c.title = r.title; saveChats(); renderChatList(); refreshChatHeading(); }
       }).catch(() => {});
     }
     chatAttachments = [];
@@ -2242,6 +2592,7 @@ actionBtn.onclick = async () => {
     await runAgent(taskToSend);
   } catch (err) {
     console.error('send failed', err);
+    autoFooterModel = '';
     toast('Send failed: ' + (err && err.message ? err.message : err), true);
     running = false;
     setRunLock(false);
@@ -2285,15 +2636,25 @@ async function runAgent(task) {
         history: hist,
         mode: (modeAuto ? 'auto' : (typeof agentMode === 'string' ? agentMode : 'act')),
         mode_auto: !!modeAuto,
-        compose_plan: document.getElementById('s-compose-plan')
-          ? document.getElementById('s-compose-plan').checked
-          : !(settings && settings.chat && settings.chat.compose_plan === false),
+        compose_plan: planComposeAvailable() && !!document.getElementById('s-compose-plan')?.checked,
         auto_act: document.getElementById('s-auto-act')
           ? document.getElementById('s-auto-act').checked
           : !(settings && settings.chat && settings.chat.auto_act_after_plan === false),
         plan: (chat && chat.plan) || [],
         archive: (chat && chat.planArchive) || [],
         attachments: (chat && chat.messages || []).slice().reverse().find(m => m.role === 'user')?.attachments || chatAttachments,
+        client_settings: Object.assign({
+          api: liveApiSettings(),
+        }, serverModeOn() ? {
+          chat: Object.assign({}, (settings && settings.chat) || {}, {
+            read_only_external_attachments: document.getElementById('s-external-ro')
+              ? document.getElementById('s-external-ro').checked
+              : !((settings && settings.chat && settings.chat.read_only_external_attachments) === false),
+          }),
+          agent: (settings && settings.agent) || {},
+          prompt: (settings && settings.prompt) || {},
+          interface: (settings && settings.interface) || {},
+        } : {}),
       }),
     });
     if (r.error) {
@@ -2314,6 +2675,9 @@ async function runAgent(task) {
   resetTps(!streamingEnabled);
   currentRunId = null;
   running = false;
+  autoFooterModel = '';
+  runModel = '';
+  settlePlan();
   setRunLock(false);
   settleFooter();
   updateActionBtn();
@@ -2501,7 +2865,10 @@ function handleEvent(e) {
     return;
   }
   if (e.type === 'model') {
-    if (e.model) liveModel = String(e.model);
+    if (e.model) {
+      liveModel = String(e.model);
+      runModel = liveModel;
+    }
     const limit = Number(e.context_limit || 0);
     if (limit) {
       _modelContextLimit = limit;
@@ -2510,8 +2877,8 @@ function handleEvent(e) {
     }
     _lastPromptTokens = null;
     setFooterContext(null, _modelContextLimit);
-    if (liveModel) setFooterModelStatus(t('model') + ': ' + liveModel, true);
-    modelLoaded = !!liveModel;
+    if (runModel) setFooterModelStatus(t('model') + ': ' + runModel, true);
+    modelLoaded = !!runModel;
     setFooterActivity(modelLoaded ? 'loaded' : 'err');
     saveChats();
     return;
@@ -2535,10 +2902,12 @@ function handleEvent(e) {
       if (e.reset) {
         chat.plan = [];
         chat.planArchive = [];
+        chat.planDismissed = false;
         saveChats();
         renderPlan();
         return;
       }
+      chat.planDismissed = false;
       chat.plan = Array.isArray(e.items) ? e.items : [];
       if (Array.isArray(e.archive)) chat.planArchive = e.archive;
       saveChats();
@@ -2570,22 +2939,27 @@ function handleEvent(e) {
     if (st === 'empty_done') {
       generatingTokens = false;
       setStatus(statusLabel(st, e.text), false);
+      toast(translate(e.text || 'Empty reply, retrying…'), true, e.detail || '');
       if (c) {
         c.messages.push({ role: 'system', content: e.text || 'Model finished (empty response)', kind: 'empty_done' });
         renderMessages();
       }
-    } else if (st === 'done' || st === 'cancelled') {
+    } else if (st === 'done' || st === 'cancelled' || st === 'error') {
       generatingTokens = false;
-      settleFooter();
-      setStatus(statusLabel(st, e.text), false);
-    } else if (st === 'error') {
-      generatingTokens = false;
-      setFooterActivity('err');
-      setStatus(statusLabel(st, e.text || 'Error'), false);
+      if (st === 'error') {
+        setFooterActivity('err');
+        toast(explainStatus(e.text || 'Error'), true, e.detail || e.error || '');
+      } else {
+        settleFooter();
+        if (st === 'done') toast(translate('Model finished the reply'));
+      }
+      settlePlan();
+      setStatus(statusLabel(st, e.text || (st === 'error' ? 'Error' : '')), false);
     } else if (st === 'loading_model') {
       setFooterActivity('loading');
       if (e.text) {
         liveModel = String(e.text);
+        runModel = liveModel;
         setFooterModelStatus(t('model') + ': ' + liveModel, null);
       }
       generatingTokens = false;
@@ -2657,15 +3031,22 @@ function handleEvent(e) {
         detail: e.detail || '',
         completed: false,
       });
+      toast(translate(content || 'Error'), true, e.detail || '');
       renderMessages();
       return;
     }
     if (liveIdx >= 0) {
       const live = c.messages[liveIdx];
-      live.kind = undefined;
-      live.role = 'assistant';
-      live.content = content || live.content || '';
-      live.completed = !!e.completed;
+      const streamed = String(live.content || '').replace(/TASK_COMPLETED/g, '').trim();
+      const next = content || streamed;
+      if (!next) {
+        c.messages.splice(liveIdx, 1);
+      } else {
+        live.kind = undefined;
+        live.role = 'assistant';
+        live.content = next;
+        live.completed = !!e.completed;
+      }
     } else if (content) {
       c.messages.push({ role: 'assistant', content, completed: !!e.completed });
     }
@@ -2704,6 +3085,13 @@ function handleEvent(e) {
       kind: 'tool', name: e.name, status: e.status, success: e.success,
       stop_reason: e.stop_reason, summary: e.summary, args: e.args,
     });
+    if (e.status === 'error' || e.success === false) {
+      const brief = translate(e.summary || e.name || 'Error');
+      const detail = developerOn()
+        ? [e.stop_reason, e.args ? JSON.stringify(e.args) : ''].filter(Boolean).join('\n')
+        : '';
+      toast(brief, true, detail);
+    }
     renderMessages();
   } else if (e.type === 'file_op') {
     c.messages.push({ kind: 'file_op', op: e.op, path: e.path, added: e.added, removed: e.removed }); renderMessages();
@@ -2744,9 +3132,7 @@ function normPlanStatus(s) {
   if (['active', 'doing', 'in_progress', 'current', 'progress', 'wip'].includes(v)) return 'active';
   return 'pending';
 }
-function planCollapsed() {
-  try { return localStorage.getItem('kerniq_plan_collapsed') === '1'; } catch (e) { return false; }
-}
+function planCollapsed() { return false; }
 function coercePlan(items) {
   const list = (items || []).map(raw => ({
     id: raw && raw.id,
@@ -2767,6 +3153,11 @@ function renderPlan() {
   const chev = document.getElementById('plan-chevron');
   if (!box || !body) return;
   const chat = typeof currentChat === 'function' ? currentChat() : null;
+  if (chat && chat.planDismissed) {
+    box.hidden = true;
+    box.classList.remove('all-done');
+    return;
+  }
   const shown = coercePlan((chat && Array.isArray(chat.plan)) ? chat.plan : []);
   const liveIds = new Set(shown.map(item => String(item.id || '')));
   const archived = coercePlan((chat && Array.isArray(chat.planArchive)) ? chat.planArchive : [])
@@ -2814,10 +3205,37 @@ function renderPlan() {
     body.appendChild(row);
   });
 }
+function planVerdict(items) {
+  const rows = coercePlan(items || []);
+  if (!rows.length) return '';
+  const open = rows.filter(item => item.status === 'pending' || item.status === 'active' || item.status === 'frozen');
+  const failed = rows.filter(item => item.status === 'failed');
+  const done = rows.filter(item => item.status === 'done' || item.status === 'skipped');
+  if (!open.length && !failed.length) return t('planCompleted');
+  if (done.length) return t('planPartial');
+  return t('planFailed');
+}
+function settlePlan() {
+  const chat = typeof currentChat === 'function' ? currentChat() : null;
+  const box = document.getElementById('plan-float');
+  if (!chat || chat.planDismissed) {
+    if (box) box.hidden = true;
+    return;
+  }
+  const verdict = planVerdict(chat.plan);
+  if (!verdict) return;
+  chat.planDismissed = true;
+  chat.messages.push({ kind: 'notice', content: verdict });
+  saveChats();
+  renderMessages();
+  if (box) {
+    box.hidden = true;
+    box.classList.remove('all-done');
+  }
+}
 function rememberMode(mode) {
   if (mode !== 'plan' && mode !== 'act') return;
   agentMode = mode;
-  try { localStorage.setItem('kerniq_agent_mode', mode); } catch (e) {}
   const c = currentChat();
   if (c && c.mode !== mode) {
     c.mode = mode;
@@ -2860,12 +3278,27 @@ document.getElementById('mode-switch')?.addEventListener('click', (ev) => {
   rememberMode(agentMode);
 });
 document.getElementById('plan-toggle')?.addEventListener('click', () => {
-  const next = !planCollapsed();
-  try { localStorage.setItem('kerniq_plan_collapsed', next ? '1' : '0'); } catch (e) {}
   renderPlan();
 });
 applyModeSwitch();
 
+const providerDrafts = {};
+function rememberProviderDraft(id, draft) {
+  if (!id || !draft) return;
+  providerDrafts[id] = {
+    base_url: draft.base_url || '',
+    api_token: draft.api_token || '',
+    model: draft.model || '',
+    binary_path: draft.binary_path || '',
+  };
+  try { localStorage.setItem('kerniq.provider.drafts', JSON.stringify(providerDrafts)); } catch (_) {}
+}
+function loadProviderDrafts() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('kerniq.provider.drafts') || '{}');
+    if (raw && typeof raw === 'object') Object.assign(providerDrafts, raw);
+  } catch (_) {}
+}
 function collectProviderDraft() {
   const apiS = (settings && settings.api) || {};
   return {
@@ -2948,7 +3381,7 @@ function renderProviderFields(draft) {
       input.type = f.type === 'secret' ? 'password' : 'text';
       input.placeholder = f.placeholder || '';
       const stored = values[f.key] || '';
-      input.value = stored || f.default || '';
+      input.value = stored || (f.key === 'api_token' ? '' : (f.default || ''));
       wrap.appendChild(input);
     }
     const help = fieldText(f, 'help');
@@ -2965,6 +3398,7 @@ function renderProviderFields(draft) {
   });
 }
 async function loadProviderCatalog(selectedId) {
+  loadProviderDrafts();
   const data = await api('/api/providers').catch(() => ({ providers: [] }));
   providerCatalog = data.providers || [];
   const sel = document.getElementById('s-provider');
@@ -2985,25 +3419,86 @@ async function loadProviderCatalog(selectedId) {
   });
   if ([...sel.options].some(o => o.value === current)) sel.value = current;
   else if (sel.options.length) sel.selectedIndex = 0;
+  let providerShown = sel.value;
   sel.onchange = async () => {
-    const spec = providerCatalog.find(p => p.id === sel.value);
+    const nextId = sel.value;
+    const leaving = providerShown;
     const draft = collectProviderDraft();
-    if (spec) {
-      const keys = new Set((spec.fields || []).map(f => f.key));
-      if (keys.has('base_url')) {
-        const field = (spec.fields || []).find(f => f.key === 'base_url');
-        draft.base_url = (field && field.default) || draft.base_url;
+    rememberProviderDraft(leaving, draft);
+    const spec = providerCatalog.find(p => p.id === nextId);
+    const remembered = providerDrafts[nextId];
+    if (remembered) {
+      draft.base_url = remembered.base_url;
+      draft.api_token = remembered.api_token;
+      draft.model = remembered.model || '';
+      draft.binary_path = remembered.binary_path || draft.binary_path;
+    } else if (spec) {
+      const prev = providerCatalog.find(p => p.id === leaving);
+      const prevField = ((prev && prev.fields) || []).find(f => f.key === 'base_url');
+      const prevDefault = (prevField && prevField.default) || '';
+      const nextField = (spec.fields || []).find(f => f.key === 'base_url');
+      if (!draft.base_url || draft.base_url === prevDefault) {
+        draft.base_url = (nextField && nextField.default) || '';
       }
-      if (keys.has('binary_path')) {
-        const field = (spec.fields || []).find(f => f.key === 'binary_path');
-        draft.binary_path = draft.binary_path || (field && field.default) || 'claude';
-      }
+      if ((spec.fields || []).some(f => f.key === 'api_token')) draft.api_token = '';
     }
+    providerShown = nextId;
     renderProviderFields(draft);
     markSettingsDirty();
+    modelsCache = null;
+    modelsCacheKey = '';
     await refreshModelsSelect(draft.model || '');
   };
   renderProviderFields();
+  providerShown = sel.value;
+  rememberProviderDraft(sel.value, collectProviderDraft());
+}
+
+let autoFooterModel = '';
+function isChatModelRow(m) {
+  if (!m) return false;
+  const kind = String(m.type || '').toLowerCase();
+  if (kind === 'embedding' || kind === 'embeddings' || kind === 'reranker') return false;
+  const name = String(m.id || m.name || '').toLowerCase();
+  return !!name && name.indexOf('embed') < 0 && name.indexOf('rerank') < 0;
+}
+function pickAutoModel(rows) {
+  const chat = (rows || []).filter(isChatModelRow);
+  const loaded = chat.filter(m => (m.loaded_instances || []).length || m.loaded_context_length);
+  const row = loaded[0] || chat[0];
+  return row ? String(row.id || row.name || '') : '';
+}
+function activeVision() {
+  const rows = modelChoices || [];
+  const picked = String(footerModelId() || '').trim();
+  const id = picked || pickAutoModel(rows);
+  const row = id ? modelRow(id, rows) : null;
+  return !!(row && row.vision === true);
+}
+function modelRow(id, rows) {
+  return (rows || modelChoices || []).find(m => _modelMatch(m.id || m.name || '', id)) || null;
+}
+function contextOfRow(row) {
+  if (!row) return null;
+  const n = Number(row.loaded_context_length || row.context_length || row.max_context_length || row.context || 0);
+  return n > 0 ? n : null;
+}
+function footerModelId() {
+  if (autoFooterModel) return autoFooterModel;
+  const input = document.getElementById('s-model');
+  if (input && settingsOpen()) return String(input.value || '').trim();
+  return String((settings && settings.api && settings.api.model) || '').trim();
+}
+function paintModelFooter(id, rows, reachable) {
+  const label = (id || '').trim() || translate('auto');
+  const row = id ? modelRow(id, rows) : null;
+  _modelContextLimit = contextOfRow(row);
+  const loaded = !!(row && ((row.loaded_instances || []).length || row.loaded_context_length));
+  const others = (rows || []).filter(m => isChatModelRow(m) && ((m.loaded_instances || []).length || m.loaded_context_length) && !_modelMatch(m.id || m.name, id));
+  if (reachable === false) setFooterModelStatus(t('model') + ': ' + label, false);
+  else if (id && others.length && !loaded) setFooterModelStatus(t('model') + ': ' + label, 'foreign');
+  else setFooterModelStatus(t('model') + ': ' + label, id ? (loaded ? true : null) : null);
+  setFooterContext(_lastPromptTokens, _modelContextLimit);
 }
 
 async function refreshModelFooter() {
@@ -3017,41 +3512,21 @@ async function refreshModelFooter() {
     const reachable = !(modelsData && modelsData.error) && modelsData.reachable !== false;
     providerReachable = prov === 'mock' ? true : reachable;
     const rows = modelsData.models || [];
-    const selectedRow = rows.find(m => {
-      const mid = String(m.id || m.name || '');
-      return selected && (mid === selected || mid.indexOf(selected) >= 0 || selected.indexOf(mid) >= 0);
-    });
+    const selectedRow = rows.find(m => _modelMatch(m.id || m.name || '', selected));
     const reportsLoad = rows.some(m => m && (Array.isArray(m.loaded_instances) || m.loaded_context_length));
-    const loadedRow = rows.find(m => m && ((m.loaded_instances || []).length || m.loaded_context_length));
-    const loadedId = loadedRow ? String(loadedRow.id || loadedRow.name || '') : '';
+    const loadedRows = rows.filter(m => m && ((m.loaded_instances || []).length || m.loaded_context_length));
+    const loadedIds = loadedRows.map(m => String(m.id || m.name || '')).filter(Boolean);
+    const selectedLoaded = !!(selected && loadedIds.some(id => _modelMatch(id, selected)));
+    const foreign = loadedIds.filter(id => !_modelMatch(id, selected));
     if (prov === 'mock') modelLoaded = true;
     else if (!reachable) modelLoaded = false;
-    else if (reportsLoad) {
-      const row = loadedRow || selectedRow || null;
-      modelLoaded = !!(row && ((row.loaded_instances || []).length || row.loaded_context_length));
-      if (!selected && !loadedId) modelLoaded = false;
-    } else {
-      modelLoaded = !!(selected || rows.length);
-    }
+    else if (reportsLoad) modelLoaded = selectedLoaded;
+    else modelLoaded = !!(selected || rows.length);
     setFooterProvider(prov, providerReachable);
-    const label = loadedId || liveModel || selected || (prov === 'mock' ? 'mock' : 'auto');
-    if (loadedId) liveModel = loadedId;
-    if (!reachable && prov !== 'mock') {
-      setFooterModelStatus(t('model') + ': ' + label, false);
-    } else {
-      setFooterModelStatus(t('model') + ': ' + label, modelLoaded || prov === 'mock' ? true : null);
-    }
-    let limit = null;
-    const limitRow = loadedRow || rows.find(m => {
-      const mid = String(m.id || m.name || '');
-      return label && (mid === label || mid.indexOf(label) >= 0 || label.indexOf(mid) >= 0);
-    });
-    if (limitRow) {
-      const lim = limitRow.loaded_context_length || limitRow.context_length || limitRow.max_context_length || limitRow.context || null;
-      if (lim) limit = Number(lim);
-    }
-    if (limit) _modelContextLimit = limit;
-    setFooterContext(_lastPromptTokens, _modelContextLimit);
+    const labelId = (running && runModel) ? runModel : footerModelId();
+    if (!(running && runModel) && labelId) liveModel = labelId;
+    paintModelFooter(labelId, rows, reachable && prov !== 'mock' ? true : (prov === 'mock' ? true : false));
+    if (prov === 'mock') setFooterModelStatus(t('model') + ': ' + (labelId || 'mock'), true);
   } catch (e) {
     if (!running) setFooterModelStatus(t('model') + ': ' + t('offline'), false);
   }
@@ -3162,18 +3637,263 @@ function readNullMax(numId, chkId) {
   return v === '' ? null : Number(v);
 }
 
+function serverModeOn() {
+  return !!(window.__SERVER_INFO && window.__SERVER_INFO.server_mode);
+}
+function applyServerWorkspace() {
+  if (!serverModeOn()) return;
+  const input = document.getElementById('s-workspace');
+  const top = document.getElementById('top-workspace');
+  if (input) {
+    input.value = '/workspace';
+    input.readOnly = true;
+    input.title = 'This browser stays inside its own /workspace.';
+  }
+  if (top) {
+    top.textContent = '/workspace';
+    top.title = '/workspace';
+  }
+  const pick = document.getElementById('btn-pick-ws');
+  if (pick) pick.hidden = true;
+}
+function paintWorkspaceLabel(fromServer) {
+  if (serverModeOn()) {
+    applyServerWorkspace();
+    return;
+  }
+  const top = document.getElementById('top-workspace');
+  const input = document.getElementById('s-workspace');
+  if (!top) return;
+  const typed = input && input.value ? String(input.value) : '';
+  let text = fromServer || typed || './workspace';
+  const absolute = text.startsWith('/') || /^[A-Za-z]:[\\/]/.test(text);
+  const typedAbsolute = typed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(typed);
+  if (absolute && !typedAbsolute) text = typed || './workspace';
+  top.textContent = text;
+  top.title = text;
+}
+function lockServerModelField() {
+  const input = document.getElementById('s-base-url');
+  if (!input) return;
+  if (input.readOnly) {
+    input.readOnly = false;
+    input.title = '';
+  }
+}
+function setEditorMark(fileOpen) {
+  const mark = document.getElementById('editor-mark');
+  if (mark) mark.hidden = !!fileOpen;
+}
+function announceServer(info) {
+  window.__SERVER_INFO = info || window.__SERVER_INFO || {};
+  applyServerWorkspace();
+  lockServerModelField();
+  if (!info) return;
+  let seen = false;
+  try { seen = sessionStorage.getItem('kerniq-lan-note') === '1'; } catch (_) {}
+  if (seen) return;
+  try { sessionStorage.setItem('kerniq-lan-note', '1'); } catch (_) {}
+  const publicBind = !!(info.server_mode || info.bind_host === '0.0.0.0' || info.bind_host === '::');
+  if (publicBind && (info.urls || []).length) {
+    const urls = (info.urls || []).filter(url => String(url).indexOf('127.0.0.1') < 0);
+    const shown = (urls.length ? urls : info.urls).join('   ');
+    const extra = info.firewall_note ? (' ' + info.firewall_note) : '';
+    toast(t('windowsOpen') + ' ' + shown + extra + ' ' + t('proxyBypass'), false, '', true);
+  }
+  if (info.storage_warning) toast(t('storageJson'), false, '', true);
+  if (info.disk && info.disk.message && (info.disk.near || info.disk.full)) {
+    toast(info.disk.message, !!info.disk.full, '', true);
+  }
+}
+function _cookieMap() {
+  const map = {};
+  String(document.cookie || '').split(';').forEach(part => {
+    const idx = part.indexOf('=');
+    if (idx < 0) return;
+    map[part.slice(0, idx).trim()] = part.slice(idx + 1).trim();
+  });
+  return map;
+}
+function writeSettingsCookie(text) {
+  const size = 900;
+  const parts = [];
+  for (let i = 0; i < text.length; i += size) parts.push(text.slice(i, i + size));
+  const clear = (name) => { document.cookie = name + '=; Path=/; Max-Age=0; SameSite=Lax'; };
+  if (parts.length > 6) {
+    for (let i = 0; i < 8; i++) clear('kerniq_s' + i);
+    document.cookie = 'kerniq_sn=local; Path=/; Max-Age=31536000; SameSite=Lax';
+    return;
+  }
+  for (let i = 0; i < 8; i++) {
+    if (i < parts.length) {
+      document.cookie = 'kerniq_s' + i + '=' + encodeURIComponent(parts[i]) + '; Path=/; Max-Age=31536000; SameSite=Lax';
+    } else {
+      clear('kerniq_s' + i);
+    }
+  }
+  document.cookie = 'kerniq_sn=' + parts.length + '; Path=/; Max-Age=31536000; SameSite=Lax';
+}
+function readSettingsCookie() {
+  const map = _cookieMap();
+  if (map.kerniq_sn === 'local') return null;
+  const n = Number(map.kerniq_sn || 0);
+  if (!n) return null;
+  let text = '';
+  for (let i = 0; i < n; i++) {
+    if (!map['kerniq_s' + i]) return null;
+    try { text += decodeURIComponent(map['kerniq_s' + i]); }
+    catch (_) { return null; }
+  }
+  try { return JSON.parse(text); } catch (_) { return null; }
+}
+async function settingsCryptoKey() {
+  const name = 'kerniq.settings.key';
+  let raw = '';
+  try { raw = localStorage.getItem(name) || ''; } catch (_) { raw = ''; }
+  if (!raw) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    raw = btoa(String.fromCharCode.apply(null, bytes));
+    try { localStorage.setItem(name, raw); } catch (_) {}
+  }
+  const bin = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
+  return crypto.subtle.importKey('raw', bin, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+async function sealToken(plain) {
+  if (!plain || !window.crypto || !crypto.subtle) return '';
+  const key = await settingsCryptoKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plain));
+  const blob = new Uint8Array(iv.length + enc.byteLength);
+  blob.set(iv, 0);
+  blob.set(new Uint8Array(enc), iv.length);
+  let text = '';
+  blob.forEach(b => { text += String.fromCharCode(b); });
+  return btoa(text);
+}
+async function openToken(sealed) {
+  if (!sealed || !window.crypto || !crypto.subtle) return '';
+  try {
+    const key = await settingsCryptoKey();
+    const blob = Uint8Array.from(atob(sealed), c => c.charCodeAt(0));
+    const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: blob.slice(0, 12) }, key, blob.slice(12));
+    return new TextDecoder().decode(dec);
+  } catch (_) {
+    return '';
+  }
+}
+async function writeBrowserSettings(parts) {
+  const apiCopy = Object.assign({}, parts.api || {});
+  const plain = apiCopy.api_token || '';
+  delete apiCopy.api_token_sealed;
+  const sealed = plain ? await sealToken(plain) : '';
+  apiCopy.api_token = '';
+  apiCopy.api_token_sealed = sealed || '';
+  const blob = {
+    agent: parts.agent || {},
+    api: apiCopy,
+    prompt: parts.prompt || {},
+    chat: parts.chat || {},
+    interface: parts.interface || {},
+  };
+  const text = JSON.stringify(blob);
+  try { localStorage.setItem('kerniq.settings.blob', text); } catch (_) {}
+  try {
+    if (plain && !sealed) localStorage.setItem('kerniq.settings.token', plain);
+    else localStorage.removeItem('kerniq.settings.token');
+  } catch (_) {}
+  writeSettingsCookie(text);
+}
+async function readBrowserSettings() {
+  const cookieBlob = readSettingsCookie();
+  let localBlob = null;
+  try { localBlob = JSON.parse(localStorage.getItem('kerniq.settings.blob') || 'null'); } catch (_) { localBlob = null; }
+  const blob = (cookieBlob && typeof cookieBlob === 'object') ? cookieBlob : localBlob;
+  if (!blob || typeof blob !== 'object') return null;
+  const localApi = (localBlob && localBlob.api) || {};
+  blob.api = Object.assign({}, blob.api || {});
+  if (!blob.api.api_token_sealed && localApi.api_token_sealed) {
+    blob.api.api_token_sealed = localApi.api_token_sealed;
+  }
+  if (blob.api.api_token_sealed) blob.api.api_token = await openToken(blob.api.api_token_sealed);
+  if (!blob.api.api_token) {
+    try { blob.api.api_token = localStorage.getItem('kerniq.settings.token') || ''; } catch (_) {}
+  }
+  if (!blob.api.base_url && localApi.base_url) blob.api.base_url = localApi.base_url;
+  return blob;
+}
+function askExternalWrite() {
+  return new Promise(resolve => {
+    const bg = document.getElementById('external-modal');
+    const ok = document.getElementById('external-ok');
+    const cancel = document.getElementById('external-cancel');
+    if (!bg || !ok || !cancel) { resolve(false); return; }
+    const title = document.getElementById('external-title');
+    const text = document.getElementById('external-text');
+    if (title) title.textContent = t('externalTitle');
+    if (text) text.textContent = t('externalBody');
+    cancel.textContent = translate('Cancel');
+    let left = 3;
+    let settled = false;
+    let timer = null;
+    const paint = () => {
+      ok.disabled = left > 0;
+      ok.textContent = left > 0 ? String(left) : t('externalAllow');
+    };
+    const finish = (yes) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearInterval(timer);
+      bg.classList.remove('on');
+      if (!document.querySelector('.modal-bg.on')) document.body.classList.remove('modal-open');
+      document.removeEventListener('keydown', onKey, true);
+      resolve(!!yes);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); finish(false); }
+    };
+    ok.onclick = (e) => { e.preventDefault(); e.stopPropagation(); if (!ok.disabled) finish(true); };
+    cancel.onclick = (e) => { e.preventDefault(); finish(false); };
+    bg.onclick = (e) => { if (e.target === bg) finish(false); };
+    document.addEventListener('keydown', onKey, true);
+    bg.classList.add('on');
+    document.body.classList.add('modal-open');
+    paint();
+    timer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) { clearInterval(timer); left = 0; }
+      paint();
+    }, 1000);
+  });
+}
+
 async function loadSettings() {
   settingsHydrating = true;
   try {
   const loaded = await api('/api/settings');
+  if (!window.__SERVER_INFO) {
+    try { window.__SERVER_INFO = await api('/api/server/info'); } catch (_) {}
+  }
   if (!loaded || loaded.error || !loaded.agent) {
     toast((loaded && loaded.error) || t('settingsFailed'), true);
   }
   settings = (loaded && loaded.agent) ? loaded : (settings || {});
+  if (serverModeOn()) {
+    const local = await readBrowserSettings();
+    if (local) {
+      ['chat', 'agent', 'api', 'prompt', 'interface'].forEach(section => {
+        if (local[section] && typeof local[section] === 'object') {
+          settings[section] = Object.assign({}, settings[section] || {}, local[section]);
+        }
+      });
+    }
+    if (settings.api) settings.api.api_token = (settings.api.api_token || '');
+  }
   settingsSnapshot = JSON.stringify(settings);
+  applyInterface(settings.interface || {});
   const a = settings.agent || {}, apiS = settings.api || {}, p = settings.prompt || {};
-  document.getElementById('s-workspace').value = a.workspace || './workspace';
-  document.getElementById('top-workspace').textContent = a.workspace || './workspace';
+  document.getElementById('s-workspace').value = serverModeOn() ? '/workspace' : (a.workspace || './workspace');
+  document.getElementById('top-workspace').textContent = serverModeOn() ? '/workspace' : (a.workspace || './workspace');
+  applyServerWorkspace();
   document.getElementById('s-max-iter').value = a.max_iterations != null ? a.max_iterations : '';
   // timeout with unit
   let ts = a.timeout_seconds ?? 120;
@@ -3208,6 +3928,8 @@ async function loadSettings() {
   if (elA) elA.checked = ch.aggregate_tools !== false;
   const ap = document.getElementById('s-auto-approve');
   if (ap) ap.value = ch.auto_approve_up_to || 'low';
+  const extRo = document.getElementById('s-external-ro');
+  if (extRo) extRo.checked = ch.read_only_external_attachments !== false;
   const autoAct = document.getElementById('s-auto-act');
   if (autoAct) autoAct.checked = ch.auto_act_after_plan !== false;
   const modeAutoEl = document.getElementById('s-mode-auto');
@@ -3215,6 +3937,7 @@ async function loadSettings() {
   modeAuto = ch.mode_auto !== false;
   const composeEl = document.getElementById('s-compose-plan');
   if (composeEl) composeEl.checked = ch.compose_plan !== false;
+  syncComposePlanLock();
   applyModeSwitch();
   const splitEl = document.getElementById('s-split-models');
   const actField = document.getElementById('act-model-field');
@@ -3223,6 +3946,11 @@ async function loadSettings() {
   if (splitEl) splitEl.checked = !!apiCfg.split_models;
   if (actField) actField.hidden = !(apiCfg.split_models);
   if (actInput && !actInput.value) actInput.value = apiCfg.act_model || apiCfg.model || '';
+  const autoLoad = document.getElementById('s-auto-load');
+  const loadAction = document.getElementById('s-load-action');
+  if (autoLoad) autoLoad.checked = !!apiCfg.auto_model_load;
+  if (loadAction) loadAction.value = savedLoadAction();
+  syncAutoLoad();
   const langSel = document.getElementById('s-chat-lang');
   if (langSel) {
     const langs = window.__RESPONSE_LANGS || {};
@@ -3267,14 +3995,53 @@ async function loadSettings() {
 }
 
 let modelsInflight = null;
+let modelsInflightKey = '';
 let modelsCache = null;
 let modelsCacheAt = 0;
+let modelsCacheKey = '';
 let modelChoices = [];
+function liveApiSettings() {
+  const apiS = Object.assign({}, (settings && settings.api) || {});
+  const providerEl = document.getElementById('s-provider');
+  const urlEl = document.getElementById('s-base-url');
+  const tokenEl = document.getElementById('s-api-token');
+  const modelEl = document.getElementById('s-model');
+  if (providerEl && providerEl.value) apiS.provider = providerEl.value;
+  if (urlEl) apiS.base_url = urlEl.value;
+  if (tokenEl) apiS.api_token = tokenEl.value;
+  if (modelEl) apiS.model = modelEl.value;
+  delete apiS.api_token_sealed;
+  return apiS;
+}
+function modelProbe() {
+  const probe = liveApiSettings();
+  const body = { provider: probe.provider || '' };
+  const spec = providerCatalog.find(p => p.id === body.provider);
+  const keys = new Set(((spec && spec.fields) || []).map(f => f.key));
+  const urlEl = document.getElementById('s-base-url');
+  const tokenEl = document.getElementById('s-api-token');
+  if (!spec) {
+    if (probe.base_url) body.base_url = probe.base_url;
+    if (probe.api_token) body.api_token = probe.api_token;
+    return body;
+  }
+  if (keys.has('base_url')) body.base_url = urlEl ? (urlEl.value || '') : (probe.base_url || '');
+  if (keys.has('api_token')) body.api_token = tokenEl ? (tokenEl.value || '') : (probe.api_token || '');
+  return body;
+}
 async function fetchModels() {
+  const body = modelProbe();
+  const key = [body.provider || '', body.base_url || '', body.api_token || ''].join('\n');
   const now = Date.now();
-  if (modelsCache && now - modelsCacheAt < 1500) return modelsCache;
-  if (modelsInflight) return modelsInflight;
-  modelsInflight = fetch('/api/models', { signal: AbortSignal.timeout(8000) })
+  if (modelsCache && modelsCacheKey === key && now - modelsCacheAt < 1500) return modelsCache;
+  if (modelsInflight && modelsInflightKey === key) return modelsInflight;
+  modelsInflightKey = key;
+  modelsInflight = fetch('/api/models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(8000),
+  })
     .then(r => r.text())
     .then(text => {
       try { return JSON.parse(text); } catch { return { models: [], reachable: false, error: text }; }
@@ -3282,9 +4049,10 @@ async function fetchModels() {
     .catch(() => ({ models: [], reachable: false, error: 'timed out' }))
     .then(data => {
       modelsCache = data;
+      modelsCacheKey = key;
       modelsCacheAt = Date.now();
       return data;
-    }).finally(() => { modelsInflight = null; });
+    }).finally(() => { modelsInflight = null; modelsInflightKey = ''; });
   return modelsInflight;
 }
 function fillModelMenu(filter) {
@@ -3311,6 +4079,7 @@ function fillModelMenu(filter) {
       if (input) input.value = m.id || '';
       menu.hidden = true;
       if (typeof markSettingsDirty === 'function') markSettingsDirty();
+      if (typeof paintModelFooter === 'function') paintModelFooter(m.id || '', modelChoices, true);
     };
     menu.appendChild(b);
   });
@@ -3343,6 +4112,37 @@ document.getElementById('s-split-models')?.addEventListener('change', (ev) => {
   if (on && act && !act.value && plan) act.value = plan.value || '';
   markSettingsDirty();
 });
+document.getElementById('s-auto-load')?.addEventListener('change', () => {
+  syncAutoLoad();
+  markSettingsDirty();
+});
+document.getElementById('s-load-action')?.addEventListener('change', () => markSettingsDirty());
+document.getElementById('s-external-ro')?.addEventListener('change', async (ev) => {
+  const box = ev.target;
+  if (box.checked) { markSettingsDirty(); return; }
+  const ok = await askExternalWrite();
+  if (!ok) { box.checked = true; return; }
+  markSettingsDirty();
+});
+document.getElementById('btn-db-save')?.addEventListener('click', async () => {
+  const host = document.getElementById('db-host')?.value || '';
+  if (!host.trim()) { toast(t('dbTip'), true); return; }
+  const r = await api('/api/server/database', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      host: host.trim(),
+      port: Number(document.getElementById('db-port')?.value || 3306),
+      user: document.getElementById('db-user')?.value || '',
+      password: document.getElementById('db-pass')?.value || '',
+      name: document.getElementById('db-name')?.value || 'kerniq',
+    }),
+  });
+  const pass = document.getElementById('db-pass');
+  if (pass) pass.value = '';
+  if (!r || r.error) { toast((r && r.error) || t('settingsFailed'), true); return; }
+  toast(t('dbReady'));
+});
 document.getElementById('act-model-arrow')?.addEventListener('click', (ev) => {
   ev.preventDefault();
   const menu = document.getElementById('act-model-menu');
@@ -3366,19 +4166,10 @@ async function refreshModelsSelect(selected) {
   fillModelMenu(sel.value || '');
   if (data.error || data.reachable === false) setFooterProvider(prov, false);
   else setFooterProvider(prov, true);
-  const modelLabel = sel.value || '(auto)';
-  if (data.error || data.reachable === false) setFooterModelStatus(t('model') + ': ' + (data.error || t('offline')), false);
-  else if (modelLabel && modelLabel !== '(auto)') setFooterModelStatus(t('model') + ': ' + modelLabel, null);
-  const selM = sel.value || '';
-  for (const m of (data.models || [])) {
-    const lim = m.loaded_context_length || m.context_length || m.max_context_length || m.context;
-    if (!lim) continue;
-    if (selM && (m.id === selM || String(m.id||'').includes(selM))) { _modelContextLimit = Number(lim); break; }
-    if (_modelContextLimit == null) _modelContextLimit = Number(lim);
-  }
-  setFooterContext(_lastPromptTokens, _modelContextLimit);
+  paintModelFooter(footerModelId(), modelChoices, !(data.error || data.reachable === false));
   sel.oninput = () => {
     markSettingsDirty();
+    paintModelFooter(sel.value.trim(), modelChoices, !(data.error || data.reachable === false));
   };
 }
 
@@ -3400,15 +4191,44 @@ async function loadComponents() {
   renderResetLists();
   // footer from plugin settings
   const ui = (data.plugins || []).find(p => p.id === 'plugin_web_ui');
-  if (ui && ui.values && ui.values.ui_locale) applyUiLocale(ui.values.ui_locale);
+  if (ui && ui.values && ui.values.ui_locale != null) applyUiLocale(preferredLocale(ui.values.ui_locale));
   if (ui && ui.values && ui.values.show_footer === false) {
     footerEnabled = false;
     document.getElementById('app-footer').classList.add('hidden');
   }  refreshInterfaceControls();
+  syncComposePlanLock();
 }
 
 let expandedPacks = {};
 let selectedPack = null;
+let draftPacks = {};
+function planComposeAvailable() {
+  const tools = componentsCache.tools || [];
+  if (!tools.length) return true;
+  const plan = tools.find(t => t.name === 'update_plan');
+  if (!plan) return false;
+  const draft = draftTools[plan.id] || { enabled: plan.enabled !== false, values: { ...(plan.values || {}) } };
+  if (draft.enabled === false) return false;
+  if (draft.values && Object.prototype.hasOwnProperty.call(draft.values, 'include_in_plan')) {
+    return !!draft.values.include_in_plan;
+  }
+  return plan.include_in_plan !== false;
+}
+const COMPOSE_PLAN_TIP = 'When this is on, the first model turn can only edit the TODO. It is forced off when the plan tool is missing, disabled, or not included in Plan mode.';
+const COMPOSE_PLAN_LOCK = 'Build a plan is unavailable because the plan tool is missing, disabled, or not included in Plan mode.';
+function syncComposePlanLock() {
+  const el = document.getElementById('s-compose-plan');
+  if (!el) return;
+  const ok = planComposeAvailable();
+  el.disabled = !ok;
+  if (!ok) el.checked = false;
+  const line = el.closest('.check-line');
+  if (line) line.classList.toggle('is-locked', !ok);
+  const tip = document.getElementById('compose-plan-tip');
+  const text = translate(ok ? COMPOSE_PLAN_TIP : COMPOSE_PLAN_LOCK);
+  el.title = ok ? '' : text;
+  if (tip) tip.setAttribute('data-tip', text);
+}
 function renderToolsList() {
   const by = {};
   (componentsCache.tools || []).forEach(t => { const c = t.category || 'other'; (by[c] = by[c] || []).push(t); });
@@ -3438,11 +4258,13 @@ function renderToolsList() {
     const cb = head.querySelector('input');
     cb.onclick = e => e.stopPropagation();
     cb.onchange = e => {
+      draftPacks[k] = { forceEnabled: !!e.target.checked };
       by[k].forEach(t => {
         draftTools[t.id] = draftTools[t.id] || { enabled: true, values: {} };
         draftTools[t.id].enabled = e.target.checked;
       });
       markSettingsDirty();
+      syncComposePlanLock();
       renderToolsList();
     };
     head.querySelector('.twist').onclick = e => {
@@ -3469,7 +4291,9 @@ function renderToolsList() {
         tcb.onchange = e => {
           draftTools[t.id] = draftTools[t.id] || { enabled: true, values: {} };
           draftTools[t.id].enabled = e.target.checked;
+          if (draftPacks[k]) draftPacks[k].forceEnabled = null;
           markSettingsDirty();
+          syncComposePlanLock();
           renderToolsList();
         };
         row.querySelector('.tname').onclick = () => {
@@ -3488,20 +4312,52 @@ function renderPackDetail(cat, tools) {
   const panel = document.getElementById('s-tool-detail');
   if (!panel) return;
   const list = tools || [];
-  const allAccept = list.length && list.every(t => (draftTools[t.id]?.values || {}).auto_accept);
-  const allMerge = list.length && list.every(t => (draftTools[t.id]?.values || {}).collapsible !== false);
-  panel.innerHTML = `<h3>${esc(cat)}</h3><div class="hint">${list.length}</div>`
-    + `<label class="field-row-check"><input type="checkbox" class="soft-check" id="pack-auto" ${allAccept ? 'checked' : ''}/><span>${esc(t('packAuto'))}</span></label>`
-    + `<label class="field-row-check"><input type="checkbox" class="soft-check" id="pack-merge" ${allMerge ? 'checked' : ''}/><span>${esc(t('packMerge'))}</span></label>`;
-  const apply = (key, value) => {
-    list.forEach(tool => {
-      draftTools[tool.id] = draftTools[tool.id] || { enabled: true, values: {} };
-      draftTools[tool.id].values[key] = value;
+  const pack = (componentsCache.packs || []).find(p => p.id === cat);
+  const fields = (pack && pack.schema && pack.schema.fields) || [];
+  let html = `<h3>${esc((pack && pack.name) || cat)}</h3><div class="hint">${list.length}</div>`;
+  if (!fields.length) html += '<div class="empty">No pack settings</div>';
+  fields.forEach(f => {
+    const vals = list.map(tool => {
+      const draft = draftTools[tool.id] || { values: {} };
+      if (draft.values && draft.values[f.key] !== undefined) return draft.values[f.key];
+      return f.default;
     });
-    markSettingsDirty();
-  };
-  panel.querySelector('#pack-auto').onchange = e => apply('auto_accept', e.target.checked);
-  panel.querySelector('#pack-merge').onchange = e => apply('collapsible', e.target.checked);
+    const mixed = vals.length > 1 && vals.some(v => v !== vals[0]);
+    const val = mixed ? '' : vals[0];
+    const label = translate(f.label || f.key);
+    if (f.type === 'bool') {
+      html += `<label class="field-row-check"><input type="checkbox" class="soft-check" data-pk="${esc(f.key)}" ${!mixed && val ? 'checked' : ''}/><span>${esc(label)}</span></label>`;
+    } else {
+      html += `<div class="field"><label class="lbl">${esc(label)}</label>`;
+      html += `<input type="${f.type === 'int' || f.type === 'float' ? 'number' : 'text'}" data-pk="${esc(f.key)}" value="${esc(val ?? '')}"/>`;
+      html += `</div>`;
+    }
+  });
+  panel.innerHTML = html;
+  fields.forEach(f => {
+    if (f.type !== 'bool') return;
+    const inp = panel.querySelector(`[data-pk="${f.key}"]`);
+    if (!inp) return;
+    const vals = list.map(tool => {
+      const draft = draftTools[tool.id] || { values: {} };
+      if (draft.values && draft.values[f.key] !== undefined) return !!draft.values[f.key];
+      return !!f.default;
+    });
+    if (vals.length > 1 && vals.some(v => v !== vals[0])) inp.indeterminate = true;
+  });
+  panel.querySelectorAll('[data-pk]').forEach(inp => {
+    inp.addEventListener(inp.type === 'checkbox' ? 'change' : 'input', () => {
+      const value = inp.type === 'checkbox' ? inp.checked : (inp.type === 'number' ? Number(inp.value) : inp.value);
+      if (inp.type === 'checkbox') inp.indeterminate = false;
+      list.forEach(tool => {
+        draftTools[tool.id] = draftTools[tool.id] || { enabled: true, values: {} };
+        draftTools[tool.id].values = draftTools[tool.id].values || {};
+        draftTools[tool.id].values[inp.dataset.pk] = value;
+      });
+      if (inp.dataset.pk === 'include_in_plan') syncComposePlanLock();
+      markSettingsDirty();
+    });
+  });
 }
 function renderToolDetail(id) {
   const panel = document.getElementById('s-tool-detail');
@@ -3513,10 +4369,13 @@ function renderToolDetail(id) {
   if (!fields.length) html += '<div class="empty">No extra settings</div>';
   else fields.forEach(f => {
     const val = draft.values[f.key] !== undefined ? draft.values[f.key] : f.default;
+    const label = translate(f.label || '');
     if (f.type === 'bool') {
-      html += `<label class="field-row-check"><input type="checkbox" class="soft-check" data-fk="${esc(f.key)}" ${val ? 'checked' : ''}/><span>${esc(f.label)}</span></label>`;
+      html += `<label class="field-row-check"><input type="checkbox" class="soft-check" data-fk="${esc(f.key)}" ${val ? 'checked' : ''}/><span>${esc(label)}</span></label>`;
+    } else if (f.type === 'path') {
+      html += `<div class="field"><label class="lbl">${esc(label)}</label><div class="path-pick"><input class="input-std" data-fk="${esc(f.key)}" value="${esc(val ?? '')}"/><button type="button" class="ghost" data-pick="${esc(f.key)}">${esc(translate('Browse…'))}</button></div></div>`;
     } else {
-      html += `<div class="field"><label class="lbl">${esc(f.label)}</label>`;
+      html += `<div class="field"><label class="lbl">${esc(label)}</label>`;
       html += `<input type="${f.type === 'int' || f.type === 'float' ? 'number' : 'text'}"${numAttrs(f)} data-fk="${esc(f.key)}" value="${esc(val ?? '')}"/>`;
       html += `</div>`;
     }
@@ -3525,7 +4384,22 @@ function renderToolDetail(id) {
   panel.querySelectorAll('[data-fk]').forEach(inp => {
     inp.addEventListener(inp.type === 'checkbox' ? 'change' : 'input', () => {
       draftTools[id].values[inp.dataset.fk] = inp.type === 'checkbox' ? inp.checked : (inp.type === 'number' ? Number(inp.value) : inp.value);
+      if (inp.dataset.fk === 'include_in_plan') syncComposePlanLock();
       markSettingsDirty();
+    });
+  });
+  panel.querySelectorAll('[data-pick]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const picked = await api('/api/fs/pick_folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (!picked || picked.cancelled) return;
+      if (picked.error) { toast(String(picked.error), true); return; }
+      const input = panel.querySelector('[data-fk="' + btn.dataset.pick + '"]');
+      if (input && picked.path) {
+        input.value = picked.path;
+        draftTools[id] = draftTools[id] || { enabled: true, values: {} };
+        draftTools[id].values[btn.dataset.pick] = picked.path;
+        markSettingsDirty();
+      }
     });
   });
 }
@@ -3573,61 +4447,120 @@ function renderPluginsList() {
     name.textContent = p.name || p.id;
     row.appendChild(name);
     row.appendChild(badges);
-    row.onclick = () => { selectedPluginId = p.id; renderPluginsList(); renderPluginDetail(p.id); };
+    row.onclick = () => openPlugin(p.id);
     el.appendChild(row);
   });
 }
-function renderPluginDetail(id) {
-  const panel = document.getElementById('s-plugin-detail');
-  const p = (componentsCache.plugins || []).find(x => x.id === id);
-  if (!panel || !p) return;
-  const draft = draftPlugins[id] || { values: {} };
-  let html = `<h3>${esc(p.name)}</h3>`;
-  const fields = (p.schema && p.schema.fields) || [];
-  if (!fields.length) html += '<div class="empty">No settings</div>';
-  else fields.forEach(f => {
-    if (f.key === 'ui_locale') {
-      const opts = [{ value: 'en', label: 'English' }];
-      Object.keys(langPacks).forEach(pid => {
-        const pack = langPacks[pid];
-        opts.push({ value: pid, label: (pack && (pack.name_native || pack.name_en)) || pid });
-      });
-      f = Object.assign({}, f, { options: opts });
-    }
-    const val = draft.values[f.key] !== undefined ? draft.values[f.key] : f.default;
-    const label = translate(f.label || '');
-    const tip = translate(f.description || '');
-    if (f.type === 'bool') {
-      html += `<div class="field field-check"><label class="check-line"><input type="checkbox" class="soft-check" data-fk="${esc(f.key)}" ${val ? 'checked' : ''}/><span>${esc(label)}</span>`;
-      if (tip) html += `<span class="info-tip" tabindex="0" data-tip="${esc(tip)}">i</span>`;
-      html += `</label></div>`;
-    } else if (f.type === 'select' && f.options && f.options.length) {
-      html += `<div class="field"><label class="lbl">${esc(label)}`;
-      if (tip) html += `<span class="info-tip" tabindex="0" data-tip="${esc(tip)}">i</span>`;
-      html += `</label><select data-fk="${esc(f.key)}" class="input-std">`;
-      f.options.forEach(o => {
-        const ov = o.value != null ? o.value : o;
-        const ol = translate(o.label != null ? o.label : String(ov));
-        html += `<option value="${esc(ov)}" ${String(val) === String(ov) ? 'selected' : ''}>${esc(ol)}</option>`;
-      });
-      html += `</select></div>`;
-    } else {
-      html += `<div class="field"><label class="lbl">${esc(label)}`;
-      if (tip) html += `<span class="info-tip" tabindex="0" data-tip="${esc(tip)}">i</span>`;
-      html += `</label>`;
-      html += `<input class="input-std" type="${f.type === 'int' || f.type === 'float' ? 'number' : 'text'}"${numAttrs(f)} data-fk="${esc(f.key)}" value="${esc(val ?? '')}"/>`;
-      html += `</div>`;
-    }
-  });
+function fieldVisible(field, values, fields) {
+  if (field.slot == null) return true;
+  const counter = (fields || []).find(item => item.key === 'slot_count');
+  const raw = values && values.slot_count != null ? values.slot_count : (counter && counter.default);
+  const count = Math.max(1, Math.min(3, Number(raw || 1)));
+  return Number(field.slot) <= count;
+}
+function openPlugin(id) {
   if (id === 'plugin_web_ui') {
-    html += '<div class="set-group"><h3>' + esc(translate('Language packs')) + '</h3><div class="row">';
-    html += '<button type="button" id="btn-lang-import">' + esc(translate('Import')) + '</button>';
-    html += '<button type="button" class="ghost" id="btn-lang-remove">' + esc(translate('Remove')) + '</button>';
-    html += '</div></div>';
+    selectedPluginId = null;
+    renderPluginsList();
+    closePluginModal();
+    openSettingsAt('interface', null);
+    return;
   }
-  panel.innerHTML = html;
-  syncCompactLimit(panel);
-  if (!draftPlugins[id]) draftPlugins[id] = { values: {} };
+  selectedPluginId = id;
+  renderPluginsList();
+  const p = (componentsCache.plugins || []).find(x => x.id === id);
+  const bg = document.getElementById('plugin-modal');
+  const title = document.getElementById('plugin-modal-title');
+  const body = document.getElementById('plugin-modal-body');
+  if (!p || !bg || !body) return;
+  if (title) title.textContent = p.name || p.id;
+  body.innerHTML = pluginFormHtml(p);
+  bindPluginForm(body, p);
+  bg.classList.add('on');
+  document.body.classList.add('modal-open');
+}
+function closePluginModal() {
+  const bg = document.getElementById('plugin-modal');
+  if (bg) bg.classList.remove('on');
+  document.body.classList.remove('modal-open');
+  if (selectedPluginId) {
+    selectedPluginId = null;
+    renderPluginsList();
+  }
+}
+function refreshOpenPlugin() {
+  const bg = document.getElementById('plugin-modal');
+  if (selectedPluginId && bg && bg.classList.contains('on')) openPlugin(selectedPluginId);
+}
+function fieldBlock(f, draft) {
+  const val = draft.values[f.key] !== undefined ? draft.values[f.key] : f.default;
+  const label = translate(f.label || '');
+  const tip = translate(f.description || '');
+  const tipHtml = tip ? '<span class="info-tip" tabindex="0" data-tip="' + esc(tip) + '">i</span>' : '';
+  if (f.type === 'bool') {
+    return '<div class="field field-check"><label class="check-line"><input type="checkbox" class="soft-check" data-fk="' + esc(f.key) + '"' + (val ? ' checked' : '') + '/><span>' + esc(label) + '</span>' + tipHtml + '</label></div>';
+  }
+  let control = '';
+  if (f.type === 'select' && f.options && f.options.length) {
+    control = '<select data-fk="' + esc(f.key) + '" class="input-std">';
+    f.options.forEach(o => {
+      const ov = o.value != null ? o.value : o;
+      const ol = translate(o.label != null ? o.label : String(ov));
+      control += '<option value="' + esc(ov) + '"' + (String(val) === String(ov) ? ' selected' : '') + '>' + esc(ol) + '</option>';
+    });
+    control += '</select>';
+  } else if (f.type === 'text') {
+    control = '<textarea class="input-std" data-fk="' + esc(f.key) + '">' + esc(val ?? '') + '</textarea>';
+  } else if (f.type === 'path') {
+    control = '<div class="path-pick"><input class="input-std" data-fk="' + esc(f.key) + '" value="' + esc(val ?? '') + '"/><button type="button" class="ghost" data-pick="' + esc(f.key) + '">' + esc(translate('Browse…')) + '</button></div>';
+  } else {
+    control = '<input class="input-std" type="' + (f.type === 'int' || f.type === 'float' ? 'number' : 'text') + '"' + numAttrs(f) + ' data-fk="' + esc(f.key) + '" value="' + esc(val ?? '') + '"/>';
+  }
+  return '<div class="field"><label class="lbl">' + esc(label) + tipHtml + '</label>' + control + '</div>';
+}
+function pluginFormHtml(p) {
+  const draft = draftPlugins[p.id] || { values: Object.assign({}, p.values || {}) };
+  const fields = ((p.schema && p.schema.fields) || []).filter(f => fieldVisible(f, draft.values, p.schema && p.schema.fields));
+  let html = '';
+  const actions = p.actions || [];
+  if (actions.length) {
+    html += '<div class="plugin-actions">';
+    actions.forEach(action => {
+      html += '<button type="button" class="save-active" data-action="' + esc(action.id) + '">' + esc(translate(action.label || action.id)) + '</button>';
+    });
+    html += '</div>';
+  }
+  const groups = [];
+  fields.forEach(f => {
+    const key = f.group || 'general';
+    let group = groups.find(item => item.key === key);
+    if (!group) { group = { key: key, fields: [] }; groups.push(group); }
+    group.fields.push(f);
+  });
+  if (groups.length) html += '<div class="set-cols">';
+  groups.forEach(group => {
+    const texts = group.fields.filter(f => f.type === 'text');
+    const shorts = group.fields.filter(f => f.type !== 'text');
+    const wide = texts.length > 0 || shorts.length > 1;
+    html += '<div class="set-group' + (wide ? ' span-2' : '') + '">';
+    if (group.key !== 'general') {
+      const title = group.key.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+      html += '<h3>' + esc(translate(title)) + '</h3>';
+    }
+    if (shorts.length > 1) html += '<div class="field-grid">';
+    shorts.forEach(f => { html += fieldBlock(f, draft); });
+    if (shorts.length > 1) html += '</div>';
+    texts.forEach(f => { html += fieldBlock(f, draft); });
+    html += '</div>';
+  });
+  if (groups.length) html += '</div>';
+  if (!fields.length && !actions.length) html += '<div class="empty">No settings</div>';
+  return html;
+}
+function bindPluginForm(panel, p) {
+  const id = p.id;
+  if (!draftPlugins[id]) draftPlugins[id] = { values: Object.assign({}, p.values || {}) };
+  const redraw = () => { panel.innerHTML = pluginFormHtml(p); bindPluginForm(panel, p); };
   panel.querySelectorAll('[data-fk]').forEach(inp => {
     const ev = (inp.type === 'checkbox' || inp.tagName === 'SELECT') ? 'change' : 'input';
     inp.addEventListener(ev, () => {
@@ -3636,16 +4569,167 @@ function renderPluginDetail(id) {
       else if (inp.type === 'number') v = Number(inp.value);
       else v = inp.value;
       draftPlugins[id].values[inp.dataset.fk] = v;
-      if (inp.dataset.fk === 'target_mode' || inp.dataset.fk === 'trigger_percent' || inp.dataset.fk === 'target_percent') syncCompactLimit(panel);
-      if (inp.dataset.fk === 'enabled' || inp.dataset.fk === 'listed') renderPluginsList();
-      markSettingsDirty();
+      if (inp.dataset.fk === 'slot_count') redraw();
+      else {
+        if (inp.dataset.fk === 'target_mode' || inp.dataset.fk === 'trigger_percent' || inp.dataset.fk === 'target_percent') syncCompactLimit(panel);
+        markSettingsDirty();
+      }
     });
   });
-  const importBtn = document.getElementById('btn-lang-import');
-  const removeBtn = document.getElementById('btn-lang-remove');
-  if (importBtn) importBtn.onclick = () => document.getElementById('lang-pack-file').click();
-  if (removeBtn) removeBtn.onclick = () => openLangModal();
+  panel.querySelectorAll('[data-pick]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const picked = await api('/api/fs/pick_folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (!picked || picked.cancelled) return;
+      if (picked.error) { toast(String(picked.error), true); return; }
+      const input = panel.querySelector('[data-fk="' + btn.dataset.pick + '"]');
+      if (input && picked.path) {
+        input.value = picked.path;
+        draftPlugins[id].values[btn.dataset.pick] = picked.path;
+        markSettingsDirty();
+      }
+    });
+  });
+  panel.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => runPluginAction(id, btn.dataset.action, btn));
+  });
+  syncCompactLimit(panel);
 }
+function liveKerniqSettings() {
+  const snap = {
+    api: (typeof liveApiSettings === 'function') ? liveApiSettings() : Object.assign({}, (settings && settings.api) || {}),
+    agent: Object.assign({}, (settings && settings.agent) || {}),
+    chat: Object.assign({}, (settings && settings.chat) || {}),
+    prompt: Object.assign({}, (settings && settings.prompt) || {}),
+  };
+  const num = (id) => {
+    const el = document.getElementById(id);
+    if (!el || el.value === '') return null;
+    const n = Number(el.value);
+    return isFinite(n) ? n : null;
+  };
+  const iter = num('s-max-iter');
+  if (iter != null) snap.agent.max_iterations = iter;
+  const timeout = document.getElementById('s-timeout');
+  const unit = document.getElementById('s-timeout-unit');
+  if (timeout && timeout.value !== '' && unit) {
+    const n = Number(timeout.value) || 0;
+    snap.agent.timeout_seconds = unit.value === 'm' ? n * 60 : unit.value === 'h' ? n * 3600 : n;
+  }
+  const retries = num('s-loop-retries');
+  if (retries != null) snap.agent.loop_retries = retries;
+  const temp = num('s-api-temp');
+  if (temp != null) snap.api.temperature = temp;
+  const maxTok = document.getElementById('s-api-max-tokens');
+  if (maxTok) snap.api.max_tokens = maxTok.value === '' ? null : Number(maxTok.value);
+  const split = document.getElementById('s-split-models');
+  if (split) snap.api.split_models = !!split.checked;
+  const act = document.getElementById('s-act-model');
+  if (act) snap.api.act_model = act.value || '';
+  const bin = document.getElementById('s-binary-path');
+  if (bin) snap.api.binary_path = bin.value || '';
+  const modeAutoEl = document.getElementById('s-mode-auto');
+  if (modeAutoEl) snap.chat.mode_auto = !!modeAutoEl.checked;
+  const compose = document.getElementById('s-compose-plan');
+  if (compose) snap.chat.compose_plan = !!compose.checked && (typeof planComposeAvailable !== 'function' || planComposeAvailable());
+  const autoAct = document.getElementById('s-auto-act');
+  if (autoAct) snap.chat.auto_act_after_plan = !!autoAct.checked;
+  const lang = document.getElementById('s-chat-lang');
+  if (lang && lang.value) snap.chat.response_language = lang.value;
+  const streaming = document.getElementById('s-chat-streaming');
+  if (streaming) snap.chat.streaming = !!streaming.checked;
+  return snap;
+}
+let benchHiddenKey = '';
+let benchLastKey = '';
+function benchKey(state) {
+  if (!state || !state.status || state.status === 'idle') return '';
+  return [state.status, state.index || '', state.model || '', state.slot || '', state.error || ''].join('|');
+}
+function benchNote(state) {
+  const el = document.getElementById('bench-note');
+  const text = document.getElementById('bench-note-text');
+  if (!el || !text) return;
+  const status = state && state.status;
+  const key = benchKey(state);
+  benchLastKey = key;
+  if (!status || status === 'idle') { el.hidden = true; el.className = 'bench-note'; benchHiddenKey = ''; return; }
+  if (benchHiddenKey && benchHiddenKey === key) { el.hidden = true; return; }
+  if (benchHiddenKey && benchHiddenKey !== key) benchHiddenKey = '';
+  el.hidden = false;
+  el.className = 'bench-note on' + (status === 'done' ? ' done' : status === 'failed' ? ' failed' : '');
+  if (status === 'running') {
+    const model = state.model ? ' · ' + state.model : '';
+    const slot = state.slot ? ' · ' + translate('task') + ' ' + state.slot + '/' + (state.slots || '') : '';
+    const index = state.total ? ' (' + (state.index || 0) + '/' + state.total + ')' : '';
+    text.textContent = translate('Benchmark is running in the background.') + index + model + slot;
+  } else if (status === 'done') {
+    text.textContent = translate('Benchmark finished') + (state.folder ? ' · ' + state.folder : '');
+  } else {
+    text.textContent = translate('Benchmark failed') + (state.error ? ': ' + state.error : '');
+  }
+}
+document.getElementById('bench-note-hide')?.addEventListener('click', () => {
+  benchHiddenKey = benchLastKey || 'hidden';
+  const el = document.getElementById('bench-note');
+  if (el) { el.hidden = true; el.className = 'bench-note'; }
+});
+let benchWatchTimer = 0;
+async function watchBenchmark() {
+  if (benchWatchTimer) { clearTimeout(benchWatchTimer); benchWatchTimer = 0; }
+  const tick = async () => {
+    let state = null;
+    try { state = await api('/api/benchmark/active'); } catch (e) { state = null; }
+    let id = '';
+    try { id = sessionStorage.getItem('kerniq_benchmark_job') || ''; } catch (_) {}
+    if (id) {
+      try {
+        const job = await api('/api/plugins/job?id=' + encodeURIComponent(id));
+        if (job && job.status && job.status !== 'running' && (!state || state.status === 'running' || state.status === 'idle')) {
+          state = { status: job.status === 'done' ? 'done' : 'failed', error: job.error || '', folder: (job.result && job.result.folder) || '' };
+        }
+      } catch (_) {}
+    }
+    benchNote(state);
+    const running = state && state.status === 'running';
+    if (!running) {
+      try { sessionStorage.removeItem('kerniq_benchmark_job'); } catch (_) {}
+      if (state && (state.status === 'done' || state.status === 'failed')) {
+        benchWatchTimer = setTimeout(() => benchNote(null), 12000);
+      }
+      return;
+    }
+    benchWatchTimer = setTimeout(tick, 2000);
+  };
+  tick();
+}
+async function runPluginAction(pluginId, actionId, button) {
+  if (button) button.disabled = true;
+  const draft = draftPlugins[pluginId];
+  if (draft) {
+    await api('/api/component/settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'plugin', id: pluginId, values: draft.values }),
+    });
+  }
+  const started = await api('/api/plugins/action', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      plugin_id: pluginId,
+      action_id: actionId,
+      client_settings: settings ? liveKerniqSettings() : null,
+    }),
+  });
+  if (!started || started.error || !started.job_id) {
+    toast((started && started.error) || translate('Could not start'), true);
+    if (button) button.disabled = false;
+    return;
+  }
+  try { sessionStorage.setItem('kerniq_benchmark_job', started.job_id); } catch (_) {}
+  toast(translate('Benchmark started'));
+  watchBenchmark();
+  if (button) button.disabled = false;
+}
+function renderPluginDetail(id) { openPlugin(id); }
 function syncCompactLimit(panel) {
   if (!panel) return;
   const mode = panel.querySelector('[data-fk="target_mode"]');
@@ -3673,7 +4757,7 @@ function renderResetLists() {
       d.className = 'reset-item';
       d.innerHTML = `<span>${esc(t.name)}</span><button class="secondary" data-id="${esc(t.id)}">Reset</button>`;
       d.querySelector('button').onclick = async () => {
-        if (!confirm('Reset settings for ' + t.name + '?')) return;
+        if (!await askConfirm(translate('Reset settings for this item?') + '\n' + t.name)) return;
         await api('/api/settings/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'tool', id: t.id }) });
         draftTools[t.id] = undefined;
         await loadComponents();
@@ -3689,7 +4773,7 @@ function renderResetLists() {
       d.className = 'reset-item';
       d.innerHTML = `<span>${esc(p.name)}</span><button class="secondary" data-id="${esc(p.id)}">Reset</button>`;
       d.querySelector('button').onclick = async () => {
-        if (!confirm('Reset settings for ' + p.name + '?')) return;
+        if (!await askConfirm(translate('Reset settings for this item?') + '\n' + p.name)) return;
         await api('/api/settings/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'plugin', id: p.id }) });
         draftPlugins[p.id] = undefined;
         await loadComponents();
@@ -3737,8 +4821,16 @@ async function saveAllSettings() {
     act_model: document.getElementById('s-act-model')?.value || document.getElementById('s-model')?.value || '',
     temperature: Number(document.getElementById('s-api-temp').value),
     max_tokens: emptyNum('s-api-max-tokens'),
+    auto_model_load: !!document.getElementById('s-auto-load')?.checked,
+    model_load_action: document.getElementById('s-load-action')?.value || 'notify',
     provider_descriptions: (settings && settings.api && settings.api.provider_descriptions) || {},
   };
+  rememberProviderDraft(apiBody.provider, {
+    base_url: apiBody.base_url,
+    api_token: apiBody.api_token,
+    model: apiBody.model,
+    binary_path: apiBody.binary_path,
+  });
   const prompt = {
     system_prompt: document.getElementById('s-system').value,
     include_tool_catalog: document.getElementById('s-include-tools').checked,
@@ -3754,24 +4846,35 @@ async function saveAllSettings() {
     auto_approve_up_to: document.getElementById('s-auto-approve')?.value || 'low',
     auto_act_after_plan: document.getElementById('s-auto-act')?.checked !== false,
     mode_auto: document.getElementById('s-mode-auto')?.checked !== false,
-    compose_plan: document.getElementById('s-compose-plan')?.checked !== false,
+    compose_plan: planComposeAvailable() && !!document.getElementById('s-compose-plan')?.checked,
     response_language: document.getElementById('s-chat-lang')?.value || 'auto',
+    read_only_external_attachments: document.getElementById('s-external-ro')?.checked !== false,
   };
   modeAuto = chat.mode_auto;
   applyModeSwitch();
   sendKeyMode = chat.send_key;
-  await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent, api: apiBody, prompt, chat }) });
+  const interfaceNow = (settings && settings.interface) || {};
+  if (serverModeOn()) {
+    await writeBrowserSettings({ agent, api: apiBody, prompt, chat, interface: interfaceNow });
+  } else {
+    await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent, api: apiBody, prompt, chat }) });
+  }
   for (const t of (componentsCache.tools || [])) {
     const d = draftTools[t.id];
     if (!d) continue;
     await api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'tool', id: t.id, values: d.values, enabled: d.enabled }) });
+  }
+  for (const pack of (componentsCache.packs || [])) {
+    const intent = draftPacks[pack.id];
+    if (!intent || typeof intent.forceEnabled !== 'boolean') continue;
+    await api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'pack', id: pack.id, values: {}, enabled: intent.forceEnabled }) });
   }
   for (const p of (componentsCache.plugins || [])) {
     const d = draftPlugins[p.id];
     if (!d) continue;
     await api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'plugin', id: p.id, values: d.values }) });
   }
-  document.getElementById('top-workspace').textContent = agent.workspace;
+  document.getElementById('top-workspace').textContent = serverModeOn() ? '/workspace' : agent.workspace;
   settings = settings || {};
   settings.agent = Object.assign({}, settings.agent || {}, agent);
   settings.api = Object.assign({}, settings.api || {}, apiBody);
@@ -3787,7 +4890,7 @@ async function saveAllSettings() {
     document.getElementById('app-footer').classList.remove('hidden');
   }
   clearSettingsDirty();
-  const loc = draftPlugins['plugin_web_ui']?.values?.ui_locale || 'en';
+  const loc = preferredLocale(draftPlugins['plugin_web_ui']?.values?.ui_locale || '');
   applyUiLocale(loc);
   toast(t('saved'));
   await refreshTree();
@@ -3797,9 +4900,13 @@ async function saveAllSettings() {
 document.getElementById('btn-settings-save').onclick = saveAllSettings;
 document.getElementById('btn-settings-cancel').onclick = async () => {
   if (!settingsDirty) return;
-  if (!confirm('Discard unsaved changes?')) return;
+  if (!await askConfirm(translate('Discard unsaved changes?'))) return;
   draftTools = {}; draftPlugins = {};
   await loadSettings();
+  toast('Changes discarded');
+  refreshModelFooter().catch(() => {});
+};
+
 (async () => {
   try {
     const d = await api('/api/languages');
@@ -3820,79 +4927,22 @@ document.getElementById('btn-settings-cancel').onclick = async () => {
   } catch (e) {}
 })();
 
-(async () => {
-  try {
-    const info = await api('/api/server/info');
-    window.__SERVER_INFO = info;
-    if (info && info.server_mode) {
-      const top = document.getElementById('top-workspace');
-      if (top && !document.getElementById('server-badge')) {
-        const b = document.createElement('span');
-        b.id = 'server-badge';
-        b.className = 'server-badge';
-        b.textContent = 'SERVER · ' + (info.lan_ip || '');
-        top.parentElement && top.parentElement.appendChild(b);
-      }
-      const pick = document.getElementById('btn-pick-ws');
-      if (pick) {
-        pick.title = 'In server mode, enter the host path manually';
-      }
-    }
-  } catch (e) {}
-})();
-  toast('Changes discarded');
-};
+/* server notice is a toast, not a bar */
 document.getElementById('btn-factory-reset').onclick = async () => {
-  if (!confirm('Reset ALL settings to factory defaults?')) return;
-  if (!confirm('Are you sure? This cannot be undone for local JSON settings.')) return;
+  if (!await askConfirm(translate('Reset every setting to the factory defaults?'), { danger: true, ok: translate('Reset everything'), title: translate('Reset settings') })) return;
+  if (!await askConfirm(translate('This clears local settings and cannot be undone.'), { danger: true, ok: translate('Reset everything'), title: translate('Reset settings') })) return;
   await api('/api/settings/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: 'all' }) });
   draftTools = {}; draftPlugins = {};
   await loadSettings();
-(async () => {
-  try {
-    const d = await api('/api/languages');
-    if (d && d.languages) {
-      window.__RESPONSE_LANGS = d.languages;
-      const langSel = document.getElementById('s-chat-lang');
-      if (langSel && langSel.options.length < 5) {
-        const cur = langSel.value || 'en';
-        langSel.innerHTML = '';
-        Object.keys(d.languages).forEach(k => {
-          const o = document.createElement('option');
-          o.value = k; o.textContent = d.languages[k];
-          langSel.appendChild(o);
-        });
-        langSel.value = cur;
-      }
-    }
-  } catch (e) {}
-})();
-
-(async () => {
-  try {
-    const info = await api('/api/server/info');
-    window.__SERVER_INFO = info;
-    if (info && info.server_mode) {
-      const top = document.getElementById('top-workspace');
-      if (top && !document.getElementById('server-badge')) {
-        const b = document.createElement('span');
-        b.id = 'server-badge';
-        b.className = 'server-badge';
-        b.textContent = 'SERVER · ' + (info.lan_ip || '');
-        top.parentElement && top.parentElement.appendChild(b);
-      }
-      const pick = document.getElementById('btn-pick-ws');
-      if (pick) {
-        pick.title = 'In server mode, enter the host path manually';
-      }
-    }
-  } catch (e) {}
-})();
   toast('Factory defaults applied');
 };
 
 /* workspace folder picker (best-effort) */
 document.getElementById('btn-pick-ws').onclick = async () => {
+  if (serverModeOn()) {
+    toast('Each user stays in /workspace.', true);
+    return;
+  }
   const r = await api('/api/fs/pick_folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   if (r.error) { toast(r.error, true); return; }
   if (r.cancelled) return;
@@ -3904,7 +4954,8 @@ document.getElementById('btn-pick-ws').onclick = async () => {
 
 function flashSetting(el) {
   if (!el) return;
-  const target = el.closest('.field, .field-row-check, .model-combo') || el;
+  const field = el.closest ? el.closest('.field') : null;
+  const target = (field && field.querySelector('input, select, textarea')) || el;
   target.classList.remove('settings-flash');
   void target.offsetWidth;
   try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {}
@@ -3940,13 +4991,19 @@ async function openContextSettings() {
   if (!plug) return;
   selectedPluginId = plug.id;
   renderPluginsList();
-  renderPluginDetail(plug.id);
-  flashSetting(document.querySelector('#s-plugin-detail [data-fk="trigger_percent"]') || document.getElementById('s-plugin-detail'));
+  openPlugin(plug.id);
+  setTimeout(() => flashSetting(document.querySelector('#plugin-modal [data-fk="trigger_percent"]')), 40);
 }
 
 /* nav */
-document.getElementById('nav-logo').onclick = () => {
-  if (settingsDirty && !confirm('Settings are not saved. Leave anyway?')) return;
+document.getElementById('nav-logo').onclick = async () => {
+  if (document.documentElement.dataset.phone === '1') {
+    const open = !document.documentElement.classList.contains('chats-open');
+    document.documentElement.classList.toggle('chats-open', open);
+    document.body.classList.toggle('chats-open', open);
+    return;
+  }
+  if (settingsDirty && !await askConfirm(translate('Settings are not saved. Leave anyway?'))) return;
   showView('main');
 };
 document.getElementById('nav-settings').onclick = () => {
@@ -3982,13 +5039,14 @@ document.getElementById('s-show-hidden-plugins')?.addEventListener('change', (ev
   showHiddenPlugins = !!ev.target.checked;
   renderPluginsList();
 });
-document.querySelectorAll('.stab').forEach(s => {
-  s.onclick = () => {
-    document.querySelectorAll('.stab').forEach(x => x.classList.remove('active'));
-    s.classList.add('active');
-    document.querySelectorAll('.tabp').forEach(p => p.style.display = 'none');
-    document.getElementById('tab-' + s.dataset.tab).style.display = 'block';
-  };
+document.getElementById('settings-nav')?.addEventListener('click', (ev) => {
+  const s = ev.target.closest && ev.target.closest('.stab');
+  if (!s || !s.dataset.tab) return;
+  document.querySelectorAll('.stab').forEach(x => x.classList.remove('active'));
+  s.classList.add('active');
+  document.querySelectorAll('.tabp').forEach(p => p.style.display = 'none');
+  const panel = document.getElementById('tab-' + s.dataset.tab);
+  if (panel) panel.style.display = 'block';
 });
 
 async function resumeServerChat() {
@@ -4024,11 +5082,15 @@ async function resumeServerChat() {
     await pollRun(snap.run_id, snap.cursor || 0);
     finalizeLiveMessages();
     running = false;
+    autoFooterModel = '';
+    runModel = '';
+    settlePlan();
     setRunLock(false);
     currentRunId = null;
     updateActionBtn();
     saveChats();
     renderMessages();
+    refreshModelFooter().catch(() => {});
   }
 }
 
@@ -4036,11 +5098,13 @@ async function resumeServerChat() {
 loadPanelWidths();
 bindResizer('resizer-left', 'left');
 bindResizer('resizer-right', 'right');
-loadChats();
-try { applyChatContextFooter(); } catch (_) {}
-if (!chats.length) newChat(true);
-else { activeChatId = chats[chats.length - 1].id; renderChatList(); renderMessages(); }
-applyStoredMode();
+(async function bootChats() {
+  await loadChatsFromServer();
+  try { applyChatContextFooter(); } catch (_) {}
+  if (!chats.length) newChat(true);
+  else { activeChatId = chats[chats.length - 1].id; renderChatList(); renderMessages(); }
+  applyStoredMode();
+})();
 resumeServerChat();
 clearEditor();
 refreshTree();
@@ -4066,29 +5130,13 @@ loadSettings();
   } catch (e) {}
 })();
 
-(async () => {
-  try {
-    const info = await api('/api/server/info');
-    window.__SERVER_INFO = info;
-    if (info && info.server_mode) {
-      const top = document.getElementById('top-workspace');
-      if (top && !document.getElementById('server-badge')) {
-        const b = document.createElement('span');
-        b.id = 'server-badge';
-        b.className = 'server-badge';
-        b.textContent = 'SERVER · ' + (info.lan_ip || '');
-        top.parentElement && top.parentElement.appendChild(b);
-      }
-      const pick = document.getElementById('btn-pick-ws');
-      if (pick) {
-        pick.title = 'In server mode, enter the host path manually';
-      }
-    }
-  } catch (e) {}
-})();
+/* server notice is a toast, not a bar */
 updateActionBtn();
 autoGrow();
 startTreePoll();
+(async () => {
+  try { announceServer(await api('/api/server/info')); } catch (e) {}
+})();
 document.querySelector('.settings-actions').style.display = 'none';
 
 
@@ -4140,7 +5188,8 @@ function refreshLayoutLabels() {
 function applyLayoutAttrs(mode, persist) {
   layoutMode = mode === 'agent' ? 'agent' : 'editor';
   document.documentElement.dataset.layout = layoutMode;
-  if (persist !== false) { try { localStorage.setItem('kerniq_layout', layoutMode); } catch (e) {} }
+  document.documentElement.dataset.tone = layoutMode;
+  if (persist !== false) saveInterface({ layout: layoutMode });
   const sideBtn = document.getElementById('btn-toggle-explorer');
   if (sideBtn) { const lbl = t(layoutMode === 'agent' ? 'chats' : 'explorer'); sideBtn.title = lbl; sideBtn.setAttribute('aria-label', lbl); }
   document.querySelectorAll('#seg-layout button').forEach(b => {
@@ -4159,10 +5208,10 @@ function applyLayout(mode, persist) {
 }
 
 /* animated switch.
-   editor -> agent: the chat grows leftwards over the explorer and editor (they squeeze, contents do not
-                    re-wrap); when it fills the window the chat list slides in if it was open.
-   agent -> editor: the chat list folds away, the chat shrinks to the right while the editor takes the whole
-                    window; then the explorer and the chat slide in if they were open. */
+   editor -> agent: side panels fold away, then the conversation takes the window.
+   agent -> editor: close the chats sidebar if it is open, slide the chat off to the
+   right without restyling it, reveal the editor already at full size, then open
+   the editor side panels to the size they had last. */
 let layoutBusy = false;
 const LAYOUT_EASE = 'cubic-bezier(.65, 0, .35, 1)';
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
@@ -4202,11 +5251,13 @@ async function layoutPhase(target, ms, pins) {
 function finishLayoutAnim() {
   const P = layoutPanels();
   P.view.classList.add('layout-settle');
+  P.view.classList.remove('sheet-out', 'sheet-go', 'reveal-editor', 'keep-tree', 'keep-chats');
   [P.ex, P.ed, P.ch].forEach(el => {
     ['width', 'flex', 'transition', '--pin'].forEach(prop => el.style.removeProperty(prop));
+    el.style.transform = '';
     el.classList.remove('pin');
   });
-  P.view.classList.remove('layout-anim', 'keep-tree', 'keep-chats');
+  P.view.classList.remove('layout-anim');
   applyStoredPanelSizes();
   setExplorerCollapsed(!sideOpen[layoutMode], true);
   setChatCollapsed(chatCollapsed, true);
@@ -4220,6 +5271,7 @@ function finishLayoutAnim() {
 }
 async function switchLayout(next) {
   next = next === 'agent' ? 'agent' : 'editor';
+  if (document.documentElement.dataset.phone === '1') return;
   if (layoutBusy || next === layoutMode) return;
   if (!motionMs(1) || settingsOpen()) { applyLayout(next); return; }
   layoutBusy = true;
@@ -4234,28 +5286,66 @@ async function switchLayout(next) {
     P.ex.classList.remove('collapsed'); P.ch.classList.remove('collapsed');
     freezePanels(start);
     if (next === 'agent') {
-      typePillLabel(t('agentLabel'));                            // "Editor" is erased, "Agent" is typed
-      // 1. the chat folds away to the right; the editor takes its place
-      if (start.ch > 0) await layoutPhase({ ex: start.ex, ed: start.ed + start.ch, ch: 0 }, 340, { ch: start.ch });
-      // 2. now invisible, the chat switches to the agent styling, then grows over everything
-      P.view.classList.add('keep-tree');                         // the explorer keeps its tree while it squeezes
-      applyLayoutAttrs('agent');
-      await layoutPhase({ ex: 0, ed: 0, ch: W }, 520, { ex: S, ed: start.ed + start.ch });
+      document.documentElement.dataset.tone = 'agent';
+      typePillLabel(t('agentLabel'));
+      const editorW = start.ed + start.ex + start.ch;
+      const pins = {};
+      if (start.ch > 0) pins.ch = start.ch;
+      if (start.ex > 0) { pins.ex = start.ex; P.view.classList.add('keep-tree'); }
+      await layoutPhase({ ex: 0, ed: editorW, ch: 0 }, 420, pins);
       P.view.classList.remove('keep-tree');
+      applyLayoutAttrs('agent');
+      await layoutPhase({ ex: 0, ed: 0, ch: W }, 520, { ed: editorW });
       refreshLayoutLabels();
       renderChatList();
-      // 3. the chat list slides in if it was open
       if (sideOpen.agent) await layoutPhase({ ex: S, ed: 0, ch: W - S }, 380, { ex: S });
     } else {
+      document.documentElement.dataset.tone = 'editor';
       typePillLabel(t('editorLabel'));
-      P.view.classList.add('keep-chats');                        // the chat list folds away with its contents
-      if (start.ex > 0) await layoutPhase({ ex: 0, ed: 0, ch: W }, 380, { ex: start.ex });
-      await layoutPhase({ ex: 0, ed: W, ch: 0 }, 560, { ch: W });  // chat leaves to the right, editor fills the window
-      P.view.classList.remove('keep-chats');
+      const openPath = ((document.getElementById('open-path') || {}).textContent || '').trim();
+      if (typeof setEditorMark === 'function') setEditorMark(!!openPath);
+      const wantLeft = sideOpen.editor ? S : 0;
+      const wantRight = chatCollapsed ? 0 : C;
+
+      // 1. If the chats sidebar is open, fold it away. A closed one is skipped.
+      //    The conversation keeps the agent style while this happens.
+      if (start.ex > 8) {
+        P.view.classList.add('keep-chats');
+        await layoutPhase({ ex: 0, ed: 0, ch: W }, 360, { ex: start.ex });
+        P.view.classList.remove('keep-chats');
+      }
+
+      // 2. Slide the chat off to the right without restyling it.
+      //    The editor is already the full area underneath and does not resize.
+      [P.ex, P.ed, P.ch].forEach(el => el.style.setProperty('transition', 'none', 'important'));
+      P.ex.style.setProperty('width', '0px', 'important');
+      P.ed.style.setProperty('width', W + 'px', 'important');
+      P.ed.style.setProperty('flex', '1 1 auto', 'important');
+      P.ch.style.setProperty('width', W + 'px', 'important');
+      P.ch.style.transform = 'translateX(0)';
+      P.view.classList.add('sheet-out');
+      void P.view.offsetWidth;
+      const slide = motionMs(520);
+      P.ch.style.setProperty('transition', slide ? ('transform ' + slide + 'ms ' + LAYOUT_EASE) : 'none', 'important');
+      P.view.classList.add('sheet-go');
+      P.ch.style.transform = 'translateX(100%)';
+      await wait(slide + 40);
+
+      // 3. Chat is gone. Only now open the editor's side panels to their last size.
+      P.ch.style.setProperty('transition', 'none', 'important');
+      P.ch.style.transform = '';
+      P.view.classList.remove('sheet-out', 'sheet-go');
       applyLayoutAttrs('editor');
-      const E = sideOpen.editor ? S : 0;
-      const Cw = chatCollapsed ? 0 : C;
-      if (E || Cw) await layoutPhase({ ex: E, ed: W - E - Cw, ch: Cw }, 420, { ex: E || null, ch: Cw || null });
+      refreshLayoutLabels();
+      renderChatList();
+      freezePanels({ ex: 0, ed: W, ch: 0 });
+      if (wantLeft > 0 || wantRight > 0) {
+        await layoutPhase(
+          { ex: wantLeft, ed: Math.max(0, W - wantLeft - wantRight), ch: wantRight },
+          380,
+          { ex: wantLeft || null, ch: wantRight || null },
+        );
+      }
     }
   } finally {
     finishLayoutAnim();
@@ -4263,7 +5353,19 @@ async function switchLayout(next) {
   }
 }
 document.getElementById('mode-pill')?.addEventListener('click', () => switchLayout(layoutMode === 'agent' ? 'editor' : 'agent'));
-document.querySelectorAll('#seg-layout button').forEach(b => b.addEventListener('click', () => switchLayout(b.dataset.v)));
+document.querySelectorAll('#seg-layout button').forEach(b => b.addEventListener('click', () => {
+  if (document.documentElement.dataset.phone === '1') {
+    desktopLayout = b.dataset.v === 'agent' ? 'agent' : 'editor';
+    saveInterface({ layout: desktopLayout });
+    document.querySelectorAll('#seg-layout button').forEach(btn => {
+      const on = btn.dataset.v === desktopLayout;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    return;
+  }
+  switchLayout(b.dataset.v);
+}));
 document.getElementById('side-new-chat')?.addEventListener('click', () => document.getElementById('btn-new-chat')?.click());
 
 
@@ -4393,6 +5495,97 @@ function webUiSaved() {
   const p = (componentsCache.plugins || []).find(x => x.id === 'plugin_web_ui');
   return (p && p.values) || {};
 }
+async function saveInterface(patch) {
+  settings = settings || {};
+  settings.interface = Object.assign({
+    layout: 'editor', motion: 'on', blur: true, highlight: true, auto_think: false,
+    show_notifications: true, auto_dismiss_notifications: true,
+    theme: document.documentElement.dataset.themeChoice || 'dark',
+  }, settings.interface || {}, patch || {});
+  if (serverModeOn()) {
+    writeBrowserSettings({
+      agent: settings.agent || {},
+      api: settings.api || {},
+      prompt: settings.prompt || {},
+      chat: settings.chat || {},
+      interface: settings.interface,
+    }).catch(() => {});
+    return;
+  }
+  api('/api/settings', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ interface: settings.interface }),
+  }).catch(() => {});
+}
+function applyTheme(pref) {
+  const choice = pref === 'light' || pref === 'dark' || pref === 'system' ? pref : 'dark';
+  let resolved = choice;
+  if (choice === 'system') {
+    let light = false;
+    try { light = window.matchMedia('(prefers-color-scheme: light)').matches; } catch (_) {}
+    resolved = light ? 'light' : 'dark';
+  }
+  document.documentElement.dataset.themeChoice = choice;
+  document.documentElement.dataset.theme = resolved;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', resolved === 'light' ? '#e7eaee' : '#1e2128');
+  const scheme = document.querySelector('meta[name="color-scheme"]');
+  if (scheme) scheme.setAttribute('content', resolved);
+  try { localStorage.setItem('kerniq.theme', choice); } catch (_) {}
+  document.querySelectorAll('#seg-theme button').forEach(b => {
+    const on = b.dataset.v === choice;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
+try {
+  const schemeMq = window.matchMedia('(prefers-color-scheme: light)');
+  const onScheme = () => {
+    if (document.documentElement.dataset.themeChoice === 'system') applyTheme('system');
+  };
+  if (schemeMq.addEventListener) schemeMq.addEventListener('change', onScheme);
+} catch (_) {}
+function applyInterface(row) {
+  const data = row || {};
+  const saved = data.layout === 'agent' ? 'agent' : 'editor';
+  desktopLayout = saved;
+  const phone = document.documentElement.dataset.phone === '1';
+  layoutMode = phone ? 'agent' : saved;
+  document.documentElement.dataset.layout = layoutMode;
+  document.documentElement.dataset.tone = layoutMode;
+  const motion = ['on', 'off', 'auto'].indexOf(data.motion) >= 0 ? data.motion : 'on';
+  document.documentElement.dataset.motion = motion;
+  document.documentElement.dataset.blur = data.blur === false ? 'off' : 'on';
+  const theme = data.theme === 'light' || data.theme === 'dark' || data.theme === 'system'
+    ? data.theme
+    : (document.documentElement.dataset.themeChoice || 'dark');
+  applyTheme(theme);
+  autoThink = !!data.auto_think;
+  showNotifications = data.show_notifications !== false;
+  autoDismissToasts = data.auto_dismiss_notifications !== false;
+  ED.hl = data.highlight !== false;
+  const think = document.getElementById('ui-auto-think');
+  if (think) think.checked = autoThink;
+  const showToasts = document.getElementById('ui-show-toasts');
+  if (showToasts) showToasts.checked = showNotifications;
+  const dismiss = document.getElementById('ui-auto-dismiss');
+  if (dismiss) dismiss.checked = autoDismissToasts;
+  const hl = document.getElementById('ui-hl');
+  if (hl) hl.checked = ED.hl;
+  const blurBox = document.getElementById('ui-blur');
+  if (blurBox) blurBox.checked = data.blur !== false;
+  document.querySelectorAll('#seg-motion button').forEach(b => {
+    const on = b.dataset.v === motion;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('#seg-layout button').forEach(b => {
+    const shown = phone ? saved : layoutMode;
+    const on = b.dataset.v === shown;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
 async function setWebUiValue(key, value) {
   const draft = draftPlugins['plugin_web_ui'] || (draftPlugins['plugin_web_ui'] = { values: {} });
   draft.values[key] = value;                                   // Save in the Plugins tab must not undo this
@@ -4404,7 +5597,6 @@ async function setWebUiValue(key, value) {
     body: JSON.stringify({ kind: 'plugin', id: 'plugin_web_ui', values: merged }),
   });
   if (r && r.error) toast(String(r.error), true);
-  if (typeof selectedPluginId !== 'undefined' && selectedPluginId === 'plugin_web_ui') renderPluginDetail('plugin_web_ui');
 }
 function refreshInterfaceControls() {
   const sel = document.getElementById('ui-lang');
@@ -4416,14 +5608,33 @@ function refreshInterfaceControls() {
       const pk = langPacks[id];
       if (pk && pk.valid !== false) add(id, pk.name_native || pk.name_en || id);
     });
-    sel.value = [...sel.options].some(o => o.value === uiLocale) ? uiLocale : 'en';
+    const want = uiLocaleWanted || uiLocale;
+    sel.value = [...sel.options].some(o => o.value === want) ? want : 'en';
   }
   const f = document.getElementById('ui-footer');
   const foot = document.getElementById('app-footer');
   if (f && foot) f.checked = !foot.classList.contains('hidden');
+  const saved = webUiSaved();
+  const host = document.getElementById('ui-host');
+  if (host && document.activeElement !== host) host.value = saved.host || '127.0.0.1';
+  const port = document.getElementById('ui-port');
+  if (port && document.activeElement !== port) port.value = saved.port != null ? saved.port : 8765;
+  const server = document.getElementById('ui-server');
+  if (server) server.checked = !!saved.server_mode;
+  const lan = document.getElementById('ui-lan');
+  if (lan) lan.checked = !!saved.lan_access;
+  const log = document.getElementById('ui-log');
+  if (log) {
+    log.querySelectorAll('option').forEach(o => {
+      const src = o.getAttribute('data-en');
+      if (src) o.textContent = translate(src);
+    });
+    if ([...log.options].some(o => o.value === (saved.log_level || 'warning'))) log.value = saved.log_level || 'warning';
+  }
 }
 document.getElementById('ui-lang')?.addEventListener('change', async (e) => {
   const v = e.target.value;
+  try { localStorage.setItem('kerniq.ui_locale', v); } catch (_) {}
   applyUiLocale(v);
   await setWebUiValue('ui_locale', v);
 });
@@ -4432,45 +5643,401 @@ document.getElementById('ui-footer')?.addEventListener('change', async (e) => {
   document.getElementById('app-footer').classList.toggle('hidden', !e.target.checked);
   await setWebUiValue('show_footer', !!e.target.checked);
 });
+document.getElementById('ui-host')?.addEventListener('change', (e) => setWebUiValue('host', e.target.value.trim() || '127.0.0.1'));
+document.getElementById('ui-port')?.addEventListener('change', (e) => setWebUiValue('port', Number(e.target.value) || 8765));
+document.getElementById('ui-server')?.addEventListener('change', (e) => setWebUiValue('server_mode', !!e.target.checked));
+document.getElementById('ui-lan')?.addEventListener('change', (e) => setWebUiValue('lan_access', !!e.target.checked));
+document.getElementById('ui-log')?.addEventListener('change', (e) => setWebUiValue('log_level', e.target.value));
 document.getElementById('ui-auto-think')?.addEventListener('change', (e) => {
   autoThink = !!e.target.checked;
-  try { localStorage.setItem('kerniq_auto_think', autoThink ? '1' : '0'); } catch (_) {}
+  saveInterface({ auto_think: autoThink });
 });
-(function () { const b = document.getElementById('ui-auto-think'); if (b) b.checked = autoThink; })();
+document.getElementById('ui-show-toasts')?.addEventListener('change', (e) => {
+  showNotifications = !!e.target.checked;
+  saveInterface({ show_notifications: showNotifications });
+});
+document.getElementById('ui-auto-dismiss')?.addEventListener('change', (e) => {
+  autoDismissToasts = !!e.target.checked;
+  saveInterface({ auto_dismiss_notifications: autoDismissToasts });
+});
+document.getElementById('plugin-modal-close')?.addEventListener('click', closePluginModal);
+document.getElementById('plugin-modal')?.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'plugin-modal') closePluginModal();
+});
 document.getElementById('btn-lang-packs')?.addEventListener('click', () => openLangModal());
 document.getElementById('lang-modal-import')?.addEventListener('click', () => document.getElementById('lang-pack-file')?.click());
 refreshInterfaceControls();
 
-/* interface preferences: applied at once, stored in this browser only */
-applyLayout(layoutMode, false);
-(function setupInterfacePrefs() {
+/* interface preferences live in the project settings, not in the browser */
+if (document.documentElement.dataset.phone === '1') applyLayout('agent', false);
+else applyLayout(layoutMode, false);
+watchBenchmark();
+(function setupPhone() {
+  const mq = window.matchMedia('(orientation: portrait) and (max-width: 820px)');
+  const apply = () => {
+    const on = mq.matches;
+    document.documentElement.dataset.phone = on ? '1' : '0';
+    if (on) {
+      if (layoutMode !== 'agent') applyLayout('agent', false);
+      else {
+        document.documentElement.dataset.layout = 'agent';
+        document.documentElement.dataset.tone = 'agent';
+      }
+    } else {
+      document.documentElement.classList.remove('chats-open');
+      document.body.classList.remove('chats-open');
+      const back = desktopLayout === 'agent' ? 'agent' : 'editor';
+      if (back !== layoutMode) applyLayout(back, false);
+    }
+  };
+  if (mq.addEventListener) mq.addEventListener('change', apply);
+  apply();
+  const closeChats = () => {
+    document.documentElement.classList.remove('chats-open');
+    document.body.classList.remove('chats-open');
+  };
+  const freshChat = () => {
+    closeChats();
+    document.getElementById('btn-new-chat')?.click();
+  };
+  document.getElementById('btn-mobile-new')?.addEventListener('click', freshChat);
+  document.getElementById('drawer-new')?.addEventListener('click', freshChat);
+  document.getElementById('drawer-settings')?.addEventListener('click', () => {
+    closeChats();
+    document.getElementById('nav-settings')?.click();
+  });
+  document.getElementById('chat-panel')?.addEventListener('click', (ev) => {
+    if (document.documentElement.dataset.phone !== '1') return;
+    if (!document.documentElement.classList.contains('chats-open')) return;
+    if (ev.target.closest && ev.target.closest('#explorer')) return;
+    closeChats();
+  });
+
   const root = document.documentElement;
+  const explorer = document.getElementById('explorer');
+  const chat = document.getElementById('chat-panel');
+  const settingsView = document.getElementById('view-settings');
+  const phoneOn = () => root.dataset.phone === '1';
+  const setChats = (on) => {
+    root.classList.toggle('chats-open', on);
+    document.body.classList.toggle('chats-open', on);
+  };
+  const blockedGesture = (node) => !!(node && node.closest && node.closest('textarea, input, select, button, a, .modal, .modal-bg, #ext-sheet'));
+  let drawerDrag = null;
+  let settingsDrag = null;
+  let swallowChatClick = false;
+
+  function paintDrawer(p) {
+    const clamped = Math.max(0, Math.min(1, p));
+    root.style.setProperty('--phone-dim', String(clamped));
+    if (explorer) explorer.style.transform = 'translateX(' + (-105 * (1 - clamped)) + '%)';
+    if (chat) chat.style.transform = 'translateX(' + (30 * clamped) + '%)';
+    return clamped;
+  }
+  function clearDrawerInline() {
+    root.classList.remove('phone-drag');
+    root.style.removeProperty('--phone-dim');
+    if (explorer) explorer.style.transform = '';
+    if (chat) chat.style.transform = '';
+  }
+  function settleDrawer(open) {
+    root.classList.remove('phone-drag');
+    if (explorer) void explorer.offsetWidth;
+    setChats(open);
+    paintDrawer(open ? 1 : 0);
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearDrawerInline();
+      setChats(open);
+    };
+    if (explorer) explorer.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 420);
+  }
+
+  chat?.addEventListener('click', (ev) => {
+    if (!swallowChatClick) return;
+    swallowChatClick = false;
+    ev.preventDefault();
+    ev.stopPropagation();
+  }, true);
+
+  chat?.addEventListener('touchstart', (ev) => {
+    if (!phoneOn() || settingsOpen() || document.body.classList.contains('modal-open')) return;
+    if (!ev.touches || ev.touches.length !== 1) return;
+    if (blockedGesture(ev.target)) return;
+    if (ev.target.closest && ev.target.closest('#explorer')) return;
+    const t = ev.touches[0];
+    drawerDrag = {
+      x: t.clientX,
+      y: t.clientY,
+      lastX: t.clientX,
+      lastT: Date.now(),
+      vx: 0,
+      p0: root.classList.contains('chats-open') ? 1 : 0,
+      p: root.classList.contains('chats-open') ? 1 : 0,
+      active: false,
+    };
+  }, { passive: true });
+
+  chat?.addEventListener('touchmove', (ev) => {
+    if (!drawerDrag || !ev.touches || !ev.touches.length) return;
+    const t = ev.touches[0];
+    const dx = t.clientX - drawerDrag.x;
+    const dy = t.clientY - drawerDrag.y;
+    const now = Date.now();
+    drawerDrag.vx = (t.clientX - drawerDrag.lastX) / Math.max(1, now - drawerDrag.lastT);
+    drawerDrag.lastX = t.clientX;
+    drawerDrag.lastT = now;
+    if (!drawerDrag.active) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (Math.abs(dx) < Math.abs(dy) * 1.2) { drawerDrag = null; return; }
+      if (drawerDrag.p0 === 0 && dx <= 0) { drawerDrag = null; return; }
+      drawerDrag.active = true;
+      root.classList.add('phone-drag');
+    }
+    const width = Math.max(1, window.innerWidth * 0.6);
+    drawerDrag.p = paintDrawer(drawerDrag.p0 + dx / width);
+    if (ev.cancelable) ev.preventDefault();
+  }, { passive: false });
+
+  const endDrawer = () => {
+    if (!drawerDrag) return;
+    const drag = drawerDrag;
+    drawerDrag = null;
+    if (!drag.active) return;
+    swallowChatClick = true;
+    const flickOpen = drag.vx > 0.4;
+    const flickClose = drag.vx < -0.4;
+    const open = flickClose ? false : (flickOpen || drag.p > 0.34);
+    settleDrawer(open);
+  };
+  chat?.addEventListener('touchend', endDrawer);
+  chat?.addEventListener('touchcancel', endDrawer);
+
+  document.getElementById('btn-settings-back')?.addEventListener('click', () => {
+    if (!phoneOn()) return;
+    setChats(true);
+    showView('main');
+  });
+
+  function clearSettingsInline() {
+    root.classList.remove('phone-drag');
+    if (settingsView) settingsView.style.transform = '';
+  }
+  settingsView?.addEventListener('touchstart', (ev) => {
+    if (!phoneOn() || !settingsOpen() || document.body.classList.contains('modal-open')) return;
+    if (!ev.touches || ev.touches.length !== 1) return;
+    if (blockedGesture(ev.target)) return;
+    const t = ev.touches[0];
+    const nav = ev.target.closest && ev.target.closest('#settings-nav');
+    const main = document.querySelector('.settings-main');
+    const fromLeft = t.clientX <= 28;
+    const fromRight = t.clientX >= window.innerWidth - 28;
+    if (!fromLeft && !fromRight && !nav) return;
+    settingsDrag = {
+      x: t.clientX,
+      y: t.clientY,
+      fromLeft,
+      fromRight,
+      fromNav: !!nav && !fromLeft && !fromRight,
+      scrollTop: main ? main.scrollTop : 0,
+      active: false,
+      axis: '',
+      p: 0,
+    };
+  }, { passive: true });
+
+  settingsView?.addEventListener('touchmove', (ev) => {
+    if (!settingsDrag || !settingsView || !ev.touches || !ev.touches.length) return;
+    const t = ev.touches[0];
+    const dx = t.clientX - settingsDrag.x;
+    const dy = t.clientY - settingsDrag.y;
+    if (!settingsDrag.active) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      const horizontal = Math.abs(dx) > Math.abs(dy);
+      if ((settingsDrag.fromLeft && horizontal && dx > 0) || (settingsDrag.fromRight && horizontal && dx < 0)) {
+        settingsDrag.axis = 'x';
+      } else if (settingsDrag.fromNav && !horizontal && dy > 0 && settingsDrag.scrollTop <= 1) {
+        settingsDrag.axis = 'y';
+      } else {
+        settingsDrag = null;
+        return;
+      }
+      settingsDrag.active = true;
+      root.classList.add('phone-drag');
+      setChats(true);
+    }
+    if (settingsDrag.axis === 'x') {
+      const travel = settingsDrag.fromRight ? Math.max(0, -dx) : Math.max(0, dx);
+      settingsDrag.p = Math.max(0, Math.min(1, travel / Math.max(1, window.innerWidth)));
+      const signed = settingsDrag.fromRight ? -settingsDrag.p : settingsDrag.p;
+      settingsView.style.transform = 'translateX(' + (signed * 100) + '%)';
+    } else {
+      settingsDrag.p = Math.max(0, Math.min(1, dy / Math.max(1, window.innerHeight * 0.42)));
+      settingsView.style.transform = 'translateY(' + (settingsDrag.p * 100) + '%)';
+    }
+    if (ev.cancelable) ev.preventDefault();
+  }, { passive: false });
+
+  const endSettings = () => {
+    if (!settingsDrag || !settingsView) { settingsDrag = null; return; }
+    const drag = settingsDrag;
+    settingsDrag = null;
+    if (!drag.active) return;
+    const commit = drag.p > 0.28;
+    root.classList.remove('phone-drag');
+    void settingsView.offsetWidth;
+    if (!commit) {
+      setChats(false);
+      settingsView.style.transform = 'none';
+      const back = () => { clearSettingsInline(); };
+      settingsView.addEventListener('transitionend', back, { once: true });
+      setTimeout(back, 480);
+      return;
+    }
+    settingsView.style.transform = drag.axis === 'y'
+      ? 'translateY(110%)'
+      : (drag.fromRight ? 'translateX(-104%)' : 'translateX(104%)');
+    let closed = false;
+    const finish = () => {
+      if (closed) return;
+      closed = true;
+      settingsView.style.transition = 'none';
+      settingsView.style.transform = 'translateY(-101%)';
+      showView('main');
+      setChats(true);
+      requestAnimationFrame(() => {
+        settingsView.style.transition = '';
+        settingsView.style.transform = '';
+      });
+    };
+    settingsView.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 480);
+  };
+  settingsView?.addEventListener('touchend', endSettings);
+  settingsView?.addEventListener('touchcancel', endSettings);
+})();
+(function setupExtensions() {
+  const sheet = document.getElementById('ext-sheet');
+  const body = document.getElementById('ext-sheet-body');
+  const title = document.getElementById('ext-sheet-title');
+  const nav = document.getElementById('settings-nav');
+  const main = document.querySelector('.settings-main');
+  function openSheet(ext) {
+    if (!sheet || !body) return;
+    if (title) title.textContent = ext.label || 'Extension';
+    const stateText = (document.getElementById('bench-note-text') || {}).textContent || '';
+    body.innerHTML = '';
+    const status = document.createElement('p');
+    status.className = 'ext-metric';
+    status.textContent = stateText || translate('No benchmark is running.');
+    body.appendChild(status);
+    const actions = document.createElement('div');
+    actions.className = 'ext-actions';
+    const run = document.createElement('button');
+    run.type = 'button';
+    run.className = 'save-active';
+    run.textContent = translate('Run benchmark');
+    run.addEventListener('click', () => runPluginAction(ext.plugin_id, 'run', run));
+    const settingsBtn = document.createElement('button');
+    settingsBtn.type = 'button';
+    settingsBtn.className = 'ghost';
+    settingsBtn.textContent = translate('Open settings');
+    settingsBtn.addEventListener('click', () => {
+      sheet.hidden = true;
+      const stab = document.querySelector('.stab[data-tab="ext-' + ext.id + '"]');
+      document.getElementById('nav-settings')?.click();
+      if (stab) stab.click();
+    });
+    actions.appendChild(run);
+    actions.appendChild(settingsBtn);
+    body.appendChild(actions);
+    sheet.hidden = false;
+  }
+  document.getElementById('ext-sheet-close')?.addEventListener('click', () => { if (sheet) sheet.hidden = true; });
+  document.getElementById('drawer-ext')?.addEventListener('click', () => {
+    document.documentElement.classList.remove('chats-open');
+    document.body.classList.remove('chats-open');
+    const ext = document.getElementById('drawer-ext')._ext;
+    if (ext) openSheet(ext);
+  });
+  (async () => {
+    try { await loadComponents(); } catch (_) {}
+    let data = null;
+    try { data = await api('/api/extensions'); } catch (_) { data = null; }
+    const rows = (data && data.extensions) || [];
+    rows.forEach(ext => {
+      if (ext.slot === 'panel') {
+        const btn = document.getElementById('drawer-ext');
+        if (btn) { btn.hidden = false; btn.title = ext.label || 'Benchmark'; btn._ext = ext; }
+      }
+      if (ext.slot !== 'settings' || !nav || !main) return;
+      const stab = document.createElement('div');
+      stab.className = 'stab';
+      stab.dataset.tab = 'ext-' + ext.id;
+      stab.innerHTML = '<i class="stab-ico" data-i="' + (ext.icon === 'chart' ? 'chart' : 'plugins') + '"></i><span class="stab-tx"></span>';
+      stab.querySelector('.stab-tx').textContent = ext.label || ext.id;
+      nav.appendChild(stab);
+      const panel = document.createElement('div');
+      panel.className = 'scard tabp';
+      panel.id = 'tab-ext-' + ext.id;
+      panel.style.display = 'none';
+      panel.innerHTML = '<h2></h2><div class="ext-host"></div>';
+      panel.querySelector('h2').textContent = ext.label || ext.id;
+      main.appendChild(panel);
+      const host = panel.querySelector('.ext-host');
+      const plug = (componentsCache.plugins || []).find(p => p.id === ext.plugin_id);
+      if (plug && host) {
+        host.innerHTML = pluginFormHtml(plug);
+        bindPluginForm(host, plug);
+      } else if (host) {
+        host.textContent = translate('Open Plugins once so this section can load its settings.');
+      }
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'ghost';
+      open.textContent = translate('Open benchmark window');
+      open.addEventListener('click', () => openSheet(ext));
+      panel.appendChild(open);
+    });
+  })().catch(() => {});
+})();
+(function setupInterfacePrefs() {
   const seg = document.getElementById('seg-motion');
   const hlBox = document.getElementById('ui-hl');
-  const syncMotion = () => {
-    const cur = root.dataset.motion || 'on';
-    if (!seg) return;
-    seg.querySelectorAll('button').forEach(b => {
-      const on = b.dataset.v === cur;
-      b.classList.toggle('on', on);
-      b.setAttribute('aria-checked', on ? 'true' : 'false');
-    });
-  };
   if (seg) {
     seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
-      root.dataset.motion = b.dataset.v;
-      try { localStorage.setItem('kerniq_motion', b.dataset.v); } catch (_) {}
-      syncMotion();
+      document.documentElement.dataset.motion = b.dataset.v;
+      saveInterface({ motion: b.dataset.v });
+      document.querySelectorAll('#seg-motion button').forEach(btn => {
+        const on = btn.dataset.v === b.dataset.v;
+        btn.classList.toggle('on', on);
+        btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
     }));
-    syncMotion();
   }
   if (hlBox) {
-    hlBox.checked = ED.hl;
     hlBox.addEventListener('change', () => {
       ED.hl = hlBox.checked;
-      try { localStorage.setItem('kerniq_hl', ED.hl ? '1' : '0'); } catch (_) {}
+      saveInterface({ highlight: ED.hl });
       updateLineNumbers();
     });
+  }
+  const blurBox = document.getElementById('ui-blur');
+  if (blurBox) {
+    blurBox.addEventListener('change', () => {
+      document.documentElement.dataset.blur = blurBox.checked ? 'on' : 'off';
+      saveInterface({ blur: blurBox.checked });
+    });
+  }
+  const themeSeg = document.getElementById('seg-theme');
+  if (themeSeg) {
+    themeSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      applyTheme(b.dataset.v);
+      saveInterface({ theme: b.dataset.v });
+    }));
   }
   const stop = document.getElementById('btn-run-stop');
   if (stop) stop.addEventListener('click', () => {
@@ -4520,12 +6087,71 @@ document.getElementById('msgs')?.addEventListener('click', async (e) => {
   openFile(path);
 });
 
-const BLOCKED_ATTACH = new Set(['png','jpg','jpeg','gif','webp','bmp','svg','ico','heic','heif','tif','tiff','mp4','mov','mkv','webm','avi','wmv','m4v','mpg','mpeg','mp3','wav','ogg','flac','aac','m4a','wma','opus','exe','dll','bin','iso','dmg','msi','zip','7z','rar','gz','tar','bz2','xz']);
-function attachBlocked(name) {
+function readDroppedEntry(entry, rel) {
+  return new Promise((resolve) => {
+    if (!entry) { resolve([]); return; }
+    if (entry.isFile) {
+      entry.file((file) => { file._rel = rel; resolve([file]); }, () => resolve([]));
+      return;
+    }
+    if (!entry.isDirectory || !entry.createReader) { resolve([]); return; }
+    const reader = entry.createReader();
+    const acc = [];
+    const pump = () => {
+      reader.readEntries(async (entries) => {
+        if (!entries.length) { resolve(acc); return; }
+        for (const child of entries) {
+          const next = rel ? rel + '/' + child.name : child.name;
+          acc.push(...await readDroppedEntry(child, next));
+        }
+        pump();
+      }, () => resolve(acc));
+    };
+    pump();
+  });
+}
+async function fileToBase64(file) {
+  const dataUrl = await new Promise((res) => {
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result);
+    reader.readAsDataURL(file);
+  });
+  return String(dataUrl || '').split(',')[1] || '';
+}
+async function importBrowserFiles(files, asFolder) {
+  let folderPath = '';
+  for (const file of files) {
+    if (attachBlocked(file.name)) {
+      toast(isImagePath(file.name) ? t('modelNoVision') : t('attachBlocked'), true);
+      continue;
+    }
+    const raw = await fileToBase64(file);
+    const relative = file._rel || file.webkitRelativePath || file.name;
+    const imported = await api('/api/attachments/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: file.name, relative: asFolder ? relative : file.name, content_base64: raw }),
+    });
+    if (imported && imported.error) { toast(imported.error, true); continue; }
+    if (asFolder) {
+      if (imported.folder) folderPath = imported.folder;
+    } else if (imported && imported.path) {
+      addAttachment(imported.path, true, false);
+    }
+  }
+  if (asFolder && folderPath) addAttachment(folderPath, true, false, { directory: true });
+}
+const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);
+const BLOCKED_ATTACH = new Set(['svg','ico','heic','heif','tif','tiff','mp4','mov','mkv','webm','avi','wmv','m4v','mpg','mpeg','mp3','wav','ogg','flac','aac','m4a','wma','opus','exe','dll','bin','iso','dmg','msi','zip','7z','rar','gz','tar','bz2','xz']);
+function fileExt(name) {
   const raw = String(name || '');
   const dot = raw.lastIndexOf('.');
-  if (dot < 0) return false;
-  return BLOCKED_ATTACH.has(raw.slice(dot + 1).toLowerCase());
+  return dot < 0 ? '' : raw.slice(dot + 1).toLowerCase();
+}
+function isImagePath(name) { return IMAGE_EXT.has(fileExt(name)); }
+function attachBlocked(name) {
+  const ext = fileExt(name);
+  if (IMAGE_EXT.has(ext)) return !activeVision();
+  return BLOCKED_ATTACH.has(ext);
 }
 const CTX_ICON = {
   folder: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
@@ -4587,22 +6213,36 @@ function bindCtxHide(anchor) {
     panel.addEventListener('drop', async (ev) => {
       ev.preventDefault();
       panel.classList.remove('drag-over');
-      const files = [...(ev.dataTransfer.files || [])];
-      for (const f of files) {
-        if (attachBlocked(f.name)) { toast(t('attachBlocked'), true); continue; }
-        const dataUrl = await new Promise((res) => {
-          const r = new FileReader();
-          r.onload = () => res(r.result);
-          r.readAsDataURL(f);
-        });
-        const raw = (dataUrl || '').split(',')[1] || '';
-        const r = await api('/api/attachments/import', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: f.name, content_base64: raw }),
-        });
-        if (r.path) addAttachment(r.path, true, false);
-        else if (r.error) toast(r.error, true);
+      const items = [...(ev.dataTransfer.items || [])];
+      const folders = [];
+      const loose = [];
+      let usedEntries = false;
+      for (const item of items) {
+        const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
+        if (!entry) continue;
+        usedEntries = true;
+        if (entry.isDirectory) {
+          const grouped = await readDroppedEntry(entry, entry.name);
+          if (grouped.length) folders.push(grouped);
+        } else if (entry.isFile) {
+          loose.push(...await readDroppedEntry(entry, entry.name));
+        }
       }
+      if (!usedEntries) {
+        await importBrowserFiles([...(ev.dataTransfer.files || [])], false);
+        return;
+      }
+      for (const group of folders) await importBrowserFiles(group, true);
+      if (loose.length) await importBrowserFiles(loose, false);
+    });
+  }
+  const photo = document.getElementById('photo-picker');
+  if (photo) {
+    photo.addEventListener('change', async () => {
+      const files = [...(photo.files || [])];
+      photo.value = '';
+      if (!activeVision()) { toast(t('modelNoVision'), true); return; }
+      await importBrowserFiles(files, false);
     });
   }
   const outside = document.getElementById('outside-picker');
@@ -4610,27 +6250,27 @@ function bindCtxHide(anchor) {
     outside.addEventListener('change', async () => {
       const files = [...(outside.files || [])];
       outside.value = '';
-      for (const f of files) {
-        if (attachBlocked(f.name)) { toast(t('attachBlocked'), true); continue; }
-        const dataUrl = await new Promise((res) => {
-          const r = new FileReader();
-          r.onload = () => res(r.result);
-          r.readAsDataURL(f);
-        });
-        const raw = (dataUrl || '').split(',')[1] || '';
-        const r = await api('/api/attachments/import', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: f.name, content_base64: raw }),
-        });
-        if (r.path) addAttachment(r.path, true, false);
-        else if (r.error) toast(r.error, true);
-      }
+      await importBrowserFiles(files, false);
+    });
+  }
+  const folder = document.getElementById('folder-picker');
+  if (folder) {
+    folder.addEventListener('change', async () => {
+      const files = [...(folder.files || [])];
+      folder.value = '';
+      await importBrowserFiles(files, true);
     });
   }
 })();
-function addAttachment(path, exists, external) {
+function addAttachment(path, exists, external, extra) {
+  if (isImagePath(path) && !activeVision()) { toast(t('modelNoVision'), true); return; }
   if (chatAttachments.some(a => a.path === path)) return;
-  chatAttachments.push({ path, exists: exists !== false, external: !!external });
+  chatAttachments.push({
+    path,
+    exists: exists !== false,
+    external: !!external,
+    directory: !!(extra && extra.directory),
+  });
   renderAttachChips();
 }
 function renderAttachChips() {
@@ -4640,7 +6280,8 @@ function renderAttachChips() {
   chatAttachments.forEach((a, i) => {
     const d = document.createElement('span');
     d.className = 'attach-chip ' + (a.exists ? 'ok' : 'bad');
-    d.appendChild(document.createTextNode((a.external ? '↗ ' : '') + a.path + ' '));
+    const label = a.directory ? String(a.path).replace(/\/$/, '') + '/' : a.path;
+    d.appendChild(document.createTextNode((a.external ? '↗ ' : '') + label + ' '));
     const x = document.createElement('b');
     x.textContent = '×';
     x.onclick = () => { chatAttachments.splice(i, 1); renderAttachChips(); };
@@ -4728,14 +6369,19 @@ function showAttachMenu(anchor) {
   ctx.innerHTML = item('attach-project', CTX_ICON.folder, CTX_ICON.chev) +
     '<div id="attach-project-box" hidden><div class="ctx-search">' + CTX_ICON.search +
     '<input id="attach-q" autocomplete="off" spellcheck="false"/></div><div id="attach-hits" class="attach-hits"></div></div>' +
-    item('attach-outside', CTX_ICON.upload, '');
+    (activeVision() ? item('attach-photo', CTX_ICON.upload, '') : '') +
+    item('attach-outside', CTX_ICON.upload, '') +
+    item('attach-folder', CTX_ICON.folder, '');
   const setText = (id, label, hint) => {
     const el = document.getElementById(id);
     el.querySelector('.ci-label').textContent = label;
     el.querySelector('.ci-hint').textContent = hint;
   };
   setText('attach-project', t('fromProject'), t('fromProjectHint'));
+  const photoBtn = document.getElementById('attach-photo');
+  if (photoBtn) setText('attach-photo', t('photo'), t('photoHint'));
   setText('attach-outside', t('fromOutside'), t('fromOutsideHint'));
+  setText('attach-folder', t('attachFolder'), t('attachFolderHint'));
   const box = document.getElementById('attach-project-box');
   const q = document.getElementById('attach-q');
   const hits = document.getElementById('attach-hits');
@@ -4750,6 +6396,13 @@ function showAttachMenu(anchor) {
     reposition();
     if (!box.hidden) { q.focus(); search(q.value || ''); }
   };
+  document.getElementById('attach-photo')?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    hideCtx();
+    if (!activeVision()) { toast(t('modelNoVision'), true); return; }
+    const input = document.getElementById('photo-picker');
+    if (input) input.click();
+  });
   document.getElementById('attach-outside').onclick = async (ev) => {
     ev.stopPropagation();
     hideCtx();
@@ -4762,6 +6415,22 @@ function showAttachMenu(anchor) {
     }
     (r.paths || []).forEach(p => addAttachment(p, true, true));
     if (r && r.blocked && r.blocked.length) toast(t('attachBlocked'), true);
+  };
+  document.getElementById('attach-folder').onclick = async (ev) => {
+    ev.stopPropagation();
+    hideCtx();
+    if (serverModeOn()) {
+      const input = document.getElementById('folder-picker');
+      if (input) input.click();
+      return;
+    }
+    const r = await api('/api/fs/pick_attach_folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (r && r.path) addAttachment(r.path, true, true, { directory: !!r.directory });
+    else if (r && r.error) {
+      toast(r.error, true);
+      const input = document.getElementById('folder-picker');
+      if (input) input.click();
+    }
   };
   q.oninput = () => { clearTimeout(q._t); q._t = setTimeout(() => search(q.value || ''), 160); };
   q.onclick = (ev) => ev.stopPropagation();
@@ -4861,10 +6530,11 @@ async function loadLangPacks() {
   (data.packs || []).forEach(pack => {
     if (pack && pack.id) langPacks[pack.id] = pack;
   });
-  const loc = (draftPlugins['plugin_web_ui'] && draftPlugins['plugin_web_ui'].values && draftPlugins['plugin_web_ui'].values.ui_locale)
+  const fromPlugin = (draftPlugins['plugin_web_ui'] && draftPlugins['plugin_web_ui'].values && draftPlugins['plugin_web_ui'].values.ui_locale)
     || (settings && settings.plugins && settings.plugins.ui_locale)
-    || uiLocale;
-  applyUiLocale(loc);
+    || '';
+  applyUiLocale(preferredLocale(fromPlugin));
+  if (typeof refreshInterfaceControls === 'function') refreshInterfaceControls();
 }
 function openLangModal() {
   const modal = document.getElementById('lang-modal');
@@ -4907,7 +6577,7 @@ function openLangModal() {
       }
       if (uiLocale === id) uiLocale = 'en';
       await loadLangPacks();
-      if (selectedPluginId) renderPluginDetail(selectedPluginId);
+      refreshOpenPlugin();
       openLangModal();
     };
     row.appendChild(name);
@@ -4939,14 +6609,14 @@ document.getElementById('lang-pack-file')?.addEventListener('change', async (ev)
   });
   if (res && res.error) { toast(res.error, true); return; }
   await loadLangPacks();
-  if (selectedPluginId) renderPluginDetail(selectedPluginId);
+  refreshOpenPlugin();
   if (res && res.warnings && res.warnings.length) toast(res.warnings.join(' '));
   else toast(translate('Language pack imported.'));
 });
 loadLangPacks();
 
 async function shutdownUi() {
-  if (!confirm(translate('Stop the Web UI and close this page?'))) return;
+  if (!await askConfirm(translate('Stop the Web UI and close this page?'), { danger: true })) return;
   try {
     await api('/api/shutdown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   } catch (_) {}

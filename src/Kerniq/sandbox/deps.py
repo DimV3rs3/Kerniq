@@ -35,6 +35,9 @@ SKIP_TOP = {
     "pkg-resources",
     "pkg_resources",
     "__future__",
+    # System modules. pip cannot install them, and trying breaks startup.
+    "tkinter",
+    "_tkinter",
 }
 IMPORT_TO_PIP = {
     "cv2": "opencv-python",
@@ -153,7 +156,7 @@ def scan_tree(root: Path) -> list[str]:
             except OSError:
                 continue
             for imported in imports_in_source(source):
-                if imported.lower() in stdlib:
+                if imported.lower() in stdlib or imported.lower() in SKIP_TOP:
                     continue
                 _add(found, _mapped(imported), pinned=False)
         if py_seen > _MAX_PY:
@@ -237,6 +240,7 @@ def missing_specs(specs: list[str], present: set[str]) -> list[str]:
 
 
 def install_specs(python: str, specs: list[str]) -> list[str]:
+    specs = [spec for spec in specs if split_spec(spec)]
     if not specs:
         return []
     if _pip_install(python, specs):

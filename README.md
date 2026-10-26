@@ -1,247 +1,176 @@
-# Kerniq 0.1.5 — Modular Open Source AI Agent Platform
+# Kerniq 0.1.6
 
-Local-first agent runtime with discovered tool packs, plugins, MCP, CLI, and
-pluggable model providers (LM Studio, Ollama, DeepSeek, OpenRouter, OpenAI,
-Claude API, Claude Code CLI, Gemini, Groq, Mistral, Mock).
+Kerniq is a local-first platform for AI agents. One process takes a task, asks a model, runs the tools that model requests, and keeps the session. The same loop is used by the command line, the Web UI, and the MCP server. A model provider or a plugin is an adapter. It is not a second copy of the loop.
 
-## What this build actually does
+File tools may touch only the workspace you set. `run_command` is not an operating-system sandbox: the process has the rights of the user who started Kerniq. Approvals, limits, and the workspace boundary are described in [docs/architecture/security.md](docs/architecture/security.md).
 
-Kerniq 0.1.5 runs a tool loop locally:
+## What it does
 
-1. `kerniq run --provider mock` answers from `MockProvider` and can call the
-   built-in file and shell tools. The reply is marked `outcome=unverified`
-   unless you pass `--expect-file PATH` (or the caller sets file/syntax checks).
-2. `kerniq run --provider lm_studio` uses LM Studio's OpenAI-compatible
-   `POST /v1/chat/completions` for chat and tools. Model list/load/unload uses
-   `GET/POST /api/v1/models`. If that server is down, the command exits with an
-   error. It does **not** silently switch to mock.
-3. `kerniq plugins ui` serves the existing Web UI (default `127.0.0.1:8765`)
-   with chat, explorer, tool events, cancel, and an approval modal for
-   high-risk tools.
-4. Sessions from `kerniq run` are written under `sessions/` as JSON.
+- Runs a task against a local or hosted model. Built-in providers include LM Studio, Ollama, OpenAI, Anthropic, Gemini, Groq, Mistral, DeepSeek, OpenRouter, and the Claude Code CLI. `mock` is the offline provider used by tests and by `kerniq run --provider mock`.
+- Shares one settings store between the CLI and the Web UI: agent, API, prompt, chat, and interface in `state/settings.json`, tool values in `state/tools.json`, plugin values in `state/plugins.json`.
+- Ships tool packs for files, the workspace shell, the web, and the plan. The live list is `kerniq tools list`. A picture is sent only when the provider catalog says that model can see images. The model looks at a file with `view_image`, not by reading the bytes as text.
+- Keeps Plan mode and Act mode separate. Each mode has its own plan.
+- Loads plugins from folders under `plugins/`. A plugin's own tools live in that folder and are not agent commands unless that plugin's manifest says so. A plugin can add a screen to another plugin only when the host declares a slot for it. The benchmark plugin uses this to add a Benchmark section and a benchmark window to the Web UI.
+- Includes server mode. One Kerniq process serves every browser. Each browser is a separate user with its own chats and its own workspace. MySQL is optional.
+- On a phone held upright, the Web UI stays in the agent chat. Landscape and desktop keep the editor layout.
 
-The shell is not an OS sandbox. See `docs/architecture/security.md`.
-Context trimming keeps the system prompt, the original user goal, and the newest
-complete tool-call groups. Token counts are an estimate (`len/4`) unless the
-provider returns usage or a context length.
+## Install and launch
 
-## Install
+Kerniq needs Python 3.11 or newer. Windows 10 and 11, current Linux, and macOS are supported. Windows 7 and 8 are not.
 
-Ready-made scripts live in `scripts/`. Double-click or run one. They do not need Python on `PATH`.
+The installers and the window launchers are in `scripts/`. They do not need Python already on `PATH`.
 
-| Platform | Command |
-|----------|---------|
-| Windows | `scripts\install.bat` |
-| Linux, macOS | `bash scripts/install.sh` |
+| File | Use |
+|------|-----|
+| `scripts/install.bat`, `scripts/install.ps1` | Install on Windows |
+| `scripts/install.sh` | Install on Linux and macOS. `bash scripts/install.sh --server` is the only install that then asks for a database. |
+| `scripts/kerniq-ui.bat`, `scripts/kerniq-ui.vbs` | Start the Web UI on Windows without a console (`kerniq-ui.vbs`) or with one (`kerniq-ui.bat`) |
+| `scripts/kerniq-ui.sh` | Start the Web UI on Linux and macOS |
+| `scripts/uninstall.bat`, `scripts/uninstall.ps1`, `scripts/uninstall.sh` | Remove the install. See Uninstall below. |
 
-What the script does:
+```bat
+scripts\install.bat
+```
+
+```bash
+bash scripts/install.sh
+```
+
+What the installer does:
 
 1. If `python`, `python3`, or `py -3.11` (or newer) is already on `PATH`, Kerniq is installed into that interpreter. No virtual environment is created.
-2. If Python is not on `PATH`, the script looks for a local install and, if needed, downloads a private CPython into `.kerniq/runtime`. It then creates `.venv` and installs there. Launchers use that venv.
-3. Install always goes through `python -m pip`, so a missing `pip` command does not matter.
-4. Before installing, it records the packages already present. Uninstall removes only packages that were not there before. Packages you already had stay. A `.venv` is deleted only when this install created it. A downloaded private Python is deleted only when this install downloaded it.
-
-When Python was already on `PATH`:
-
-```bash
-python -m Kerniq plugins ui
-```
-
-When it was not, and a venv was created:
-
-```bash
-.venv\Scripts\python.exe -m Kerniq plugins ui
-.kerniq\kerniq.cmd plugins ui
-```
-
-```bash
-.venv/bin/python -m Kerniq plugins ui
-.kerniq/kerniq plugins ui
-```
-
-Uninstall (`scripts\uninstall.bat`, `bash scripts/uninstall.sh`) resets settings, `sessions/`, `logs/`, and `state/`, then removes only the packages this install added. Deleting the project files as well is a separate wipe (`uninstall.bat --wipe-project`).
-
-The same scan runs when you install Kerniq, not when you save settings. Saving settings does not open consoles and does not download libraries. Shell commands inside the agent workspace use a private `.kerniq-venv` created in that workspace during install. If that venv is missing or its Python fails, Kerniq recreates it quietly. It is not the host Python and not a project `.venv`. Docker is not required. The UI launcher opens one console and closes it at once; the server itself has no window.
+2. If Python is not on `PATH`, the script looks for a local install and, if needed, downloads a private CPython into `.kerniq/runtime`. It then creates `.venv` and installs there. The launchers use that environment.
+3. Install always goes through `python -m pip`. A missing `pip` command does not matter.
+4. Before installing, it records the packages already present. Uninstall removes only packages that were not there before. A `.venv` is deleted only when this install created it. A downloaded private Python is deleted only when this install downloaded it.
 
 From the repository root you can also install by hand:
 
 ```bash
-cd Kerniq
 python -m pip install -e ".[dev,mcp]"
 ```
 
-If your environment uses a private PyPI mirror that fails, force public index:
+Optional extras: `dev` (pytest, ruff, mypy), `mcp` (the MCP SDK), `mysql` (PyMySQL, only for server mode with MySQL).
 
-```bash
-python -m pip install --index-url https://pypi.org/simple/ --break-system-packages -e ".[dev,mcp]"
-```
-
-After editable install:
-
-```bash
-kerniq --version
-kerniq doctor
-python -m Kerniq doctor   # equivalent
-```
-
-You do **not** need `export PYTHONPATH=src` when the package is installed this way.
-
-### Optional extras
-
-| Extra | Purpose |
-|-------|---------|
-| `dev` | pytest, ruff, mypy |
-| `mcp` | official MCP SDK (`mcp` package) |
-
-### Platforms and Python
-
-Kerniq requires **Python 3.11 or newer** (`requires-python` in `pyproject.toml`).
-
-| System | Support |
-|--------|---------|
-| Windows 10 and 11 | Yes |
-| Windows 7 and 8 | No. CPython 3.11 does not support them. The last CPython for Windows 7 is 3.8, and this tree is not tested or packaged for 3.8. |
-| Linux | Yes, on distributions that can install CPython 3.11 (glibc new enough for that build). |
-| macOS | Yes, with Python 3.11+. |
-
-Settings are three files, shared by the CLI and the Web UI. `state/settings.json` holds agent, API, prompt, and chat. `state/tools.json` holds tool toggles and per-tool values. `state/plugins.json` holds per-plugin values. The first run writes the defaults. A later change from either side replaces those values in the same file. `kerniq settings set api.max_tokens null` leaves a single reply uncapped. Tool and plugin values are added when those components are validated. A component that is no longer installed is removed on the next validation. Keys that only affect the shell are `chat.send_key`, `chat.file_ops_only`, `chat.aggregate_tools`, and `chat.show_reasoning_live`. The UI plugin is optional. Its own settings hold the interface language. Extra languages are JSON packs imported from the Web UI plugin page. A pack is checked before it is stored: a broken file is refused, and a partial pack reports which interface strings are still English.
-
-### What changed in 0.1.5
-
-- Context compaction keeps the last N messages and puts one compacted memory note above them. The note is preserved when the window is trimmed. The trigger is always a percent of the model window. The shrink target is a percent (strictly below the trigger) or a token count.
-- Plan and Act each keep their own TODO. Items cannot be deleted, only marked done or skipped. With automatic handoff, Act starts from a cleared transcript plus the plan draft. The closed research list stays in the archive: Act does not redo it, and the UI keeps it visible. Without handoff, Plan answers the user directly.
-- A refused approval is reported as `USER_DENIED` for those exact arguments. Repeating the same call does not prompt again.
-- The footer uses red when the provider is unavailable, yellow when it is idle, orange while the model is working, and green when the selected model is loaded.
-- Chat titles look for LM Studio and an embedding model even if another provider is selected. If LM Studio or that model is missing, the title is the first three words.
-- Plan and Act can use different models. On a local provider the Plan model is unloaded and the Act model is loaded at handoff.
-
-## Quick start
-
-```bash
-kerniq doctor
-kerniq tools list
-kerniq run --task "Say hello" --provider mock
-kerniq plugins list
-kerniq plugins ui          # http://127.0.0.1:8765 when web_ui plugin is present
-```
-
-### Web UI (desktop launcher)
+Start the Web UI after install:
 
 ```bash
 kerniq plugins ui
-# http://127.0.0.1:8765
 ```
 
-No-console helpers (from repo root):
+The default address is `http://127.0.0.1:8765`. If Python was not on `PATH` and the installer created an environment, use the launcher instead:
 
-| Platform | Launcher |
-|----------|----------|
-| Windows | double-click `scripts/kerniq-ui.vbs` or `scripts/kerniq-ui.bat` |
-| Linux/macOS | `bash scripts/kerniq-ui.sh` |
-
-Console noise: **Plugins → Web UI → Console log level** (default: Warnings only).
-
-Stop UI: settings bar **Stop UI**, or Ctrl+C in the terminal that started it.
-
-**System tray:** full tray icon needs an extra native dependency (not bundled). Use the VBS/shell launchers to avoid a console window; the process may still appear briefly in the task list while the server runs.
-
-### Uninstall
+```bat
+.kerniq\kerniq.cmd plugins ui
+scripts\kerniq-ui.vbs
+```
 
 ```bash
-python -m Kerniq uninstall -y
-python -m Kerniq uninstall -y --purge              # also sessions/logs/state
-python -m Kerniq uninstall -y --wipe-project       # delete project source tree
+.kerniq/kerniq plugins ui
+bash scripts/kerniq-ui.sh
 ```
 
+Stop the UI from the status bar, or with Ctrl+C in the terminal that started it. Console noise is **Plugins → Web UI → Console log level** (default: warnings only). A saved host of `0.0.0.0`, LAN access, or server mode listens on every interface. The console prints the address. A host change applies on the next start.
 
+## Commands
 
-### MCP server (stdio)
+`kerniq` and `python -m Kerniq` are the same program after install. `kerniq --help` prints the command list. `kerniq --version` prints `0.1.6`. Every flag is in [docs/cli.md](docs/cli.md).
 
-Expose allow-listed tools to any MCP client (Claude Desktop, other agents, etc.):
+| Command | What it does |
+|---------|----------------|
+| `kerniq doctor` | Checks the configuration, extras, and whether LM Studio answers. |
+| `kerniq run --task "Say hello" --provider mock` | Runs one task. `--workspace` overrides the saved workspace. `--provider` overrides the saved provider. A named provider that is down exits with an error. It does not switch to another provider. The only fallback is the default path: saved provider is LM Studio, you did not pass `--provider`, and LM Studio is unreachable. The CLI then uses mock and says so. |
+| `kerniq models list` | Prints provider ids, then LM Studio models if that server answers. Also `loaded`, `load`, `unload-all`. |
+| `kerniq tools list` | Tools the agent can see, and the short phrase the UI shows. `tools settings` and `tools set KEY VALUE` read and write `state/tools.json`. |
+| `kerniq plugins list` | Plugins found under `plugins/`. `plugins validate` writes missing defaults and refuses values the schema rejects. `plugins set ID -s name value` saves one plugin setting. |
+| `kerniq plugins ui` | Starts the Web UI and blocks until Ctrl+C. `--host` and `--port` apply to this process only. `-s name value` saves a Web UI setting before the server starts. |
+| `kerniq settings show` | Prints the shared settings. `settings set api.max_tokens null` leaves one reply uncapped. |
+| `kerniq sessions list` | Sessions written by `kerniq run` under `sessions/`. `sessions show ID` prints one. |
+| `kerniq server show` | Server-mode bind address, storage, and whether an API key exists. `server key` prints the key a remote console must send. `server init` creates the optional database. Kerniq creates the database. You do not create it first. |
+| `kerniq mcp serve` | Exposes an allow-list of tools over stdio. See [docs/mcp/server.md](docs/mcp/server.md). |
+| `pytest tests/ -v` | The standard suite. It does not need an API key, a network, or LM Studio. |
+
+A remote console talks to a Kerniq that is already running. It needs both the address and the key. The key does not find the server.
 
 ```bash
-kerniq mcp validate
-kerniq mcp serve
-# or with explicit workspace:
-kerniq mcp serve --workspace ./workspace
+kerniq run --server http://HOST:8765 --api-key KEY --task "Read the project"
 ```
 
-Published tools are controlled by `[mcp] published_tools` in `config/default.toml`.  
-If the list is empty, read-only filesystem tools are published by default.
+`KERNIQ_SERVER` and `KERNIQ_API_KEY` are the same two values. `KERNIQ_ROOT` is the project folder when plugin discovery cannot find `plugins/`.
 
-Example MCP client config (stdio):
+## Using Kerniq
 
-```json
-{
-  "mcpServers": {
-    "kerniq": {
-      "command": "kerniq",
-      "args": ["mcp", "serve", "--workspace", "/path/to/workspace"]
-    }
-  }
-}
+1. Install, then start `kerniq plugins ui` or run `kerniq run --task "..."`.
+2. Choose a provider in **API & model**, or pass `--provider`. LM Studio chat is `POST /v1/chat/completions`. Load and unload use `/api/v1/models`. Hosted providers need their own key.
+3. Set the workspace. That directory is the only place file tools may read and write. In the Web UI, type a path or use Browse. Browse is hidden in server mode, because the browser is not on the server's disk.
+4. Send a task. Kerniq checks the tool arguments, the workspace boundary, and the approval policy, then runs the tool and sends the result back. The loop stops when the task is done, when you cancel it, or when a limit is hit (iterations, tool calls, or time).
+5. `kerniq run` stores that session under `sessions/` as JSON. The Web UI stores chats for the current user.
+
+Platform defaults that are not per-user (LM Studio URL, limits, the MCP allow-list, `auto_install_deps`) live in `config/default.toml`. The first run writes the user defaults. A later change from the CLI or the Web UI replaces those values in the same file. `kerniq plugins validate` writes missing component defaults and drops a component that is no longer installed.
+
+Context trimming keeps the system prompt, the original user goal, and the newest complete tool-call groups. Token counts are an estimate (`len/4`) unless the provider returns usage or a context length. The Context Compact plugin can replace older turns with a memory note when the transcript crosses a percent of the model window. Its settings are in that plugin's folder.
+
+### Plugins
+
+A plugin is one folder. Kerniq discovers `plugins/<name>/manifest.toml` and `main.py`. It does not import plugins by name. Tools that belong to the plugin go in `plugins/<name>/tools/` and load with the plugin. They stay inside the plugin. They are not added to the agent's command list unless that plugin's `manifest.toml` contains:
+
+```toml
+[tools]
+expose_to_agent = true
 ```
 
-## Tools
+The default is hidden. Hidden tools are also left out of `kerniq tools list`, the system prompt, and MCP.
 
-- Files: `read_file`, `write_file`, `create_file`, `edit_file`, `delete_file`, `list_directory`, `create_directory`, `file_exists`, `get_file_info`, `search_code`
-- Terminal: `run_command`
-- Web: `web_search`, `fetch_url`
+A plugin may attach to another plugin only where the host allows it. The host returns slot names from `extension_slots()`. The other plugin offers `{host, slot, id, label, icon}` from `contributions()`. An offer is kept only when the host lists that slot. The Web UI offers `settings` and `panel`. The benchmark plugin fills both: a Benchmark item in settings, and a separate window with the run state. Copy a plugin folder into `plugins/` and restart. Details: [docs/plugins/development.md](docs/plugins/development.md).
 
-Tool toggles live in `state/tools.json`:
+### Server mode
+
+Server mode is part of Kerniq, not a plugin. Turn it on in the Web UI, or before start:
 
 ```bash
-kerniq tools settings
-kerniq tools set web_search_enabled true
-kerniq settings show
+kerniq plugins ui -s host 0.0.0.0 -s server_mode true
+kerniq server key
 ```
 
-## Plugin Manager plugin
-
-Built-in plugin under `plugins/plugin_manager` provides tools:
-
-| Tool | Role |
-|------|------|
-| `plugin_search` | Search GitHub for Kerniq-related plugins |
-| `plugin_install` | Download zip of a GitHub repo into `./plugins/<name>` + security scan |
-| `plugin_remove` | Delete an installed plugin folder (`confirm=true` required) |
-| `plugin_security_scan` | Static heuristics (eval/exec/subprocess/pickle/…) |
-| `plugin_list_installed` | List `./plugins/*` with manifest metadata |
-
-Optional: set `GITHUB_TOKEN` / `GH_TOKEN` to raise GitHub API rate limits.
+- The site sets a cookie that is only a user id. A browser without a cookie becomes a new user.
+- Chat, model, and interface settings stay in that browser. The API key is encrypted in the browser. The server does not store it and does not send a saved key back.
+- Each user gets a workspace they cannot leave. Paths are shown as `/workspace`. Another user's files are not on that tree.
+- Right-click download (a file, a folder as a zip, or the open directory when the click is on empty space) exists only in server mode. "Show in explorer" and Browse are not shown there.
+- MySQL is optional. Without it, chats stay in JSON and Kerniq says so on every start. `kerniq server init` creates the database when you want one.
+- When the site listens on `0.0.0.0`, Kerniq prints every LAN address. `127.0.0.1` is the server itself. Private addresses work only on the same network. If the page does not load, allow that TCP port in the host firewall and in the cloud security group.
+- Models are not unloaded while a task is running. The next task waits.
+- An administrator can move the directory that holds user homes onto another disk, and can set a per-user disk quota. Kerniq tells the model when that user's disk is nearly full.
 
 ```bash
-kerniq plugins list
+kerniq server show
+kerniq server set users-root /mnt/disk/kerniq-users
+kerniq server set quota-gb 8
 ```
 
-## Update check
+### Web UI on a phone
+
+Portrait (the screen is taller than it is wide, and no wider than 820px) is the agent chat only. The round Kerniq mark opens the chat list. The list slides over the chat: the chat keeps its size, moves 30% to the right, and dims. The list covers about 30% of that chat. A pencil button starts a new chat. The bottom bar is attach, the message field, and send. The bar is about 88% of the width until the field is focused, then it uses the full width. Settings open from the chat list and slide down from the top. The section list is icons. Two-column settings become one column. Save floats at the lower left, with Cancel beside it. Turn the phone sideways, or use a wider window, and the desktop editor layout returns, including the layout you last saved.
+
+## Uninstall
+
+```bat
+scripts\uninstall.bat
+```
 
 ```bash
-kerniq update
-# private repo: export GITHUB_TOKEN=ghp_...
-kerniq update --repo DimV3rs3/Kerniq
+bash scripts/uninstall.sh
 ```
 
-Release notes live on GitHub Releases (no CHANGELOG.md in the tree).
-
-## License
-
-MIT — see `LICENSE`.
-
-## Config
-
-`config/default.toml` — LM Studio URL, limits, UI port, MCP allowlist, `auto_install_deps`.
-
-## Tests
-
-```bash
-pytest tests/ -v
-# or still:
-PYTHONPATH=src python -m pytest tests/ -v
-```
+Uninstall resets settings, `sessions/`, `logs/`, and `state/`, then removes only the packages this install added. Deleting the project files as well is a separate wipe: `uninstall.bat --wipe-project` (the shell script accepts the same flag). A `.venv` or a private Python runtime is removed only if this install created it.
 
 ## Documentation
 
-- `docs/architecture/overview.md`
-- `docs/mcp/server.md` / `docs/mcp/client.md`
-- `docs/plugins/development.md`
+- [docs/cli.md](docs/cli.md) — every command and flag
+- [docs/architecture/overview.md](docs/architecture/overview.md) — how the pieces fit
+- [docs/architecture/security.md](docs/architecture/security.md) — workspace and approvals
+- [docs/plugins/development.md](docs/plugins/development.md) — writing a plugin
+- [docs/plugins/settings.md](docs/plugins/settings.md) — tool and plugin settings
+- [docs/mcp/server.md](docs/mcp/server.md) — exposing tools to other clients
+
+## License
+
+MIT. See `LICENSE`.

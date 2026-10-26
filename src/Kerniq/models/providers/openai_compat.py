@@ -31,17 +31,56 @@ def to_openai_messages(messages: List[Message]) -> List[Dict[str, Any]]:
     ("System message must be at the beginning"), so the identity prompt,
     the pinned TODO, and any compaction note are joined into that single
     leading message.
+
+    Pictures travel as image parts. A tool that loaded one is followed by
+    those parts only after every tool result for that turn is already in
+    the list, so the model sees the picture and not a byte dump.
     """
+    from Kerniq.models.vision import openai_image_parts
+
     system_parts: List[str] = []
     rest: List[Dict[str, Any]] = []
+    pending_images: List[Dict[str, Any]] = []
+
+    def flush_images() -> None:
+        if not pending_images:
+            return
+        rest.append({
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "The picture you asked to see is attached here. "
+                        "Look at the image itself. It is not a list of bytes."
+                    ),
+                },
+                *pending_images,
+            ],
+        })
+        pending_images.clear()
+
+    def user_content(msg: Message) -> Any:
+        text = msg.content or ""
+        images = openai_image_parts(getattr(msg, "metadata", None))
+        if not images:
+            return text
+        parts: List[Dict[str, Any]] = []
+        if text.strip():
+            parts.append({"type": "text", "text": text})
+        parts.extend(images)
+        return parts
+
     for msg in messages:
+        if msg.role != MessageRole.TOOL:
+            flush_images()
         if msg.role == MessageRole.SYSTEM:
             text = (msg.content or "").strip()
             if text:
                 system_parts.append(text)
             continue
         if msg.role == MessageRole.USER:
-            rest.append({"role": "user", "content": msg.content or ""})
+            rest.append({"role": "user", "content": user_content(msg)})
         elif msg.role == MessageRole.ASSISTANT:
             item: Dict[str, Any] = {"role": "assistant", "content": msg.content or ""}
             if msg.tool_calls:
@@ -66,6 +105,8 @@ def to_openai_messages(messages: List[Message]) -> List[Dict[str, Any]]:
                     "content": msg.content or "",
                 }
             )
+            pending_images.extend(openai_image_parts(getattr(msg, "metadata", None)))
+    flush_images()
     if not system_parts:
         return rest
     return [{"role": "system", "content": "\n\n".join(system_parts)}] + rest
@@ -79,20 +120,26 @@ def to_openai_tools(tools: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any
         if not isinstance(tdef, dict):
             continue
         if tdef.get("type") == "function" and "function" in tdef:
-            out.append(tdef)
+            fn = dict(tdef.get("function") or {})
+            from Kerniq.models.text_tools import normalize_parameters
+
+            fn["parameters"] = normalize_parameters(fn.get("parameters"))
+            out.append({"type": "function", "function": fn})
             continue
         name = tdef.get("name") or ""
         params = tdef.get("input_schema") or tdef.get("parameters") or {
             "type": "object",
             "properties": {},
         }
+        from Kerniq.models.text_tools import normalize_parameters
+
         out.append(
             {
                 "type": "function",
                 "function": {
                     "name": name,
                     "description": tdef.get("description") or "",
-                    "parameters": params,
+                    "parameters": normalize_parameters(params),
                 },
             }
         )
@@ -118,6 +165,8 @@ def parse_openai_message(message: Dict[str, Any]) -> Message:
             args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
         except Exception:
             args = {"raw": args_raw}
+        if isinstance(args, list):
+            args = {"items": args}
         tool_calls.append(
             ToolCall(
                 id=str(tc.get("id") or uuid.uuid4()),
@@ -125,6 +174,10 @@ def parse_openai_message(message: Dict[str, Any]) -> Message:
                 arguments=args if isinstance(args, dict) else {"raw": args},
             )
         )
+    from Kerniq.models.text_tools import adopt_channel_calls
+
+    content, adopted = adopt_channel_calls(content or "", tool_calls or None)
+    tool_calls = list(adopted or [])
     return Message(
         role=MessageRole.ASSISTANT,
         content=content or "",
@@ -223,6 +276,8 @@ class OpenAICompatProvider(ModelProvider):
         if isinstance(data, dict) and not rows:
             rows = data.get("models") or []
         result = []
+        from Kerniq.models.vision import model_sees_images
+
         for item in rows or []:
             if isinstance(item, str):
                 result.append({"id": item, "name": item})
@@ -239,6 +294,10 @@ class OpenAICompatProvider(ModelProvider):
                     "context_length": item.get("context_length")
                     or item.get("context_window")
                     or item.get("max_context_length"),
+                    "type": item.get("type"),
+                    "architecture": item.get("architecture"),
+                    "capabilities": item.get("capabilities"),
+                    "vision": model_sees_images(item),
                 }
             )
         return result
@@ -418,6 +477,8 @@ class OpenAICompatProvider(ModelProvider):
                 args = json.loads(slot["arguments"] or "{}")
             except Exception:
                 args = {"raw": slot["arguments"]}
+            if isinstance(args, list):
+                args = {"items": args}
             tool_calls.append(
                 ToolCall(
                     id=slot["id"] or str(uuid.uuid4()),
@@ -425,6 +486,11 @@ class OpenAICompatProvider(ModelProvider):
                     arguments=args if isinstance(args, dict) else {"raw": args},
                 )
             )
+        joined = "".join(content_parts)
+        from Kerniq.models.text_tools import adopt_channel_calls
+
+        joined, adopted = adopt_channel_calls(joined, tool_calls or None)
+        tool_calls = list(adopted or [])
         usage = None
         if usage_raw:
             usage = TokenUsage(
@@ -436,7 +502,7 @@ class OpenAICompatProvider(ModelProvider):
             messages=[
                 Message(
                     role=MessageRole.ASSISTANT,
-                    content="".join(content_parts),
+                    content=joined,
                     tool_calls=tool_calls or None,
                 )
             ],

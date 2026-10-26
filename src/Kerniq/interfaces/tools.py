@@ -104,18 +104,21 @@ class Tool(ABC):
         pack = self.__dict__.get("_pack_include_in_plan", None)
         if pack is not None:
             return bool(pack)
-        return True
+        # Explicitly exclude tools that have no explicit include_in_plan flag.
+        return False
 
     @property
     def include_in_plan(self) -> bool:
-        """Whether Plan mode may offer this tool. A saved setting wins over the code default.
-
-        ``update_plan`` is always offered in Plan mode, even when this is false.
-        """
+        """Whether Plan mode may offer this tool. A saved setting wins over the code default."""
         saved = self.__dict__.get("cfg_include_in_plan", None)
         if saved is not None:
             return bool(saved)
         return self.plan_membership_default()
+
+    @property
+    def agent_visible(self) -> bool:
+        """False for plugin commands that must not be offered to the model or MCP."""
+        return bool(self.__dict__.get("_agent_visible", True))
 
     @property
     def category(self) -> str:

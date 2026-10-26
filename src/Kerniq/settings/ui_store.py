@@ -87,6 +87,10 @@ class ApiModelSettings(BaseModel):
     binary_path: str = ""  # Claude Code CLI path
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = None  # null = auto/max
+    # Off: ask before loading next to another model. On: apply model_load_action.
+    auto_model_load: bool = False
+    # alongside | unload_idle | unload_busy | notify. Used only when auto is on.
+    model_load_action: str = "notify"
     # Editable per-provider notes. Catalog text is only the initial value.
     provider_descriptions: Dict[str, str] = Field(default_factory=dict)
 
@@ -120,6 +124,21 @@ class ChatSettings(BaseModel):
     mode_auto: bool = True
     # Do not stop until the request is actually done. After Plan, build an Act plan.
     compose_plan: bool = True
+    # Attached files and folders outside the workspace stay read-only until this is off.
+    read_only_external_attachments: bool = True
+
+
+class InterfaceSettings(BaseModel):
+    """Look of the local UI. Stored in the project, not in the browser."""
+
+    layout: str = "editor"  # editor | agent
+    motion: str = "on"  # on | off | auto
+    blur: bool = True
+    highlight: bool = True
+    auto_think: bool = False
+    show_notifications: bool = True
+    auto_dismiss_notifications: bool = True
+    theme: str = "dark"  # dark | light | system
 
 
 class UiSettings(BaseModel):
@@ -127,6 +146,7 @@ class UiSettings(BaseModel):
     agent: AgentRuntimeSettings = Field(default_factory=AgentRuntimeSettings)
     api: ApiModelSettings = Field(default_factory=ApiModelSettings)
     prompt: SystemPromptSettings = Field(default_factory=SystemPromptSettings)
+    interface: InterfaceSettings = Field(default_factory=InterfaceSettings)
 
 
 class UiSettingsStore:
@@ -141,34 +161,38 @@ class UiSettingsStore:
         if self._cache is not None:
             return self._cache
         from .file import read_settings_file, settings_path
+        from .secrets import open_settings, token_is_plaintext
         path = settings_path(self.state_dir)
         if not path.parent.is_dir():
             self._cache = UiSettings()
             return self._cache
         raw = read_settings_file(self.state_dir)
         existed = path.is_file()
+        needs_seal = token_is_plaintext(raw)
+        raw = open_settings(self.state_dir, raw)
         try:
             self._cache = UiSettings.model_validate(raw) if raw else UiSettings()
         except Exception:
             self._cache = UiSettings()
         known = self._cache.model_dump()
-        if not existed or any(key not in raw for key in known):
+        if not existed or needs_seal or any(key not in raw for key in known):
             self.save()
         return self._cache
 
     def save(self, settings: Optional[UiSettings] = None) -> UiSettings:
         from .file import read_settings_file, write_settings_file
+        from .secrets import open_settings, seal_settings
         if settings is not None:
             self._cache = settings
         if self._cache is None:
             self._cache = UiSettings()
-        raw = read_settings_file(self.state_dir)
+        raw = open_settings(self.state_dir, read_settings_file(self.state_dir))
         dumped = self._cache.model_dump()
         for key in list(raw):
             if key not in dumped:
                 raw.pop(key, None)
         raw.update(dumped)
-        write_settings_file(self.state_dir, raw)
+        write_settings_file(self.state_dir, seal_settings(self.state_dir, raw))
         return self._cache
 
     def update(self, patch: Dict[str, Any]) -> UiSettings:

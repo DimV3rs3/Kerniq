@@ -35,6 +35,7 @@ _INLINE_EVAL = re.compile(
     r"\b(?:bash|sh|zsh)\b[^\n|;]*\s-c\b|"
     r"\bcmd(?:\.exe)?\b[^\n|;]*\s/c\b)"
 )
+_NO_SITE = re.compile(r"(?i)\b(?:python3?|py)\b[^\n|;]*\s-S\b")
 _NETWORK = re.compile(
     r"(?i)\b(?:curl|wget|nc|ncat|nmap|ssh|scp|sftp|ftp|tftp|telnet|"
     r"invoke-webrequest|invoke-restmethod|iwr|irm|test-netconnection|tnc|"
@@ -85,6 +86,11 @@ def assess_command(command: str, *, allow_network: bool = False) -> CommandVerdi
         return CommandVerdict(
             False,
             "Inline eval (-c/-e) is denied; write a workspace script and run that file",
+        )
+    if _NO_SITE.search(cmd):
+        return CommandVerdict(
+            False,
+            "python -S is denied; it would skip the sandbox guard",
         )
     if _OBFUSCATION.search(cmd):
         return CommandVerdict(False, "Obfuscated command construction is denied")

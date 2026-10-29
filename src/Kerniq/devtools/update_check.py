@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Tuple
 
 import httpx
@@ -162,59 +163,144 @@ async def check_for_update(
         )
 
 
+_SKIP_ROOTS = {
+    "state",
+    "sessions",
+    "logs",
+    "workspace",
+    ".git",
+    ".venv",
+    ".kerniq-venv",
+    ".kerniq-guard",
+}
+
+
+def overlay_release(source: Path, dest: Path) -> None:
+    """Copy a release tree onto a project without touching user data.
+
+    ``state/``, ``sessions/``, ``logs/``, and ``workspace/`` stay. Plugin
+    folders that are not in the release stay. Language packs that are not
+    in the release stay. Files the release does ship, including ``ru.json``,
+    are updated.
+    """
+    import os
+    import shutil
+
+    source = Path(source).resolve()
+    dest = Path(dest).resolve()
+    for dirpath, dirnames, filenames in os.walk(source):
+        rel = Path(dirpath).relative_to(source)
+        if rel.parts and rel.parts[0] in _SKIP_ROOTS:
+            dirnames.clear()
+            continue
+        dirnames[:] = [name for name in dirnames if name not in {"__pycache__", ".pytest_cache"}]
+        target_dir = dest / rel
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for name in filenames:
+            if name.endswith(".pyc"):
+                continue
+            shutil.copy2(Path(dirpath) / name, target_dir / name)
+
+
+def _release_root(extracted: Path) -> Path:
+    children = [child for child in Path(extracted).iterdir() if child.is_dir()]
+    if len(children) == 1 and (children[0] / "pyproject.toml").is_file():
+        return children[0]
+    if (Path(extracted) / "pyproject.toml").is_file():
+        return Path(extracted)
+    for child in children:
+        if (child / "pyproject.toml").is_file():
+            return child
+    raise RuntimeError("The release archive has no project root.")
+
+
+def fetch_release_zip(repo: str, dest: Path, *, timeout: float = 60.0) -> tuple[str, Path]:
+    """Download the latest GitHub release zip with httpx. Does not use urllib."""
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": f"Kerniq-update/{LOCAL_VERSION}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    url = f"{GITHUB_API}/repos/{repo}/releases/latest"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        resp = client.get(url, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+        tag = str(data.get("tag_name") or "")
+        zip_url = str(data.get("zipball_url") or "")
+        if not zip_url:
+            raise RuntimeError("The latest release has no zipball.")
+        blob = client.get(zip_url, headers=headers)
+        blob.raise_for_status()
+        dest.write_bytes(blob.content)
+    return tag, dest
+
+
 def apply_update(
     repo: str = DEFAULT_REPO,
     *,
     preserve_state: bool = True,
 ) -> Tuple[bool, str]:
-    """
-    Install the latest published version without wiping user settings.
+    """Install the latest release in place.
 
-    Strategy (editable local tree preferred):
-    1. If we are inside a git checkout of Kerniq → git pull + pip install -e ".[dev,mcp]"
-    2. Else pip install from GitHub archive / PyPI name Kerniq
-
-    state/ sessions/ logs/ and component settings under the project or user
-    site are not deleted.
+    Settings, sessions, logs, the workspace, user plugins, and language packs
+    that are not part of the release are kept. Kit plugins and bundled
+    translations are updated. ``preserve_state`` is accepted for older callers
+    and is always honored.
     """
-    import subprocess
+    import shutil
     import sys
+    import tempfile
+    import zipfile
     from pathlib import Path as _P
 
-    def run(cmd):
-        from Kerniq.sandbox.proc import hidden_run
-        p = hidden_run(cmd, capture_output=True, text=True)
-        out = ((p.stdout or "") + (p.stderr or "")).strip()
-        return p.returncode, out
-
-    # Locate project root (editable install)
-    root = None
+    del preserve_state
     try:
         from Kerniq.devtools.paths import find_project_root
+
         root = find_project_root()
     except Exception:
         root = None
     if root is None:
         cwd = _P.cwd()
-        if (cwd / "pyproject.toml").is_file():
+        if (cwd / "pyproject.toml").is_file() and (cwd / "src" / "Kerniq").is_dir():
             root = cwd
+    if root is None:
+        return False, "Kerniq could not find the project directory to update."
 
-    if root and (root / ".git").exists():
-        code, out = run(["git", "-C", str(root), "pull", "--ff-only"])
-        if code != 0:
-            # continue with pip anyway
-            pass
-        code2, out2 = run([
-            sys.executable, "-m", "pip", "install", "-e", f"{root}[dev,mcp]",
-        ])
-        ok = code2 == 0
-        return ok, out2 or out or ("updated from git " + str(root))
+    tmp = _P(tempfile.mkdtemp(prefix="kerniq-update-"))
+    try:
+        archive = tmp / "release.zip"
+        tag, _path = fetch_release_zip(repo, archive)
+        unpacked = tmp / "src"
+        unpacked.mkdir()
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(unpacked)
+        overlay_release(_release_root(unpacked), root)
+    except Exception as exc:
+        shutil.rmtree(tmp, ignore_errors=True)
+        return False, f"Update did not apply: {exc}"
+    shutil.rmtree(tmp, ignore_errors=True)
 
-    # Fallback: pip from GitHub
-    url = f"git+https://github.com/{repo}.git"
-    code, out = run([
-        sys.executable, "-m", "pip", "install", "--upgrade", f"{url}#egg=Kerniq",
-    ])
-    if code != 0:
-        code, out = run([sys.executable, "-m", "pip", "install", "--upgrade", "Kerniq"])
-    return code == 0, out
+    from Kerniq.sandbox.proc import hidden_run
+
+    pip = hidden_run(
+        [sys.executable, "-m", "pip", "install", "-e", str(root)],
+        capture_output=True,
+        text=True,
+    )
+    note = ((pip.stdout or "") + (pip.stderr or "")).strip()
+    if pip.returncode != 0:
+        return True, (
+            f"Files updated to {tag or 'the latest release'}. "
+            "Settings, user plugins, and language packs were kept. "
+            f"Reinstall the package when you can: {note}"
+        )
+    return True, (
+        f"Updated to {tag or 'the latest release'}. "
+        "Settings, user plugins, and language packs were kept. Restart Kerniq."
+    )

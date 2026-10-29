@@ -152,6 +152,38 @@ class PluginImpl(Plugin):
             "on tools/plugin for UI settings.\n",
             encoding="utf-8",
         )
+        tests_dir = plugin_path / "tests"
+        tests_dir.mkdir(exist_ok=True)
+        (tests_dir / f"test_{plugin_id}.py").write_text(
+            f'''"""{name} initializes itself through Kerniq's plugin manager."""
+
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+
+from Kerniq.plugins.base import PluginContext
+from Kerniq.plugins.manager import PluginManager
+from Kerniq.tools.registry import ToolRegistry
+
+
+def test_{plugin_id}_discovers_and_loads():
+    plugins_root = Path(__file__).resolve().parents[2]
+    registry = ToolRegistry()
+    manager = PluginManager(
+        lambda: PluginContext(logger=None, config=None, event_bus=None, tool_registry=registry)
+    )
+
+    async def run():
+        await manager.discover_and_load(plugins_root)
+        return manager.plugins.get("{plugin_id}")
+
+    plugin = asyncio.run(run())
+    assert plugin is not None
+    assert manager.manifests["{plugin_id}"].plugin_id == "{plugin_id}"
+''',
+            encoding="utf-8",
+        )
         return plugin_path
 
 

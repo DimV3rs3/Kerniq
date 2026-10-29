@@ -7,7 +7,16 @@
 <link rel="icon" href="/static/brand/kerniq-tile.svg" type="image/svg+xml"/>
 <script>(function(){var t='dark';try{t=localStorage.getItem('kerniq.theme')||'dark';}catch(e){}var r=t;if(t==='system'){try{r=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}catch(e){r='dark';}}if(r!=='light'&&r!=='dark')r='dark';document.documentElement.dataset.theme=r;document.documentElement.dataset.themeChoice=t==='light'||t==='dark'||t==='system'?t:'dark';var phone=window.matchMedia('(orientation: portrait) and (max-width: 820px)').matches;if(phone){document.documentElement.dataset.phone='1';document.documentElement.dataset.layout='agent';document.documentElement.dataset.tone='agent';}else{document.documentElement.dataset.phone='0';}document.documentElement.dataset.motion='on';document.documentElement.dataset.blur='on';if(!phone){document.documentElement.dataset.layout='editor';document.documentElement.dataset.tone='editor';}})();</script>
 
-<link rel="stylesheet" href="/static/styles.css"/></head><body>
+<link rel="stylesheet" href="/static/styles.css"/>
+<link rel="stylesheet" href="/static/modules/explorer.css"/>
+<link rel="stylesheet" href="/static/modules/editor.css"/>
+<link rel="stylesheet" href="/static/modules/chat.css"/>
+<link rel="stylesheet" href="/static/modules/settings.css"/>
+<link rel="stylesheet" href="/static/modules/overlays.css"/>
+<link rel="stylesheet" href="/static/modules/layout-agent.css"/>
+<link rel="stylesheet" href="/static/modules/theme.css"/>
+<link rel="stylesheet" href="/static/modules/host-freedom.css"/>
+</head><body>
 <div class="topbar">
   <div class="top-left">
   <button type="button" class="icon-btn" id="btn-settings-back" data-i18n-title="back" title="Back" aria-label="Back">
@@ -135,7 +144,7 @@
       </div>
       <div class="scard tabp" id="tab-agent">
         <h2 data-i18n="agentSettings">Agent settings</h2>
-        <div class="field"><label class="lbl"><span data-i18n="workspace">Workspace</span><span class="info-tip" tabindex="0" data-tip="Working directory for file tools. Type a path or use Browse.">i</span></label>
+        <div class="field" id="workspace-field"><label class="lbl"><span data-i18n="workspace">Workspace</span><span class="info-tip" tabindex="0" data-tip="Working directory for file tools. Type a path or use Browse.">i</span></label>
           <div class="row">
             <input id="s-workspace" placeholder="./workspace" style="flex:1"/>
             <button class="ghost" type="button" id="btn-pick-ws" data-i18n="browse">Browse…</button>
@@ -161,6 +170,13 @@
         <div class="field"><label class="lbl"><span data-i18n="undoSize">Undo history size</span><span class="info-tip" tabindex="0" data-tip="How many editor actions to keep for Undo (edits, open, close).">i</span></label>
           <input type="number" id="s-undo-size" min="10" max="1000" step="1" placeholder="100"/>
         </div>
+        </div>
+        <div class="field field-check" id="host-freedom-field">
+          <label class="check-line">
+            <input type="checkbox" id="s-host-freedom" class="soft-check"/>
+            <span data-i18n="hostFreedom">Allow host paths and privileged commands</span>
+            <span class="info-tip" tabindex="0" data-tip="Off by default. The agent only sees ./workspace and ./attachments. On: it may use real paths and privileged commands. Server mode never offers this. Turning it on asks you to wait 5 seconds.">i</span>
+          </label>
         </div>
       </div>
       <div class="scard tabp" id="tab-api" style="display:none">
@@ -202,6 +218,20 @@
             <option value="unload_busy" data-i18n="unloadWorkingAndLoad">Unload the working model and load</option>
             <option value="notify" data-i18n="notifyModelBusy" selected>Show a busy notification</option>
           </select>
+        </div>
+        <div class="field" id="model-sort-field">
+          <label class="lbl"><span data-i18n="sortModels">Sort models</span><span class="info-tip" tabindex="0" data-tip="Saved with settings. Name, parameter count, or context length.">i</span></label>
+          <div class="row">
+            <select id="s-model-sort" class="fit">
+              <option value="name" data-i18n="sortByName">Name</option>
+              <option value="params" data-i18n="sortByParams">Parameters</option>
+              <option value="context" data-i18n="sortByContext">Context length</option>
+            </select>
+            <select id="s-model-sort-dir" class="fit">
+              <option value="asc" data-i18n="sortAsc">Ascending</option>
+              <option value="desc" data-i18n="sortDesc">Descending</option>
+            </select>
+          </div>
         </div>
         <div class="field-grid">
         <div class="field"><label class="lbl"><span data-i18n="temperature">Temperature</span><span class="info-tip" tabindex="0" data-i18n-tip="tempTip" data-tip="Higher temperature makes replies more varied. Lower keeps them closer to the most likely wording. Default is 0.7.">i</span></label><input type="number" id="s-api-temp" step="0.05" min="0" max="2" placeholder="0.7"/></div>
@@ -249,7 +279,7 @@
             <span class="info-tip" tabindex="0" data-tip="Show a system note when the model finishes with an empty message.">i</span>
           </label>
         </div>
-        <div class="field field-check">
+        <div class="field field-check" id="developer-mode-field">
           <label class="check-line">
             <input type="checkbox" id="s-chat-debug" class="soft-check"/>
             <span data-i18n="developerMode">Developer mode</span>
@@ -609,6 +639,19 @@ Its options show up here.</div></div>
 <input type="file" id="photo-picker" accept="image/png,image/jpeg,image/gif,image/webp,.bmp" multiple style="display:none"/>
 <input type="file" id="folder-picker" webkitdirectory directory multiple style="display:none"/>
 
+<div class="hf-modal" id="host-freedom-modal">
+  <div class="hf-card" role="dialog" aria-modal="true" aria-labelledby="hf-title">
+    <h3 id="hf-title">Allow the agent out of its folder?</h3>
+    <p class="hf-warn">This is off by default, and it does not exist in server mode.</p>
+    <p>The agent will be able to see real paths and run privileged commands, including sudo, network tools, and system tools. It can read and change files outside ./workspace, install software, and disrupt this computer.</p>
+    <p>Kerniq still blocks the obvious ways to wipe a disk, delete the operating system, or shut the machine down. That is not a sandbox. A script the agent writes can still do damage.</p>
+    <div class="hf-actions">
+      <button type="button" class="ghost" id="hf-cancel">Cancel</button>
+      <button type="button" id="hf-confirm" disabled>Confirm <span id="hf-count">5</span></button>
+    </div>
+  </div>
+</div>
+<script src="/static/modules/host-freedom.js"></script>
 <script src="/static/vendor/prism.min.js"></script>
 <script src="/static/vendor/prism-markup.min.js"></script>
 <script src="/static/vendor/prism-css.min.js"></script>
@@ -627,5 +670,10 @@ Its options show up here.</div></div>
 <script src="/static/vendor/prism-c.min.js"></script>
 <script src="/static/vendor/prism-cpp.min.js"></script>
 <script src="/static/vendor/prism-csharp.min.js"></script>
-<script src="/static/app.js"></script>
+<script src="/static/modules/ui-core.js"></script>
+<script src="/static/modules/ui-editor.js"></script>
+<script src="/static/modules/ui-chat.js"></script>
+<script src="/static/modules/ui-settings.js"></script>
+<script src="/static/modules/ui-layout.js"></script>
+<script src="/static/modules/ui-shell.js"></script>
 </body></html>

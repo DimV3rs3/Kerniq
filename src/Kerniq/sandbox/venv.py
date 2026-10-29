@@ -226,35 +226,76 @@ def install_guard(python: Path) -> None:
         logger.warning("Sandbox guard was not installed: %s", exc)
 
 
-def apply_sandbox_env(env: dict, workspace: Path, *, external_roots: list | None = None) -> dict:
+def apply_sandbox_env(
+    env: dict,
+    workspace: Path,
+    *,
+    external_roots: list | None = None,
+    confine: bool = True,
+    visible_roots: list | None = None,
+) -> dict:
     """Point python/pip at the workspace sandbox and hide the computer's PATH.
 
     The shell can use the private venv. It cannot see dotnet, node, cmd, or
     anything else installed on the machine. ``external_roots`` are attached
-    folders the script may read but must not modify.
+    folders the script may read but must not modify. When ``confine`` is set,
+    Python itself may not open paths outside ``visible_roots``.
     """
     python = ensure_sandbox_python(workspace)
-    if python is None:
-        return env
-    install_guard(python)
     out = dict(env)
-    bindir = python.parent.resolve()
-    venv_root = bindir.parent
-    out["VIRTUAL_ENV"] = str(venv_root)
-    out.pop("PYTHONHOME", None)
-    parts = [str(bindir)]
-    if os.name == "nt":
-        parts.append(str(venv_root))
-    out["PATH"] = os.pathsep.join(parts)
-    out["PYTHONNOUSERSITE"] = "1"
-    out["PYTHONSAFEPATH"] = "1"
-    out.pop("PYTHONPATH", None)
-    out.pop("PYTHONSTARTUP", None)
-    out["KERNIQ_SANDBOX"] = str(venv_root)
+    if python is None:
+        _install_loose_guard(workspace)
+        guard = Path(workspace) / ".kerniq-guard"
+        if (guard / "sitecustomize.py").is_file():
+            out["PYTHONPATH"] = str(guard.resolve())
+            out.pop("PYTHONSAFEPATH", None)
+            out["PYTHONNOUSERSITE"] = "1"
+    else:
+        install_guard(python)
+        bindir = python.parent.resolve()
+        venv_root = bindir.parent
+        out["VIRTUAL_ENV"] = str(venv_root)
+        out.pop("PYTHONHOME", None)
+        parts = [str(bindir)]
+        if os.name == "nt":
+            parts.append(str(venv_root))
+        out["PATH"] = os.pathsep.join(parts)
+        out["PYTHONNOUSERSITE"] = "1"
+        out["PYTHONSAFEPATH"] = "1"
+        out.pop("PYTHONPATH", None)
+        out.pop("PYTHONSTARTUP", None)
+        out["KERNIQ_SANDBOX"] = str(venv_root)
     roots = [str(item) for item in (external_roots or []) if str(item).strip()]
     if roots:
         out["KERNIQ_EXTERNAL_RO"] = os.pathsep.join(roots)
     else:
         out.pop("KERNIQ_EXTERNAL_RO", None)
+    if confine:
+        visible = []
+        for item in list(visible_roots or []) + [workspace]:
+            text = str(item or "").strip()
+            if text and text not in visible:
+                visible.append(text)
+        out["KERNIQ_CONFINE"] = "1"
+        out["KERNIQ_VISIBLE"] = os.pathsep.join(visible)
+    else:
+        out.pop("KERNIQ_CONFINE", None)
+        out.pop("KERNIQ_VISIBLE", None)
     return out
+
+
+def _install_loose_guard(workspace: Path) -> None:
+    """Drop a sitecustomize next to the workspace when no venv could be built."""
+    from Kerniq.sandbox.guard import sitecustomize_source
+
+    guard = Path(workspace) / ".kerniq-guard"
+    try:
+        guard.mkdir(parents=True, exist_ok=True)
+        dest = guard / "sitecustomize.py"
+        text = sitecustomize_source()
+        if dest.is_file() and dest.read_text(encoding="utf-8") == text:
+            return
+        dest.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Python guard was not installed: %s", exc)
 

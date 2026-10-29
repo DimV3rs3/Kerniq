@@ -97,7 +97,7 @@ def load_all_tools(
             if enabled_packs is not None and pack.pack_id not in enabled_packs:
                 continue
             kwargs: Dict[str, Any] = {}
-            if pack.pack_id == "terminal" and policy is not None:
+            if policy is not None and pack.pack_id in {"terminal", "filesystem"}:
                 kwargs["policy"] = policy
             for t in pack.create_tools(workspace, **kwargs):
                 # tag pack metadata if missing

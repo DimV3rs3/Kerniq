@@ -72,8 +72,11 @@ def load_server_settings(state_dir: Path | str, config: Any = None) -> dict[str,
         "api_key": "",
         "lan_access": False,
         "users_root": "",
+        "users_roots": [],
         "user_quota_bytes": 8 * 1024 * 1024 * 1024,
         "model_base_url": "http://127.0.0.1:1234",
+        "debug_enabled": False,
+        "debug_token": "",
     }
     server = getattr(config, "server", None) if config is not None else None
     if server is not None:
@@ -109,8 +112,15 @@ def load_server_settings(state_dir: Path | str, config: Any = None) -> dict[str,
         out["api_key"] = _secret(root, str(raw.get("api_key")))
     if raw.get("users_root"):
         out["users_root"] = str(raw.get("users_root"))
+    extras = raw.get("users_roots")
+    if isinstance(extras, list):
+        out["users_roots"] = [str(item) for item in extras if str(item or "").strip()]
     if raw.get("model_base_url"):
         out["model_base_url"] = str(raw.get("model_base_url"))
+    if "debug_enabled" in raw:
+        out["debug_enabled"] = bool(raw.get("debug_enabled"))
+    if raw.get("debug_token"):
+        out["debug_token"] = _secret(root, str(raw.get("debug_token")))
     if raw.get("user_quota_bytes"):
         try:
             out["user_quota_bytes"] = int(raw.get("user_quota_bytes"))
@@ -142,7 +152,8 @@ def save_server_settings(state_dir: Path | str, values: dict[str, Any]) -> dict[
     current = load_server_settings(root)
     for key in (
         "enabled", "host", "port", "database_url", "api_key", "lan_access",
-        "users_root", "user_quota_bytes", "model_base_url",
+        "users_root", "users_roots", "user_quota_bytes", "model_base_url",
+        "debug_enabled", "debug_token",
     ):
         if key in values and values[key] is not None:
             current[key] = values[key]
@@ -158,15 +169,24 @@ def save_server_settings(state_dir: Path | str, values: dict[str, Any]) -> dict[
     current["lan_access"] = bool(current.get("lan_access"))
     current["host"] = str(current.get("host") or "127.0.0.1")
     current["users_root"] = str(current.get("users_root") or "")
+    roots = current.get("users_roots")
+    if not isinstance(roots, list):
+        roots = []
+    current["users_roots"] = [str(item) for item in roots if str(item or "").strip()]
     current["model_base_url"] = str(current.get("model_base_url") or "http://127.0.0.1:1234")
+    current["debug_enabled"] = bool(current.get("debug_enabled"))
+    current["debug_token"] = str(current.get("debug_token") or "")
     stored = {
         "enabled": current["enabled"],
         "host": current["host"],
         "port": current["port"],
         "lan_access": current["lan_access"],
         "users_root": current["users_root"],
+        "users_roots": current["users_roots"],
         "user_quota_bytes": current["user_quota_bytes"],
         "model_base_url": current["model_base_url"],
+        "debug_enabled": current["debug_enabled"],
+        "debug_token": _seal(root, current["debug_token"]),
         "database_url": _seal(root, str(current.get("database_url") or "")),
         "api_key": _seal(root, str(current.get("api_key") or "")),
     }

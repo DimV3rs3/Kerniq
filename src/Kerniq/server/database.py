@@ -115,15 +115,23 @@ def provision_mysql(*, host: str, port: int, user: str, password: str, name: str
 
 
 def init_server_database(state_dir) -> int:
-    """Ask which supported database to use. Safe to call when stdin is not a TTY."""
-    import getpass
+    """Ask for storage, the UI port, user folders, and an optional Linux account."""
     import sys
-
-    from .settings import JSON_STORAGE_WARNING, save_server_settings
 
     if not sys.stdin.isatty():
         print("Server setup needs a terminal. Run: kerniq server init")
         return 0
+    code = _ask_database(state_dir)
+    layout = ask_server_layout(state_dir)
+    return code or layout
+
+
+def _ask_database(state_dir) -> int:
+    """Ask which supported database to use."""
+    import getpass
+
+    from .settings import JSON_STORAGE_WARNING, save_server_settings
+
     engines = scan_engines()
     supported = [row for row in engines if row.get("supported")]
     dropped = [row for row in engines if not row.get("supported")]
@@ -170,5 +178,87 @@ def init_server_database(state_dir) -> int:
         print(result.get("error") or "Database was not created.")
         return 1
     save_server_settings(state_dir, {"database_url": result["url"], "enabled": True})
-    print(f"Database {name} is ready. Restart the Web UI so new chats use it.")
+    print(f"Database {name} is ready.")
+    return 0
+
+
+def _yes(prompt: str, default_yes: bool) -> bool:
+    hint = "Y/n" if default_yes else "y/N"
+    answer = input(f"{prompt} [{hint}]: ").strip().lower()
+    if not answer:
+        return default_yes
+    return answer in {"y", "yes", "1", "true"}
+
+
+def ask_server_layout(state_dir) -> int:
+    """Port, user-folder roots, and the optional service account."""
+    from pathlib import Path
+
+    from .account import offer_service_user
+    from .homes import assert_users_root
+    from .settings import load_server_settings, save_server_settings
+    from Kerniq.settings.component_store import ComponentSettingsStore
+
+    current = load_server_settings(state_dir)
+    default_port = int(current.get("port") or 8765)
+    port_text = input(f"UI port [{default_port}]: ").strip() or str(default_port)
+    try:
+        port = int(port_text)
+    except ValueError:
+        print("Port must be a number.")
+        return 1
+    if not 1 <= port <= 65535:
+        print("Port must be from 1 to 65535.")
+        return 1
+    suggested = str(current.get("users_root") or "")
+    hint = suggested or str(Path("workspace").resolve())
+    print("User folders hold one directory per browser. Each has workspace/ and attachments/.")
+    primary_text = input(f"Folder for user workspaces [{hint}]: ").strip() or hint
+    try:
+        primary = assert_users_root(primary_text)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    extras: list[str] = []
+    print("Extra disks for the same folders. Empty line finishes. An existing user stays on the disk that already has them.")
+    while True:
+        extra = input("Another disk folder (empty to stop): ").strip()
+        if not extra:
+            break
+        try:
+            folder = assert_users_root(extra)
+        except ValueError as exc:
+            print(str(exc))
+            continue
+        if folder == primary or str(folder) in extras:
+            print("That folder is already in the list.")
+            continue
+        extras.append(str(folder))
+    save_server_settings(
+        state_dir,
+        {
+            "enabled": True,
+            "host": "0.0.0.0",
+            "port": port,
+            "lan_access": True,
+            "users_root": str(primary),
+            "users_roots": extras,
+        },
+    )
+    store = ComponentSettingsStore(state_dir)
+    plugin = store.load("plugin", "plugin_web_ui")
+    plugin["port"] = port
+    plugin["host"] = "0.0.0.0"
+    plugin["server_mode"] = True
+    plugin["lan_access"] = True
+    store.save("plugin", "plugin_web_ui", plugin)
+    print(f"UI port {port}. User folders: {primary}")
+    if extras:
+        print("Also: " + ", ".join(extras))
+    create_user = _yes("Create a Linux user named kerniq", True)
+    superuser = False
+    if create_user:
+        superuser = _yes("Give that user superuser rights", False)
+    offer_service_user(create=create_user, superuser=superuser)
+    print("Restart the Web UI so these answers apply.")
     return 0

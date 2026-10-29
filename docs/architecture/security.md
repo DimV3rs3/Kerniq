@@ -16,6 +16,11 @@ workspace.
 `strict_attachments` (off by default) limits file tools to `allowed_files` on
 the current task.
 
+The model is not given the real workspace path. Tool results are rewritten to
+`./workspace` and `./attachments` before they are added to the transcript.
+That rewrite runs on Linux, macOS, and Windows, whether or not server mode is
+on.
+
 ## 2. Terminal policy
 
 `run_command` is critical risk. Without an approval provider the call is
@@ -25,14 +30,23 @@ denied. The shell string is still checked after approval:
 - PowerShell `-EncodedCommand` / `Invoke-Expression` and a few obfuscation forms
 - a configurable denylist, matched after quotes and spaces are folded
 - outbound network utilities unless `security.allow_terminal_network = true`
+- privileged and host-inspection commands (`sudo`, `iptables`, `ip`, `ss`,
+  `systemctl`, `id`, `uname`, and the Windows equivalents), including when
+  they are hidden behind `command`, `exec`, `nice`, or `busybox`
+
+Host freedom, described in section 6, is the only desktop switch that relaxes
+path and privilege checks. It is off by default and does not exist in server
+mode.
 
 On Linux the command is still a shell (`bash -c` equivalent via
 `create_subprocess_shell`) because pipelines are part of the coding workflow.
 A blacklist cannot see a path built at runtime inside `python -c` or similar.
-That remaining hole is accepted and documented; it is not closed by substring
-filters. Credential-like environment variables are removed from the child
-environment. A timeout kills the process. The exit code is returned as an error
-when it is non-zero.
+Inline eval is denied. A script file is the allowed path, and the Python
+guard refuses to open paths outside the visible folders when confinement is
+on. That remaining hole (a program that skips Python's own APIs) is accepted
+and documented; it is not closed by substring filters. Credential-like
+environment variables are removed from the child environment. A timeout kills
+the process. The exit code is returned as an error when it is non-zero.
 
 ## 3. Risk and approval
 
@@ -62,7 +76,9 @@ A symlink inside the workspace that points outside blocks `run_command` until
 it is removed. Filesystem tools already refuse to follow such a link.
 
 What remains: a normal `python script.py` runs as the OS user. The shell is
-not a sandbox. Container isolation is still the way to remove that right.
+not a sandbox. The Python guard blocks `open`, `listdir`, and `subprocess`
+outside the visible folders, but it cannot stop a module that uses raw
+syscalls. Container isolation is still the way to remove that right.
 
 ## 4. Secrets and network
 
@@ -77,4 +93,56 @@ Tool results and file contents are passed to the model as the facts of the task.
 They are not wrapped as untrusted data, because that made the model ignore real
 findings. The context compactor still refuses to follow instructions that appear
 inside a transcript, and it keeps tool results as facts. That is a mitigation,
-not a guarantee that a model will ignore a hostile page.
+not a guarantee that a model will ignore a hostile page. Absolute paths that
+survive in those results are still rewritten before the model sees them.
+
+## 6. Confinement and path masking
+
+The model is told the operating system (Linux, Windows, or macOS) and the
+CPU architecture. It is not told the install path, the user name, or the
+real workspace path.
+
+Tool results are rewritten before the model sees them:
+
+- the working directory is `./workspace`
+- files the user attached are `./attachments/<name>`
+- every other absolute path becomes `[outside]` or `[private]`
+
+This happens on Linux, macOS, and Windows, in the desktop app and in server
+mode. In server mode the admin root grows one directory per browser cookie:
+
+```
+<users-root>/<cookie-id>/workspace
+<users-root>/<cookie-id>/attachments
+```
+
+The cookie id is not part of any path the model receives. On the desktop,
+`./attachments` is a mask over the files the user attached. Those files are
+not copied onto a second absolute path in the prompt.
+
+`run_command` refuses host administration by class, not by a copied terminal
+log. The classes are privilege escalation, network administration, host
+identity, services and processes, and disks and hardware. Each class covers
+the Linux command and the Windows command that does the same job, including
+when it is hidden behind `command`, `exec`, `nice`, `busybox`, or `sudo`.
+A Python script started from that shell cannot open paths outside the visible
+folders when the sandbox guard loads.
+
+Host freedom is an agent setting, off by default. The Web UI shows it only
+when server mode is off. Turning it on requires a confirmation that stays
+disabled for 5 seconds. Server mode ignores the setting even if a client
+sends it, and it does not show a developer-mode switch. `kerniq server debug on`
+unlocks developer tools for one admin browser. It does not turn host freedom
+on, and the model still does not learn the real directory. Freedom still
+refuses disk wipes, formatting, shutdown, and writes to operating-system
+files. It is not an operating-system sandbox.
+
+## 7. Updates
+
+`kerniq update` downloads the latest GitHub release and copies it onto the
+project. `kerniq update --check` only reports. `state/`, `sessions/`,
+`logs/`, `workspace/`, user-installed plugins, and language packs that are
+not in the release are left in place. Bundled files, including
+`plugins/web_ui/languages/ru.json`, are updated. A missing `host_freedom`
+field in an older `state/settings.json` is filled as false the next time
+settings are loaded.

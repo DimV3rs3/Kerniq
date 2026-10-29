@@ -138,7 +138,9 @@ kerniq plugins validate
 kerniq plugins set plugin_web_ui -s port 9000
 kerniq plugins set plugin_web_ui -s host 0.0.0.0 -s server_mode true
 kerniq plugins ui
+kerniq plugins ui --background
 kerniq plugins ui --host 127.0.0.1 --port 8765
+# Linux, from the project: scripts/kerniq-ui.sh
 ```
 
 | Action | Meaning |
@@ -150,7 +152,7 @@ kerniq plugins ui --host 127.0.0.1 --port 8765
 | `remove ID --yes` | Deletes an installed add-on. The Web UI, Context Compact, and the Plugin Manager stay. |
 | `validate` | Writes missing plugin defaults and replaces values the schema rejects. Then loads every plugin. Exit `1` if a plugin failed to load. |
 | `set PLUGIN_ID -s NAME VALUE` | Saves one or more settings for that plugin. Repeat `-s`. An invalid value is refused and nothing from that call is applied. |
-| `ui` | Starts the Web UI and blocks until Ctrl+C. |
+| `ui` | Starts the Web UI and blocks until Ctrl+C. `--background` returns immediately and writes `logs/ui.log`. On Linux, `scripts/kerniq-ui.sh` does the same. |
 
 `plugins ui` flags:
 
@@ -212,6 +214,9 @@ kerniq server show
 kerniq server key
 kerniq server key --rotate
 kerniq server init
+kerniq server debug on
+kerniq server debug off
+kerniq server debug status
 kerniq server db --host 127.0.0.1 --port 3306 --user USER --password PASS --name kerniq
 kerniq server set users-root /var/lib/kerniq/homes
 kerniq server set quota-gb 8
@@ -223,7 +228,9 @@ kerniq server set model-url http://127.0.0.1:1234
 | `show` | Bind address, whether an API key exists, user-folder root, quota, model URL, and `mysql` or `json` storage. Does not print the key. |
 | `key` | Prints the API key a remote console must send. Creates one if it is missing. |
 | `key --rotate` | Replaces the key and prints the new one. Old consoles stop working. |
-| `init` | Asks which database to use and creates it. Kerniq creates the database. |
+| `init` | Asks for the database, the UI port, the user-folder root, extra disks, and whether to create a Linux user named kerniq (yes by default, without superuser rights). |
+| `debug on` | Prints a one-time URL. That browser can see developer tools and the real folder. Host freedom stays off. The model still sees `./workspace`. |
+| `debug off` | Forgets the token. An old unlock cookie stops working. |
 | `db` | Creates a MySQL database from the flags and saves its URL. The password is not printed. Restart the Web UI so chats use it. |
 | `set users-root PATH` | Where new user folders are created. Refuses the disk root and system directories. Existing folders stay where they are. Restart to pick this up. |
 | `set quota-gb N` | Per-user disk limit, from 1 to 10240. No restart required. |
@@ -306,13 +313,21 @@ kerniq update --repo owner/name
 ```
 
 Compares this install with the latest GitHub release of `DimV3rs3/Kerniq`
-(or `--repo`). Prints the release page when a newer version exists.
+(or `--repo`). Without `--check`, a newer release is copied onto this
+project. `state/`, `sessions/`, `logs/`, `workspace/`, plugins you installed,
+and language packs that are not in the release stay. Bundled files, including
+`plugins/web_ui/languages/ru.json`, are updated. Restart Kerniq after it
+finishes.
+
+```bash
+kerniq update --check
+```
 
 | Exit | Meaning |
 |------|---------|
-| `0` | Up to date, or no remote version. |
-| `2` | A newer release exists. The command does not install it. |
-| `1` | GitHub refused the request (authentication). |
+| `0` | Up to date, or the update was applied. |
+| `2` | `--check` only: a newer release exists and was not installed. |
+| `1` | GitHub refused the request, or the update did not apply. |
 
 A private repository needs `GITHUB_TOKEN`.
 

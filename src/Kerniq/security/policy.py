@@ -10,6 +10,16 @@ from ..interfaces.errors import SecurityError, ErrorCode
 from .command_guard import assess_command, blacklist_hit
 
 
+def _alias_hit(path: Path, root: Path) -> bool:
+    if path == root:
+        return True
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def _under_any(path: str, roots: list[str]) -> bool:
     try:
         target = Path(path).resolve()
@@ -47,6 +57,7 @@ _RISK_RANK = {
 _INTRINSIC_RISK = {
     "run_command": RiskLevel.CRITICAL,
     "terminal": RiskLevel.CRITICAL,
+    "download_file": RiskLevel.CRITICAL,
     "delete_file": RiskLevel.HIGH,
     "fs_delete_file": RiskLevel.HIGH,
     "write_file": RiskLevel.MEDIUM,
@@ -85,11 +96,13 @@ class SecurityPolicy:
         require_approval_for_high_risk: bool = True,
         allow_terminal_network: bool = False,
         auto_approve_up_to: RiskLevel | str = RiskLevel.LOW,
+        host_freedom: bool = False,
     ):
         self.workspace_root = Path(workspace_root).resolve()
         self.disallowed_commands = list(disallowed_commands or [])
         self.require_approval_for_high_risk = require_approval_for_high_risk
         self.allow_terminal_network = allow_terminal_network
+        self.host_freedom = bool(host_freedom)
         parsed = _parse_risk(auto_approve_up_to) or RiskLevel.LOW
         raw = str(auto_approve_up_to or "").strip().lower()
         self.bypass_all = raw in ("all", "bypass")
@@ -107,33 +120,40 @@ class SecurityPolicy:
             except PermissionError as exc:
                 raise SecurityError(
                     ErrorCode.PERMISSION_DENIED,
-                    "Path is outside /workspace",
+                    "Path is outside ./workspace",
                 ) from exc
         raw = str(path)
         if "\x00" in raw or raw.startswith("\\\\") or raw.startswith("//"):
             raise SecurityError(
                 ErrorCode.PERMISSION_DENIED,
-                f"Path {path} is outside the workspace root {self.workspace_root}",
+                "Path is outside ./workspace",
             )
         try:
+            from Kerniq.security.pathmask import attachment_aliases, rewrite_model_path
+
+            raw = rewrite_model_path(raw)
             p = Path(raw)
-            if not p.is_absolute():
-                p = (self.workspace_root / p).resolve()
+            if p.is_absolute():
+                resolved = p.expanduser().resolve()
+                allowed = [Path(item).resolve() for item in attachment_aliases().values()]
+                if self.host_freedom or any(_alias_hit(resolved, root) for root in allowed):
+                    return resolved
+                p = resolved
             else:
-                p = p.resolve()
+                p = (self.workspace_root / p).resolve()
             try:
                 p.relative_to(self.workspace_root)
             except ValueError as exc:
                 raise SecurityError(
                     ErrorCode.PERMISSION_DENIED,
-                    f"Path {path} is outside the workspace root {self.workspace_root}",
+                    "Path is outside ./workspace",
                 ) from exc
             return p
         except SecurityError:
             raise
         except Exception as e:
             raise SecurityError(
-                ErrorCode.PERMISSION_DENIED, f"Invalid path: {path}. Error: {e}"
+                ErrorCode.PERMISSION_DENIED, "Path is outside ./workspace"
             ) from e
 
     def resolve_risk(
@@ -166,7 +186,11 @@ class SecurityPolicy:
         return max(candidates, key=lambda item: _RISK_RANK[item])
 
     def terminal_block_reason(self, command: str) -> Optional[str]:
-        verdict = assess_command(command, allow_network=self.allow_terminal_network)
+        verdict = assess_command(
+            command,
+            allow_network=self.allow_terminal_network or self.host_freedom,
+            host_freedom=self.host_freedom,
+        )
         if not verdict.allowed:
             return verdict.reason
         hit = blacklist_hit(command, self.disallowed_commands)

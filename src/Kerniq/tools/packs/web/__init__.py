@@ -6,7 +6,7 @@ from typing import Any, Sequence
 
 from ...pack import ToolPack, pack_resources_dir
 from ....interfaces.tools import Tool
-from .tools import WebSearchTool, FetchUrlTool
+from .tools import DownloadFileTool, FetchUrlTool, WebSearchTool
 
 
 class Pack(ToolPack):
@@ -20,7 +20,7 @@ class Pack(ToolPack):
 
     @property
     def description(self) -> str:
-        return "DuckDuckGo search and HTTP fetch (httpx)"
+        return "DuckDuckGo search, HTTP fetch, and file download (httpx)"
 
     @property
     def category(self) -> str:
@@ -34,4 +34,4 @@ class Pack(ToolPack):
         return pack_resources_dir(__file__)
 
     def create_tools(self, workspace: str, **kwargs: Any) -> Sequence[Tool]:
-        return [WebSearchTool(), FetchUrlTool()]
+        return [WebSearchTool(), FetchUrlTool(), DownloadFileTool(workspace)]

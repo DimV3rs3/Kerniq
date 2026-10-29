@@ -1,0 +1,165 @@
+html[data-server="1"]:not([data-debug="1"]) #top-workspace,
+html[data-server="1"]:not([data-debug="1"]) #workspace-field,
+html[data-server="1"]:not([data-debug="1"]) #developer-mode-field,
+html[data-server="1"] #host-freedom-field { display: none !important; }
+
+/* ---- agent layout: chats | conversation (no editor) ---- */
+.side-chats { display: none; flex: 1; flex-direction: column; min-height: 0; padding: 10px 8px 8px; gap: 8px; }
+html[data-layout="agent"] #explorer > .tree { display: none; }
+html[data-layout="agent"] #explorer > .side-chats { display: flex; }
+.side-new {
+  gap: 8px;
+  justify-content: flex-start;
+  min-height: 34px;
+  padding: 0 12px;
+  border-color: var(--line-strong);
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.side-new svg { flex: none; color: var(--acc); }
+.side-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -2px; padding: 2px; }
+.side-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  margin-bottom: 2px;
+  padding: 0 6px 0 10px;
+  border-radius: var(--r-m);
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.side-item:hover { background: var(--bg-2); color: var(--fg); }
+.side-item.active { background: var(--bg-3); color: var(--fg); }
+.side-item.disabled { opacity: .45; cursor: not-allowed; }
+.side-item.disabled:hover { background: transparent; color: var(--fg-2); }
+.side-ico { flex: none; display: grid; place-items: center; color: var(--muted); }
+.side-item.active .side-ico { color: var(--acc); }
+.side-item .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-item .x {
+  flex: none;
+  display: grid; place-items: center;
+  width: 24px; height: 24px; min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+}
+.side-item:hover .x, .side-item.active .x { opacity: 1; }
+.side-item .x:hover:not(:disabled) { background: var(--bg-4); color: var(--err); border: 0; }
+.side-item .x svg { display: block; }
+
+html[data-layout="agent"] #editor-panel,
+html[data-layout="agent"] #resizer-right,
+html[data-layout="agent"] #btn-toggle-chat,
+html[data-layout="agent"] #chat-hist { display: none !important; }
+html[data-layout="agent"] #chat-panel,
+html[data-layout="agent"] #chat-panel.collapsed {
+  flex: 1 1 0;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  border: 0 !important;
+  background: var(--bg-0);
+}
+html[data-layout="agent"] #chat-panel > h3,
+html[data-layout="agent"] #chat-panel > .msgs-wrap,
+html[data-layout="agent"] #chat-panel > .status-bar,
+html[data-layout="agent"] #chat-panel > .composer,
+html[data-layout="agent"] #chat-panel > #attach-chips { width: auto; min-width: 0; max-width: none; }
+/* keep the conversation in a readable column */
+html[data-layout="agent"] {
+  --col-pad: 22px;
+}
+html[data-layout="agent"] #chat-panel > h3 { padding: 0 var(--col-pad); background: transparent; }
+html[data-layout="agent"] .msgs { padding: calc(18px + var(--plan-h, 0px)) var(--col-pad) 22px; gap: 14px; }
+html[data-layout="agent"] .status-bar { padding: 0 var(--col-pad); }
+html[data-layout="agent"] #attach-chips { padding: 0 var(--col-pad) 6px; }
+html[data-layout="agent"] .composer { padding: 0 var(--col-pad) 18px; }
+html[data-layout="agent"] .plan-float { left: var(--col-pad); right: var(--col-pad); }
+html[data-layout="agent"] .scroll-bottom { right: 22px; }
+
+
+/* icon-only buttons: the base button's gap would push a lone icon off-centre next to its empty text node */
+.icon-btn, .icon-tool, #btn-attach.composer-plus, #btn-action, .scroll-bottom, #nav-settings, .modal-x, .combo-arrow { gap: 0; }
+
+/* close / chevron glyphs are drawn, not typed: a "×" character sits on the text baseline and looks off-centre */
+:root {
+  --i-chev-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.tab .x, .chat-hist .h .x, .attach-chip b, .modal-x, .lang-row button, .combo-arrow {
+  font-size: 0 !important;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+.tab .x::before, .chat-hist .h .x::before, .attach-chip b::before, .modal-x::before, .lang-row button::before {
+  content: "";
+  width: 11px; height: 11px;
+  background: currentColor;
+  -webkit-mask: var(--i-close) center / contain no-repeat;
+          mask: var(--i-close) center / contain no-repeat;
+}
+.modal-x::before { width: 13px; height: 13px; }
+.combo-arrow::before {
+  content: "";
+  width: 12px; height: 12px;
+  background: currentColor;
+  -webkit-mask: var(--i-chev-down) center / contain no-repeat;
+          mask: var(--i-chev-down) center / contain no-repeat;
+}
+.lang-row button { min-width: 28px; padding: 0 8px; }
+
+/* ---- layout transition (editor <-> agent): widths are driven by JS, contents are pinned ---- */
+#view-main.layout-anim #explorer,
+#view-main.layout-anim #chat-panel,
+#view-main.layout-anim #editor-panel {
+  display: flex !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+  border-width: 0 !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  overflow: hidden;
+  will-change: width;
+}
+#view-main.layout-anim .resizer { display: none !important; }
+#view-main.layout-anim .pin > * {
+  width: var(--pin) !important;
+  min-width: var(--pin) !important;
+  max-width: var(--pin) !important;
+  flex-shrink: 0 !important;
+}
+#view-main.layout-anim.keep-tree #explorer > .tree { display: block !important; }
+#view-main.layout-anim.keep-tree #explorer > .side-chats { display: none !important; }
+#view-main.layout-anim.keep-chats #explorer > .tree { display: none !important; }
+#view-main.layout-anim.keep-chats #explorer > .side-chats { display: flex !important; }
+#view-main.layout-anim.reveal-editor #editor-panel { z-index: 1; }
+#view-main.layout-anim.reveal-editor #chat-panel {
+  z-index: 3;
+  position: relative;
+  background: var(--bg-0);
+}
+#view-main.layout-anim.reveal-editor .editor-mark {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(240px, 30vw);
+  transform: translate(-50%, -50%);
+  opacity: 0.72;
+  z-index: 2;
+  display: block !important;
+}
+#view-main.layout-settle #explorer, #view-main.layout-settle #chat-panel, #view-main.layout-settle #editor-panel { transition: none !important; }
+.resizer.at-limit::after { background: var(--plan); opacity: 1; }
+
+/* the plan floats above the messages: reserve its height so scrolling to the top never hides a prompt behind it */
+.msgs-wrap { --plan-h: 0px; }
+

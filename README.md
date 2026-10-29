@@ -1,8 +1,8 @@
-# Kerniq 0.1.7
+# Kerniq 0.1.8
 
 Kerniq is a local-first platform for AI agents. One process takes a task, asks a model, runs the tools that model requests, and keeps the session. The same loop is used by the command line, the Web UI, and the MCP server. A model provider or a plugin is an adapter. It is not a second copy of the loop.
 
-File tools may touch only the workspace you set. `run_command` is not an operating-system sandbox: the process has the rights of the user who started Kerniq. Approvals, limits, and the workspace boundary are described in [docs/architecture/security.md](docs/architecture/security.md).
+File tools may touch only the workspace you set. The model is shown `./workspace` and `./attachments`, never the real directory, on Linux, Windows, and macOS, including when server mode is off. `run_command` is not an operating-system sandbox: by default it cannot use sudo, inspect the host, or leave those folders. A desktop agent setting, off by default, can allow real paths and privileged commands after a 5-second confirmation. Server mode does not offer that setting. It still refuses disk wipes, formatting, and shutdown. Approvals and limits are described in [docs/architecture/security.md](docs/architecture/security.md).
 
 ## What it does
 
@@ -73,7 +73,7 @@ Stop the UI from the status bar, or with Ctrl+C in the terminal that started it.
 
 ## Commands
 
-`kerniq` and `python -m Kerniq` are the same program after install. `kerniq --help` prints the command list. `kerniq --version` prints `0.1.7`. Every flag is in [docs/cli.md](docs/cli.md).
+`kerniq` and `python -m Kerniq` are the same program after install. `kerniq --help` prints the command list. `kerniq --version` prints `0.1.8`. Every flag is in [docs/cli.md](docs/cli.md).
 
 | Command | What it does |
 |---------|----------------|
@@ -139,7 +139,7 @@ kerniq server key
 
 - The site sets a cookie that is only a user id. A browser without a cookie becomes a new user.
 - Chat, model, and interface settings stay in that browser. The API key is encrypted in the browser. The server does not store it and does not send a saved key back.
-- Each user gets a workspace they cannot leave. Paths are shown as `/workspace`. Another user's files are not on that tree.
+- Each user gets a private folder under the admin root: `workspace/` and `attachments/`. The model is shown `./workspace` and `./attachments`, never the cookie id and never a disk path. The browser still addresses that folder as `/workspace`.
 - Right-click download (a file, a folder as a zip, or the open directory when the click is on empty space) exists only in server mode. "Show in explorer" and Browse are not shown there.
 - MySQL is optional. Without it, chats stay in JSON and Kerniq says so on every start. `kerniq server init` creates the database when you want one.
 - When the site listens on `0.0.0.0`, Kerniq prints every LAN address. `127.0.0.1` is the server itself. Private addresses work only on the same network. If the page does not load, allow that TCP port in the host firewall and in the cloud security group.
@@ -171,7 +171,7 @@ Uninstall resets settings, `sessions/`, `logs/`, and `state/`, then removes only
 ## Documentation
 
 - [docs/cli.md](docs/cli.md) — every command and flag
-- [RELEASE_NOTES.md](RELEASE_NOTES.md) — what changed in 0.1.7
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) — what changed in 0.1.8
 - [docs/architecture/overview.md](docs/architecture/overview.md) — how the pieces fit
 - [docs/architecture/security.md](docs/architecture/security.md) — workspace and approvals
 - [docs/plugins/development.md](docs/plugins/development.md) — writing a plugin

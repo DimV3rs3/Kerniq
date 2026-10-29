@@ -74,6 +74,8 @@ class AgentRuntimeSettings(BaseModel):
     undo_history_size: int = 100
     # How many identical replies / tool repeats to allow before loop protection stops.
     loop_retries: int = 4
+    # Desktop only. Server mode ignores this. Default off.
+    host_freedom: bool = False
 
 
 class ApiModelSettings(BaseModel):
@@ -86,11 +88,14 @@ class ApiModelSettings(BaseModel):
     api_token: str = ""  # not written to logs
     binary_path: str = ""  # Claude Code CLI path
     temperature: Optional[float] = 0.7
-    max_tokens: Optional[int] = None  # null = auto/max
+    max_tokens: Optional[int] = None  # null = auto: the loaded model's context window
     # Off: ask before loading next to another model. On: apply model_load_action.
     auto_model_load: bool = False
     # alongside | unload_idle | unload_busy | notify. Used only when auto is on.
     model_load_action: str = "notify"
+    # Model list order. Saved so a long catalog does not have to be sorted again.
+    model_sort: str = "name"  # name | params | context
+    model_sort_dir: str = "asc"  # asc | desc
     # Editable per-provider notes. Catalog text is only the initial value.
     provider_descriptions: Dict[str, str] = Field(default_factory=dict)
 
@@ -142,6 +147,7 @@ class InterfaceSettings(BaseModel):
 
 
 class UiSettings(BaseModel):
+    schema_version: int = 1
     chat: ChatSettings = Field(default_factory=ChatSettings)
     agent: AgentRuntimeSettings = Field(default_factory=AgentRuntimeSettings)
     api: ApiModelSettings = Field(default_factory=ApiModelSettings)

@@ -35,4 +35,4 @@ class Pack(ToolPack):
         return pack_resources_dir(__file__)
 
     def create_tools(self, workspace: str, **kwargs: Any) -> Sequence[Tool]:
-        return FileSystemTools(workspace).get_tools()
+        return FileSystemTools(workspace, policy=kwargs.get("policy")).get_tools()

@@ -31,9 +31,12 @@ def test_two_users_cannot_see_each_other(tmp_path):
     token = bind_jail(one)
     try:
         inside = logical_path("/workspace/notes/a.txt", one)
-        assert inside == (one / "notes" / "a.txt").resolve()
-        assert display_path(inside) == "/workspace/notes/a.txt"
-        assert display_path(one) == "/workspace"
+        assert inside == (one / "workspace" / "notes" / "a.txt").resolve()
+        assert display_path(inside) == "./workspace/notes/a.txt"
+        assert display_path(one / "workspace") == "./workspace"
+        assert logical_path("./attachments/pic.png", one) == (one / "attachments" / "pic.png").resolve()
+        assert display_path(one / "attachments" / "pic.png") == "./attachments/pic.png"
+        assert str(one) not in display_path(inside)
         with pytest.raises(PermissionError):
             logical_path(str(two / "secret.txt"), one)
         with pytest.raises(PermissionError):
@@ -50,7 +53,7 @@ def test_symlink_cannot_leave_the_user_folder(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.txt").write_text("hidden", encoding="utf-8")
-    (home / "link").symlink_to(outside)
+    (home / "workspace" / "link").symlink_to(outside)
     with pytest.raises(PermissionError):
         logical_path("/workspace/link/secret.txt", home)
     with pytest.raises(PermissionError):
@@ -140,7 +143,8 @@ def test_default_user_folders_live_in_the_project_workspace(tmp_path, monkeypatc
     legacy.mkdir(parents=True)
     (legacy / "keep.txt").write_text("kept", encoding="utf-8")
     moved = user_home(tmp_path / "state", "e" * 32, {})
-    assert (moved / "keep.txt").read_text(encoding="utf-8") == "kept"
+    assert (moved / "workspace" / "keep.txt").read_text(encoding="utf-8") == "kept"
+    assert (moved / "attachments").is_dir()
     assert moved.parent == (project / "workspace").resolve()
 
 

@@ -161,13 +161,14 @@ def compose_system_prompt(
     mode: str = "act",
     plan_handoff: bool = False,
     compose_plan: bool = False,
+    host_freedom: bool = False,
 ) -> str:
     """Identity first, then the operator prompt, then operational rules."""
     parts = [KERNIQ_IDENTITY]
     custom = (user_prompt or "").strip()
     if custom and custom != KERNIQ_IDENTITY:
         parts.append(custom)
-    parts.append(host_shell_hint())
+    parts.append(host_shell_hint(host_freedom=host_freedom))
     parts.append(language_instruction(lang))
     parts.append(
         f"When the user request is fully answered and no more tool calls are needed, "
@@ -192,19 +193,48 @@ def compose_system_prompt(
 
 
 
-def host_shell_hint() -> str:
+def host_shell_hint(*, host_freedom: bool = False) -> str:
     system = platform.system().lower()
+    arch = platform.machine() or "unknown"
     if system == "windows":
+        os_name = "Windows"
+        shell = "PowerShell"
+    elif system == "darwin":
+        os_name = "macOS"
+        shell = "a POSIX shell"
+    else:
+        os_name = "Linux"
+        shell = "bash"
+    if host_freedom:
         return (
-            "Host OS: Windows. The run_command tool executes in PowerShell "
-            "(not cmd.exe). Prefer PowerShell syntax: Get-Date, Get-ChildItem. "
-            "Absolute paths (C:\\...), UNC, '..', -EncodedCommand, and network cmdlets are denied."
+            f"Host OS: {os_name}. Architecture: {arch}. run_command uses {shell}. "
+            "Host freedom is on for this desktop session. Absolute paths and privileged "
+            "commands are allowed. You still must not destroy the operating system or "
+            "required system files: do not format disks, wipe devices, remove the "
+            "filesystem root, shut the machine down, or overwrite boot files and account databases."
         )
-    if system == "darwin":
-        return "Host OS: macOS. The run_command tool executes in a POSIX shell (bash/zsh)."
+    try:
+        from Kerniq.server.homes import jail_root
+
+        private = jail_root() is not None
+    except Exception:
+        private = False
+    if private:
+        place = (
+            "The shell starts in a private directory that contains only ./workspace and ./attachments. "
+            "Work in those folders. Do not try to learn the real directory."
+        )
+    else:
+        place = (
+            "The shell's current directory is ./workspace. "
+            "Files the user attached are ./attachments/<name> and are opened with file tools. "
+            "Do not try to learn the real directory."
+        )
     return (
-        "Host OS: Linux. The run_command tool executes in bash/sh. "
-        "Absolute paths, UNC, '..', and encoded commands are denied."
+        f"Host OS: {os_name}. Architecture: {arch}. run_command uses {shell}. "
+        f"{place} "
+        "Do not use absolute paths, drive letters, '..', sudo or other privileged commands, "
+        "or commands that inspect the host (network, users, services, hardware, processes, or environment)."
     )
 
 
@@ -254,6 +284,7 @@ class Agent:
         external_files: Optional[list] = None,
         external_read_only: bool = True,
         image_paths: Optional[List[str]] = None,
+        attachment_aliases: Optional[dict] = None,
     ) -> str:
         sys_from_task = None
         user_task = task or ""
@@ -300,6 +331,10 @@ class Agent:
         if external_files:
             context.metadata["external_files"] = [str(item) for item in external_files if item]
         context.metadata["external_read_only"] = bool(external_read_only)
+        if attachment_aliases:
+            context.metadata["attachment_aliases"] = {
+                str(key): str(value) for key, value in attachment_aliases.items() if key and value
+            }
         records = []
         sees = False
         try:
@@ -335,12 +370,14 @@ class Agent:
 
         lang = response_language if response_language is not None else self.response_language
         compose_plan = bool(getattr(self.orchestrator, "compose_plan", False))
+        freedom = bool(getattr(getattr(self.orchestrator, "security_policy", None), "host_freedom", False))
         sys_text = compose_system_prompt(
             sys_text,
             lang=lang,
             mode=mode,
             plan_handoff=bool(plan_handoff),
             compose_plan=compose_plan and bool(plan_gate),
+            host_freedom=freedom,
         )
 
         if sys_text:

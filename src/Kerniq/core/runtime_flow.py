@@ -57,7 +57,11 @@ def compose_plan_allowed(registry) -> bool:
 
 
 def apply_runtime(orchestrator, ui) -> None:
-    """Copy agent/api/chat limits onto the orchestrator. None max_tokens means no cap."""
+    """Copy agent/api/chat limits onto the orchestrator.
+
+    ``max_tokens`` is not raised here. ``clamp_output_tokens`` applies the
+    model window once that window is known.
+    """
     agent = ui.agent
     api = ui.api
     chat = ui.chat
@@ -82,6 +86,27 @@ def apply_runtime(orchestrator, ui) -> None:
     )
 
 
+def clamp_output_tokens(requested, context_limit: int):
+    """Cap a reply at the model window.
+
+    Empty or auto (``None``) becomes that window when it is known.
+    A number the user typed is kept, but never above the window.
+    Unknown window: a typed number stays, auto stays unset.
+    """
+    limit = int(context_limit or 0)
+    if requested is None or requested == "":
+        return limit or None
+    try:
+        value = int(requested)
+    except (TypeError, ValueError):
+        return limit or None
+    if value < 1:
+        value = 1
+    if limit > 0 and value > limit:
+        value = limit
+    return value
+
+
 async def probe_context_limit(provider, model: str) -> int:
     want = (model or "").strip()
     try:
@@ -89,9 +114,10 @@ async def probe_context_limit(provider, model: str) -> int:
     except Exception:
         return 0
     loaded_fallback = 0
+    catalog_fallback = 0
     for item in models or []:
         mid = str(item.get("id") or item.get("key") or "")
-        if "embed" in mid.lower():
+        if "embed" in mid.lower() or "rerank" in mid.lower():
             continue
         limit = (
             item.get("loaded_context_length")
@@ -99,17 +125,20 @@ async def probe_context_limit(provider, model: str) -> int:
             or item.get("max_context_length")
             or item.get("context")
         )
-        if item.get("loaded_context_length"):
-            loaded_fallback = int(item["loaded_context_length"])
         if not limit:
             continue
+        loaded = bool(item.get("loaded_instances") or item.get("loaded_context_length"))
         from Kerniq.models.identity import same_model
 
         if want and same_model(mid, want):
             return int(limit)
+        if loaded and not loaded_fallback:
+            loaded_fallback = int(limit)
+        if not catalog_fallback:
+            catalog_fallback = int(limit)
     if want:
         return 0
-    return int(loaded_fallback or 0)
+    return int(loaded_fallback or catalog_fallback or 0)
 
 
 async def use_model_for_mode(provider, api, mode: str) -> Optional[str]:

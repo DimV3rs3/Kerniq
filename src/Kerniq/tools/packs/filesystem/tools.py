@@ -166,7 +166,15 @@ class FileSystemToolBase(Tool):
                 return root, read_only
         return None, read_only
 
+    def _host_freedom(self) -> bool:
+        return bool(getattr(getattr(self, "_security_policy", None), "host_freedom", False))
+
     def _shown_path(self, path: pathlib.Path) -> str | None:
+        if self._host_freedom():
+            try:
+                return str(path.resolve())
+            except OSError:
+                return str(path)
         from Kerniq.server.homes import display_path, jail_root
 
         if jail_root() is not None:
@@ -176,12 +184,25 @@ class FileSystemToolBase(Tool):
         except OSError:
             resolved = path
         try:
-            return resolved.relative_to(self.workspace).as_posix()
+            rel = resolved.relative_to(self.workspace).as_posix()
         except ValueError:
             root, _read_only = self._match_external(resolved)
             if root is None:
                 return None
-            return str(resolved)
+            from Kerniq.security.pathmask import VIRT_ATTACHMENTS, attachment_aliases
+
+            for virtual, real in attachment_aliases().items():
+                try:
+                    real_path = pathlib.Path(real).resolve()
+                    if resolved == real_path or resolved.is_relative_to(real_path):
+                        extra = resolved.relative_to(real_path).as_posix()
+                        return virtual if extra in ("", ".") else virtual.rstrip("/") + "/" + extra
+                except (OSError, ValueError):
+                    continue
+            return VIRT_ATTACHMENTS + "/" + resolved.name
+        if rel in ("", "."):
+            return "./workspace"
+        return "./workspace/" + rel
 
     def _admit(self, path: pathlib.Path, payload: str | bytes) -> None:
         from Kerniq.server.homes import admit_bytes, jail_root
@@ -207,7 +228,7 @@ class FileSystemToolBase(Tool):
             try:
                 target = logical_path(str(path_str), jail)
             except PermissionError as exc:
-                raise PermissionError("Access denied: that path is outside /workspace") from exc
+                raise PermissionError("Access denied: that path is outside ./workspace") from exc
             writing = self.name in {
                 "write_file", "create_file", "edit_file", "delete_file", "create_directory",
                 "move_file",
@@ -228,17 +249,30 @@ class FileSystemToolBase(Tool):
             return target
         raw = str(path_str)
         if "\x00" in raw or raw.startswith("\\\\") or raw.startswith("//"):
-            raise PermissionError(f"Access denied: {path_str} is outside workspace")
+            raise PermissionError("Access denied: path is outside ./workspace")
+        from Kerniq.security.pathmask import rewrite_model_path
+
+        raw = rewrite_model_path(raw)
         base = self.workspace
         candidate = pathlib.Path(raw)
-        # An absolute path must not replace the workspace via Path.__truediv__.
-        if candidate.is_absolute():
-            target = candidate.resolve()
-        else:
-            target = (base / candidate).resolve()
         writing = self.name in {
             "write_file", "create_file", "edit_file", "delete_file", "create_directory",
         } if write is None else bool(write)
+        # An absolute path must not replace the workspace via Path.__truediv__.
+        if candidate.is_absolute():
+            target = candidate.resolve()
+            if self._host_freedom():
+                if writing:
+                    from Kerniq.security.confinement import os_write_forbidden
+
+                    blocked_os = os_write_forbidden(target)
+                    if blocked_os:
+                        raise PermissionError(blocked_os)
+                if must_exist and not target.exists():
+                    raise FileNotFoundError(f"File not found: {path_str}")
+                return target
+        else:
+            target = (base / candidate).resolve()
         if writing:
             from Kerniq.server.homes import write_blocked_reason
 
@@ -253,7 +287,7 @@ class FileSystemToolBase(Tool):
                 raise FileNotFoundError(f"File not found: {path_str}")
             return target
         if not target.is_relative_to(base):
-            raise PermissionError(f"Access denied: {path_str} is outside workspace")
+            raise PermissionError("Access denied: path is outside ./workspace")
         blocked = strict_allows(target.relative_to(base).as_posix(), current_task())
         if blocked:
             raise PermissionError(blocked)
@@ -262,12 +296,17 @@ class FileSystemToolBase(Tool):
         return target
 
     def _create_error_result(self, call_id: str, msg: str, error_code: str) -> ToolResult:
+        text = msg
+        if not self._host_freedom():
+            from Kerniq.security.pathmask import scrub_for_model
+
+            text = scrub_for_model(msg or "", workspace=self.workspace, reveal=False)
         return ToolResult(
             tool_call_id=call_id,
             tool_id=self.tool_id,
             status="error",
             output=None,
-            human_readable=msg,
+            human_readable=text,
             error=error_code,
         )
 
@@ -1367,7 +1406,7 @@ class MoveFileTool(FileSystemToolBase):
 
 
 class FileSystemTools:
-    def __init__(self, workspace: str):
+    def __init__(self, workspace: str, policy: Any = None):
         self.workspace = pathlib.Path(workspace).resolve()
         self._tools: List[Tool] = [
             FileExistsTool(self.workspace),
@@ -1385,6 +1424,8 @@ class FileSystemTools:
             UnzipTool(self.workspace),
             MoveFileTool(self.workspace),
         ]
+        for tool in self._tools:
+            tool._security_policy = policy
 
     def get_tools(self) -> List[Tool]:
         return list(self._tools)

@@ -29,15 +29,18 @@ def build_tool_registry(
     config: Any,
     state_dir: Path | str,
     auto_approve_up_to: Optional[str] = None,
+    host_freedom: bool = False,
 ) -> tuple[ToolRegistry, SecurityPolicy]:
     workspace_path = Path(workspace)
     security = config.security
+    server_on = bool(getattr(getattr(config, "server", None), "enabled", False))
     policy = SecurityPolicy(
         workspace_root=workspace_path,
         disallowed_commands=list(security.disallowed_terminal_commands or []),
         require_approval_for_high_risk=bool(security.require_approval_for_high_risk),
         allow_terminal_network=bool(getattr(security, "allow_terminal_network", False)),
         auto_approve_up_to=auto_approve_up_to or getattr(security, "auto_approve_up_to", "low"),
+        host_freedom=bool(host_freedom) and not server_on,
     )
     store = ToolSettingsStore(state_dir)
     ts = store.settings

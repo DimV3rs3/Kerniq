@@ -57,6 +57,26 @@ def anchored_dir(path: object) -> Path:
     return (base / raw).resolve()
 
 
+def pin_process_root() -> Optional[Path]:
+    """Make the project directory the process cwd when this process is inside it.
+
+    Launchers live in ``scripts/``. A relative ``./state``, ``./sessions``,
+    or ``./workspace`` must not be created beside that script. A process
+    started outside the project is left where it is.
+    """
+    root = find_project_root()
+    if root is None:
+        return None
+    root = root.resolve()
+    os.environ["KERNIQ_ROOT"] = str(root)
+    try:
+        if Path.cwd().resolve() != root:
+            os.chdir(root)
+    except OSError:
+        pass
+    return root
+
+
 def find_plugins_dirs() -> List[Path]:
     """Candidate plugin directories (first existing wins for discovery order)."""
     seen: set[str] = set()

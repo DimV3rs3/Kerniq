@@ -66,6 +66,19 @@ class Orchestrator:
         # native tools array off: that array is what LM Studio's template uses.
         self._text_only_models: set[str] = set()
 
+    def _mask_for_model(self, text: str) -> str:
+        """The model sees ./workspace and ./attachments, never a host path."""
+        try:
+            from Kerniq.security.pathmask import scrub_for_model
+
+            policy = self.security_policy
+            return scrub_for_model(
+                text or "",
+                workspace=getattr(policy, "workspace_root", None),
+                reveal=bool(getattr(policy, "host_freedom", False)),
+            )
+        except Exception:
+            return text or ""
 
     def _state_dir(self):
         try:
@@ -977,10 +990,10 @@ class Orchestrator:
                 context.messages = list(safe_messages)
 
             options = self.generation_options
-            if context.metadata.get("unlimited_final"):
-                options = self.generation_options.model_copy(update={"max_tokens": None})
-                context.metadata["unlimited_final"] = False
-                logger.info("Final answer is not capped. The model may use the provider output limit.")
+            user_cap = getattr(self, "user_output_cap", None)
+            if user_cap is not None and getattr(self.generation_options, "max_tokens", None) is not None:
+                # A typed cap stays. A length finish must not replace it with the model maximum.
+                context.metadata.pop("unlimited_final", None)
 
             model_id = str(getattr(self.provider, "model", "") or "").strip()
             request_messages = safe_messages
@@ -1066,12 +1079,11 @@ class Orchestrator:
                 not pending_calls
                 and finish in ("length", "max_tokens")
                 and not context.metadata.get("final_output_expanded")
+                and getattr(self, "user_output_cap", None) is None
+                and getattr(self.generation_options, "max_tokens", None) is None
             ):
                 context.metadata["final_output_expanded"] = True
-                context.metadata["unlimited_final"] = True
-                logger.info("The last reply was cut by the output cap. Retrying with no cap.")
-                iteration -= 1
-                continue
+                logger.info("The reply was cut and no output cap is known. Leaving the provider limit in place.")
 
             content_nudged = False
             for msg in response.messages:
@@ -1471,7 +1483,7 @@ class Orchestrator:
                         note = "Execution error: the tool failed. " + text
                     context.add_message(Message(
                         role=MessageRole.TOOL,
-                        content=note,
+                        content=self._mask_for_model(note),
                         tool_call_id=call.id,
                         name=call.name,
                     ))
@@ -1482,6 +1494,7 @@ class Orchestrator:
                     return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
 
                 content = result.to_model_content() if hasattr(result, "to_model_content") else (result.human_readable or "")
+                content = self._mask_for_model(content)
                 image = None
                 output = getattr(result, "output", None)
                 if isinstance(output, dict) and isinstance(output.get("image"), dict):

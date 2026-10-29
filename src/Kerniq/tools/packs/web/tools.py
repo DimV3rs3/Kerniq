@@ -482,3 +482,217 @@ class FetchUrlTool(Tool):
                 human_readable=f"Failed to fetch {url}: {e}",
                 error="NETWORK",
             )
+
+
+def _safe_download_name(url: str, header: str = "") -> str:
+    raw = ""
+    if "filename=" in (header or "").lower():
+        part = header.split("filename=", 1)[-1].strip().strip("\"'")
+        raw = part.split(";")[0].strip()
+    if not raw:
+        path = (url or "").split("?", 1)[0].split("#", 1)[0]
+        if "://" in path:
+            path = path.split("://", 1)[1]
+            path = path.split("/", 1)[1] if "/" in path else ""
+        raw = path.rstrip("/").rsplit("/", 1)[-1] if path else ""
+    cleaned = []
+    for ch in raw:
+        if ch.isalnum() or ch in "._-":
+            cleaned.append(ch)
+        else:
+            cleaned.append("_")
+    name = "".join(cleaned).strip("._")[:120]
+    return name or "download.bin"
+
+
+def downloads_dir(workspace):
+    """Visible ``.downloads`` folder. Server mode writes under the user workspace."""
+    from pathlib import Path
+
+    from Kerniq.server.homes import jail_root
+
+    jail = jail_root()
+    if jail is not None:
+        dest = Path(jail) / "workspace" / ".downloads"
+    else:
+        dest = Path(workspace) / ".downloads"
+    dest.mkdir(parents=True, exist_ok=True)
+    return dest
+
+
+class DownloadFileTool(Tool):
+    """Save a public file into .downloads. fetch_url only returns page text."""
+
+    def __init__(self, workspace: str = ".", *, enabled: bool = True, timeout: float = 60.0, max_bytes: int = 50_000_000):
+        self.workspace = workspace
+        self.enabled = enabled
+        self.timeout = timeout
+        self.max_bytes = max_bytes
+        self.cfg_collapsible = True
+
+    @property
+    def category(self) -> str:
+        return "web"
+
+    @property
+    def pack_id(self) -> str:
+        return "web"
+
+    @property
+    def ui_icon(self) -> str:
+        return "⬇"
+
+    @property
+    def collapsible(self) -> bool:
+        return bool(getattr(self, "cfg_collapsible", True))
+
+    @property
+    def display_phrase(self) -> str:
+        return "downloads"
+
+    @property
+    def tool_id(self) -> str:
+        return "download_file"
+
+    @property
+    def name(self) -> str:
+        return "download_file"
+
+    @property
+    def risk_level(self) -> str:
+        return "critical"
+
+    def plan_membership_default(self) -> bool:
+        return False
+
+    @property
+    def description(self) -> str:
+        return (
+            "Download a public http(s) file into .downloads and return that relative path. "
+            "Use this for zip archives and other files. fetch_url only returns page text and cannot save a file. "
+            "Local, private, and link-local URLs are denied."
+        )
+
+    @property
+    def input_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string"},
+                "filename": {"type": "string", "description": "Optional file name inside .downloads"},
+            },
+            "required": ["url"],
+        }
+
+    def settings_schema(self):
+        return SettingsSchema(
+            component_id=self.tool_id,
+            component_type="tool",
+            title=self.name,
+            fields=[
+                SettingField(key="timeout", label="Timeout (sec)", type=SettingType.FLOAT, default=60.0, minimum=1, maximum=600),
+                SettingField(key="max_bytes", label="Max download bytes", type=SettingType.INT, default=50_000_000, minimum=1000, maximum=500_000_000),
+            ],
+        )
+
+    def apply_settings(self, values):
+        if not values:
+            return
+        if "timeout" in values:
+            self.timeout = float(values["timeout"])
+        if "max_bytes" in values:
+            self.max_bytes = int(values["max_bytes"])
+
+    async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
+        call_id = arguments.get("tool_call_id", "unknown")
+        if not self.enabled:
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="error",
+                output=None,
+                human_readable="download_file is disabled in tool settings.",
+                error="DISABLED",
+            )
+        url = (arguments.get("url") or "").strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="error",
+                output=None,
+                human_readable="Only http(s) URLs are allowed",
+                error="VALIDATION",
+            )
+        blocked = blocked_fetch_url(url)
+        if blocked:
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="error",
+                output=None,
+                human_readable=blocked,
+                error="VALIDATION",
+            )
+        dest = None
+        try:
+            import httpx
+
+            async def _reject_private(request):
+                reason = blocked_fetch_url(str(request.url))
+                if reason:
+                    raise PermissionError(reason)
+
+            folder = downloads_dir(self.workspace)
+            async with httpx.AsyncClient(
+                timeout=self.timeout,
+                follow_redirects=True,
+                event_hooks={"request": [_reject_private]},
+            ) as client:
+                async with client.stream(
+                    "GET",
+                    url,
+                    headers={"User-Agent": "Kerniq/0.1.8 (download_file)"},
+                ) as resp:
+                    resp.raise_for_status()
+                    header = resp.headers.get("content-disposition") or ""
+                    if arguments.get("filename"):
+                        name = _safe_download_name(str(arguments.get("filename") or ""))
+                    else:
+                        name = _safe_download_name(str(resp.url), header)
+                    dest = folder / name
+                    stem, suffix = dest.stem, dest.suffix
+                    index = 1
+                    while dest.exists():
+                        dest = folder / f"{stem}_{index}{suffix}"
+                        index += 1
+                    total = 0
+                    limit = int(self.max_bytes or 50_000_000)
+                    with dest.open("wb") as handle:
+                        async for chunk in resp.aiter_bytes():
+                            total += len(chunk)
+                            if total > limit:
+                                raise ValueError(f"File is larger than {limit} bytes")
+                            handle.write(chunk)
+            shown = ".downloads/" + dest.name
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="success",
+                output={"path": shown, "bytes": total, "url": url},
+                human_readable=f"Saved {shown} ({total} bytes).",
+            )
+        except Exception as exc:
+            try:
+                if dest is not None and dest.is_file():
+                    dest.unlink()
+            except Exception:
+                pass
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="error",
+                output=None,
+                human_readable=f"Could not download {url}: {exc}",
+                error="NETWORK",
+            )

@@ -27,8 +27,8 @@ _SECRET_MARKERS = (
 )
 
 
-def _scrub_env(workspace: Path) -> dict:
-    """Drop credential-bearing variables before spawning a shell. PATH stays."""
+def _scrub_env(workspace: Path, *, host_freedom: bool = False) -> dict:
+    """Drop credential-bearing variables before spawning a shell."""
     import os
 
     env = dict(os.environ)
@@ -40,13 +40,27 @@ def _scrub_env(workspace: Path) -> dict:
     try:
         from Kerniq.sandbox.venv import apply_sandbox_env
         from Kerniq.security.task_scope import current_task
+        from Kerniq.server.homes import jail_root
 
         roots = []
         task = current_task()
         meta = getattr(task, "metadata", None) or {}
         if meta.get("external_read_only", True):
             roots = [str(item) for item in (meta.get("external_files") or []) if item]
-        env = apply_sandbox_env(env, workspace, external_roots=roots)
+        visible = [str(workspace)]
+        jail = jail_root()
+        if jail is not None:
+            visible = [str(jail)]
+        for real in (meta.get("attachment_aliases") or {}).values():
+            if real:
+                visible.append(str(real))
+        env = apply_sandbox_env(
+            env,
+            workspace,
+            external_roots=roots,
+            confine=not host_freedom,
+            visible_roots=visible,
+        )
     except Exception as exc:
         logger.warning("Sandbox env was not applied: %s", exc)
     return env
@@ -119,14 +133,11 @@ class TerminalTools(Tool):
     @property
     def description(self) -> str:
         return (
-            "Run a shell command in the workspace. "
+            "Run a shell command inside ./workspace. "
+            "Attached files are ./attachments. "
             "python and pip in this shell are the workspace sandbox .kerniq-venv. "
-            "The shell cannot see programs installed on this computer "
-            "(dotnet, node, cmd, or the system PATH). "
-            "Do not use Docker for Python tests. "
-            "Absolute paths, UNC paths, '..', encoded PowerShell, and network utilities are denied. "
-            "On Windows this is PowerShell (not cmd). On Linux/macOS this is bash/sh. "
-            "Examples (Windows): Get-Date; Get-ChildItem . Examples (Unix): date; ls -la."
+            "Do not use absolute paths, UNC paths, '..', sudo, or commands that inspect the host. "
+            "On Windows this is PowerShell (not cmd). On Linux/macOS this is bash/sh."
         )
 
     @property
@@ -213,7 +224,7 @@ class TerminalTools(Tool):
                 status="error",
                 output="",
                 human_readable=(
-                    f"Refusing shell: symlink escapes the workspace ({escaped}). "
+                    "Refusing shell: a symlink leaves ./workspace. "
                     "Remove it before running commands."
                 ),
                 error="PERMISSION_DENIED",
@@ -221,14 +232,16 @@ class TerminalTools(Tool):
 
         # Security check for working directory
         try:
-            cwd_abs = self._security_policy.validate_path(cwd_rel)
-        except Exception as e:
+            from Kerniq.security.pathmask import terminal_cwd
+
+            cwd_abs = terminal_cwd(str(cwd_rel or "."), self._security_policy)
+        except Exception:
             return ToolResult(
                 tool_call_id=getattr(context, "last_tool_call_id", "unknown"),
                 tool_id=self.tool_id,
                 status="error",
                 output="",
-                human_readable=str(e),
+                human_readable="Path is outside ./workspace",
                 error="PERMISSION_DENIED"
             )
 
@@ -244,7 +257,10 @@ class TerminalTools(Tool):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd_abs),
-            env=_scrub_env(self._workspace_root),
+            env=_scrub_env(
+                self._workspace_root,
+                host_freedom=bool(getattr(self._security_policy, "host_freedom", False)),
+            ),
         )
         # Ensure the spawned process never creates a visible window or attaches to a console.
         if sys.platform == "win32":
@@ -313,6 +329,11 @@ class TerminalTools(Tool):
                 return b.decode("utf-8", errors="replace")
             stdout_str = _decode_out(stdout or b"")
             stderr_str = _decode_out(stderr or b"")
+            from Kerniq.security.pathmask import scrub_for_model
+
+            reveal = bool(getattr(self._security_policy, "host_freedom", False))
+            stdout_str = scrub_for_model(stdout_str, workspace=self._workspace_root, reveal=reveal)
+            stderr_str = scrub_for_model(stderr_str, workspace=self._workspace_root, reveal=reveal)
             # Cap output
             max_out = getattr(self, "cfg_max_output_chars", 50_000)
             if len(stdout_str) > max_out:
@@ -333,6 +354,10 @@ class TerminalTools(Tool):
                 duration_seconds=time.monotonic() - started,
             )
         except Exception as e:
+            from Kerniq.security.pathmask import scrub_for_model
+
+            reveal = bool(getattr(self._security_policy, "host_freedom", False))
+            note = scrub_for_model(str(e), workspace=self._workspace_root, reveal=reveal)
             return ToolResult(
                 tool_call_id=call_id,
                 tool_id=self.tool_id,
@@ -340,7 +365,7 @@ class TerminalTools(Tool):
                 success=False,
                 stop_reason="error",
                 output="",
-                human_readable=str(e),
-                error=str(e),
+                human_readable=note,
+                error=note,
                 duration_seconds=time.monotonic() - started,
             )

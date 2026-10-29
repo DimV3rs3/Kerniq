@@ -807,6 +807,17 @@ class UIHandler(BaseHTTPRequestHandler):
         if getattr(self, "_kerniq_kind", "") == "denied" and path.startswith("/api/"):
             return _json(self, 401, {"error": "The API key was rejected."})
         if path in ("/", "/index.html"):
+            token = (qs.get("debug") or "").strip()
+            if token and STATE.server_mode:
+                from Kerniq.server.debug import set_cookie_header, token_matches
+
+                if token_matches(_state_dir(), token):
+                    self.send_response(302)
+                    self.send_header("Location", "/")
+                    self.send_header("Set-Cookie", set_cookie_header(token))
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
             return self._file(STATIC_DIR / "index.html", "text/html; charset=utf-8")
         if path == "/static/app.js":
             return self._file(STATIC_DIR / "app.js", "application/javascript; charset=utf-8")
@@ -828,6 +839,15 @@ class UIHandler(BaseHTTPRequestHandler):
             if not safe.isalnum():
                 return _json(self, 400, {"error": "bad path"})
             f = STATIC_DIR / "vendor" / name
+            ctype = "text/css; charset=utf-8" if name.endswith(".css") else "application/javascript; charset=utf-8"
+            return self._file(f, ctype)
+        if path.startswith("/static/modules/"):
+            name = path[len("/static/modules/") :]
+            if "/" in name or ".." in name or not name.replace("-", "").replace("_", "").replace(".", "").isalnum():
+                return _json(self, 400, {"error": "bad path"})
+            if not (name.endswith(".js") or name.endswith(".css")):
+                return _json(self, 404, {"error": "not found"})
+            f = STATIC_DIR / "modules" / name
             ctype = "text/css; charset=utf-8" if name.endswith(".css") else "application/javascript; charset=utf-8"
             return self._file(f, ctype)
         if path == "/api/settings":
@@ -1783,6 +1803,18 @@ class UIHandler(BaseHTTPRequestHandler):
         port = int(getattr(STATE, "port", 8765))
         public = bind not in ("127.0.0.1", "localhost", "::1")
         urls = [f"http://{ip}:{port}" for ip in ips] if (server_mode or public or bind in ("0.0.0.0", "::")) else [f"http://{bind}:{port}"]
+        unlocked = False
+        real = ""
+        if server_mode:
+            from Kerniq.server.debug import request_unlocked
+
+            unlocked = bool(request_unlocked(self.headers, _state_dir()))
+            if unlocked:
+                try:
+                    home = _workspace()
+                    real = str((home / "workspace").resolve())
+                except Exception:
+                    real = ""
         return {
             "server_mode": server_mode,
             "bind_host": bind,
@@ -1794,7 +1826,10 @@ class UIHandler(BaseHTTPRequestHandler):
             "firewall_note": str(getattr(STATE, "firewall_note", "") or ""),
             "folder_picker": "upload" if server_mode else "native",
             "storage_warning": self._storage_warning() if server_mode else "",
-            "workspace_display": "/workspace" if server_mode else "",
+            "workspace_display": real if unlocked else "",
+            "workspace_real": real if unlocked else "",
+            "debug_unlocked": unlocked,
+            "debug_armed": bool(_server_core().get("debug_enabled")) if server_mode else False,
             "model_base_url": str(_server_core().get("model_base_url") or "http://127.0.0.1:1234") if server_mode else "",
             "disk": self._disk_status() if server_mode else None,
             "queue": len(STATE.pending),
@@ -2351,6 +2386,10 @@ class UIHandler(BaseHTTPRequestHandler):
         user_id = str(payload.get("user_id") or getattr(self, "_kerniq_user", "local") or "local")
         payload["user_id"] = user_id
         payload["chat_id"] = chat_id
+        if STATE.server_mode:
+            from Kerniq.server.debug import request_unlocked
+
+            payload["debug_unlocked"] = bool(request_unlocked(self.headers, _state_dir()))
         with STATE.runs_lock:
             pre_cancelled = chat_id in STATE.cancel_chats
             if pre_cancelled:
@@ -2464,7 +2503,9 @@ def _chat_log():
     from Kerniq.settings.loader import SettingsProvider
 
     if STATE.chat_log is None:
-        STATE.chat_log = ChatLog(SettingsProvider().config.storage.state_dir)
+        from Kerniq.devtools.paths import anchored_dir
+
+        STATE.chat_log = ChatLog(anchored_dir(SettingsProvider().config.storage.state_dir))
     return STATE.chat_log
 
 
@@ -2590,13 +2631,18 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         disk_status = quota_status(ws, quota_bytes(core))
         set_quota(disk_status)
     else:
-        ws = Path(ui.agent.workspace or "./workspace")
-        ws.mkdir(parents=True, exist_ok=True)
-        ws = ws.resolve()
+        ws = _workspace()
 
     _emit(run_id, {"type": "status", "status": "processing", "text": "Processing prompt…"})
 
     cfg = SettingsProvider().config
+    if STATE.server_mode:
+        ui.agent.host_freedom = False
+        ui.agent.workspace = "./workspace"
+        if not data.get("debug_unlocked"):
+            ui.chat.developer_mode = False
+            if str(getattr(ui.chat, "auto_approve_up_to", "") or "") == "all":
+                ui.chat.auto_approve_up_to = "low"
     ceiling = getattr(getattr(ui, "chat", None), "auto_approve_up_to", None) or getattr(
         cfg.security, "auto_approve_up_to", "low"
     )
@@ -2605,6 +2651,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         config=cfg,
         state_dir=cfg.storage.state_dir,
         auto_approve_up_to=ceiling,
+        host_freedom=bool(getattr(ui.agent, "host_freedom", False)) and not STATE.server_mode,
     )
 
     try:
@@ -2706,6 +2753,11 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     try:
         models = await provider.list_models() if hasattr(provider, "list_models") else []
         want = (ui.api.model or "").strip()
+        if not want and hasattr(provider, "resolve_auto_model"):
+            try:
+                want = str(await provider.resolve_auto_model() or "")
+            except Exception:
+                want = ""
         from Kerniq.models.identity import same_model
 
         first_loaded = 0
@@ -2736,6 +2788,14 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     except Exception:
         pass
     agent.orchestrator.context_limit = int(ctx_lim or 0)
+    agent.orchestrator.model_context_limit = int(ctx_lim or 0)
+    agent.orchestrator.user_output_cap = ui.api.max_tokens
+    from Kerniq.core.runtime_flow import clamp_output_tokens
+
+    cap = clamp_output_tokens(ui.api.max_tokens, ctx_lim)
+    agent.orchestrator.generation_options = agent.orchestrator.generation_options.model_copy(
+        update={"max_tokens": cap}
+    )
     compactor = getattr(agent.orchestrator, "compactor", None)
     if compactor is not None:
         compactor.cfg_context_limit = int(ctx_lim or 0)
@@ -3119,9 +3179,9 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         from Kerniq.server.homes import disk_note
 
         system += (
-            "\n\nThe user's files are rooted at /workspace. "
-            "That name is not a real disk path. Use /workspace or a relative path under it. "
-            "Do not try to read other users, the rest of this machine, or any path outside /workspace."
+            "\n\nYour folders are ./workspace and ./attachments. "
+            "Those names are not disk paths. Work only inside them. "
+            "Do not try to read other users, the rest of this machine, or any path outside those folders."
         )
         note = disk_note(disk_status)
         if note:
@@ -3215,17 +3275,23 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             + ". Other workspace paths will be denied."
         )
     read_only_external = bool(getattr(ui.chat, "read_only_external_attachments", True))
-    if external_files:
+    from Kerniq.security.pathmask import alias_attachments
+
+    attachment_map = alias_attachments(external_files)
+    if attachment_map:
+        names = "\n".join(attachment_map)
         if read_only_external:
             system = (system or "") + (
-                "\n\nThese paths are outside the workspace. You may read them and everything inside an attached folder. "
-                "You may not write, edit, move, or delete them:\n"
-                + "\n".join(external_files)
+                "\n\nThese attached paths are ./attachments. You may read them. "
+                "You may not write, edit, move, or delete them. "
+                "They are not host paths:\n"
+                + names
             )
         else:
             system = (system or "") + (
-                "\n\nThese paths are outside the workspace. You may read and change them, including files inside attached folders:\n"
-                + "\n".join(external_files)
+                "\n\nThese attached paths are ./attachments. You may read and change them. "
+                "They are not host paths:\n"
+                + names
             )
     mode = str(data.get("mode") or getattr(ui.chat, "agent_mode", None) or "act").lower()
     if mode not in ("plan", "act"):
@@ -3346,6 +3412,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             external_files=external_files or None,
             external_read_only=read_only_external,
             image_paths=pictures or None,
+            attachment_aliases=attachment_map or None,
         )
 
     if _is_cancelled():

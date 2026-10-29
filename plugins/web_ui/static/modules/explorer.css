@@ -1,0 +1,38 @@
+/* ---- explorer ----------------------------------------------------------- */
+
+.tree { flex: 1; overflow: auto; padding: 8px 6px; user-select: none; }
+.tree .row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 4px;
+  border-radius: var(--r-s);
+  color: var(--fg-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tree .row:hover { background: var(--bg-2); color: var(--fg); }
+.tree .row.active { background: var(--acc-soft); color: var(--fg); }
+.tree .row.hidden-entry { opacity: .55; }
+.tree .twist {
+  flex: 0 0 14px;
+  width: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--muted);
+  font-size: 0;
+}
+.tree .twist svg { display: block; transition: transform .15s var(--ease); }
+.tree .twist.open svg { transform: rotate(90deg); }
+.fi { flex: none; display: block; color: var(--muted); }
+.fi.dir { color: #8fa3c4; }
+.fi[data-ext="js"], .fi[data-ext="mjs"], .fi[data-ext="jsx"] { color: #e5c97a; }
+.fi[data-ext="ts"], .fi[data-ext="tsx"] { color: #6fa8e8; }
+.fi[data-ext="py"] { color: #7fb4d8; }
+.fi[data-ext="json"], .fi[data-ext="yaml"], .fi[data-ext="yml"], .fi[data-ext="toml"] { color: #c9a27a; }
+.fi[data-ext="md"], .fi[data-ext="txt"] { color: var(--fg-2); }
+.fi[data-ext="html"], .fi[data-ext="htm"] { color: #e08e6f; }
+.fi[data-ext="css"], .fi[data-ext="scss"] { color: #9d8be0; }
+.fi[data-ext="sh"], .fi[data-ext="ps1"], .fi[data-ext="bat"] { color: var(--ok); }
+.tree .fname { overflow: hidden; text-overflow: ellipsis; }
+

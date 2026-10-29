@@ -63,13 +63,14 @@ async def maybe_auto_update(argv: Optional[list] = None) -> Optional[int]:
         ok, msg = apply_update()
         print(msg)
         if not ok:
-            print("Auto-update failed; continuing with current version.")
+            print("Auto-update failed; continuing with the current version.")
+            print(msg)
             return None
         env = os.environ.copy()
         env["KERNIQ_UPDATING"] = "1"
         os.execvpe(sys.executable, [sys.executable, "-m", "Kerniq", *args], env)
     except Exception as e:
-        logger.debug("auto-update skipped: %s", e)
+        print(f"Auto-update skipped: {e}")
         return None
     return None
 
@@ -166,17 +167,22 @@ async def run_agent(args: argparse.Namespace, config) -> int:
     )
     from Kerniq.settings.ui_store import UiSettingsStore
 
-    ui = UiSettingsStore(config.storage.state_dir).load()
-    workspace_path = Path(args.workspace or ui.agent.workspace or str(config.application.workspace_root))
+    ui = UiSettingsStore(anchored_dir(config.storage.state_dir)).load()
+    raw_ws = Path(args.workspace or ui.agent.workspace or str(config.application.workspace_root))
+    workspace_path = raw_ws.expanduser().resolve() if raw_ws.is_absolute() else anchored_dir(raw_ws)
     workspace_path.mkdir(parents=True, exist_ok=True)
     ceiling = getattr(ui.chat, "auto_approve_up_to", None) or getattr(
         config.security, "auto_approve_up_to", "low"
+    )
+    freedom = bool(getattr(ui.agent, "host_freedom", False)) and not bool(
+        getattr(config.server, "enabled", False)
     )
     registry, policy = build_tool_registry(
         workspace_path,
         config=config,
         state_dir=config.storage.state_dir,
         auto_approve_up_to=ceiling,
+        host_freedom=freedom,
     )
 
     provider_name = args.provider or ui.api.provider or config.models.default_provider
@@ -213,7 +219,22 @@ async def run_agent(args: argparse.Namespace, config) -> int:
     agent.orchestrator.provider_retries = int(config.runtime.retry_limit or 0)
     apply_runtime(agent.orchestrator, ui)
     await attach_compactor(agent.orchestrator, config)
-    agent.orchestrator.context_limit = await probe_context_limit(provider, ui.api.model)
+    model_for_window = str(ui.api.model or getattr(args, "model", "") or "").strip()
+    if not model_for_window and hasattr(provider, "resolve_auto_model"):
+        try:
+            model_for_window = str(await provider.resolve_auto_model() or "")
+        except Exception:
+            model_for_window = ""
+    window = await probe_context_limit(provider, model_for_window)
+    from Kerniq.core.runtime_flow import clamp_output_tokens
+
+    agent.orchestrator.context_limit = window
+    agent.orchestrator.model_context_limit = int(window or 0)
+    agent.orchestrator.user_output_cap = ui.api.max_tokens
+    cap = clamp_output_tokens(ui.api.max_tokens, window)
+    agent.orchestrator.generation_options = agent.orchestrator.generation_options.model_copy(
+        update={"max_tokens": cap}
+    )
     from Kerniq.interfaces.approvals import ConsoleApprovalProvider
     agent.orchestrator.approval_provider = ConsoleApprovalProvider()
 
@@ -372,6 +393,9 @@ async def cmd_doctor(config) -> int:
 
 
 async def async_main(argv: Optional[list] = None) -> int:
+    from Kerniq.devtools.paths import pin_process_root
+
+    pin_process_root()
     parser = argparse.ArgumentParser(description="AI Agent Platform CLI")
     parser.add_argument("--version", action="store_true")
     subparsers = parser.add_subparsers(dest="command")
@@ -439,6 +463,11 @@ async def async_main(argv: Optional[list] = None) -> int:
     ui_parser.add_argument("--host", default=None)
     ui_parser.add_argument("--port", type=int, default=None)
     ui_parser.add_argument(
+        "--background",
+        action="store_true",
+        help="On Linux, start the UI in the background and return. Log: logs/ui.log",
+    )
+    ui_parser.add_argument(
         "-s", "--set",
         dest="settings",
         nargs=2,
@@ -458,7 +487,9 @@ async def async_main(argv: Optional[list] = None) -> int:
     server_sub.add_parser("show", help="Show bind, storage, and whether an API key exists")
     server_key = server_sub.add_parser("key", help="Print the API key a remote console must send")
     server_key.add_argument("--rotate", action="store_true", help="Replace the current API key")
-    server_sub.add_parser("init", help="Choose a database and create it. Kerniq creates the database.")
+    server_sub.add_parser("init", help="Database, UI port, user folders, and the optional Linux account.")
+    server_debug = server_sub.add_parser("debug", help="Admin UI unlock. Host freedom stays off.")
+    server_debug.add_argument("switch", nargs="?", default="status", choices=["on", "off", "status"])
     server_db = server_sub.add_parser("db", help="Create a MySQL database and save its URL")
     server_db.add_argument("--host", default="127.0.0.1")
     server_db.add_argument("--port", type=int, default=3306)
@@ -503,12 +534,17 @@ async def async_main(argv: Optional[list] = None) -> int:
 
     update_parser = subparsers.add_parser(
         "update",
-        help="Check GitHub for a newer Kerniq release",
+        help="Download the latest Kerniq release and keep settings, plugins, and language packs",
     )
     update_parser.add_argument(
         "--repo",
         default="DimV3rs3/Kerniq",
         help="GitHub owner/repo (default: DimV3rs3/Kerniq)",
+    )
+    update_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Only report whether a newer release exists. Do not install it.",
     )
 
     autostart_parser = subparsers.add_parser(
@@ -604,19 +640,22 @@ async def async_main(argv: Optional[list] = None) -> int:
     pm = PluginManager(context_factory=plugin_ctx_factory)
 
     if args.command == "update":
-        from Kerniq.devtools.update_check import check_for_update
+        from Kerniq.devtools.update_check import apply_update, check_for_update
 
         info = await check_for_update(repo=getattr(args, "repo", None) or "DimV3rs3/Kerniq")
         print(info.message)
-        if info.release_url and info.is_newer:
-            print(f"Release page: {info.release_url}")
-            print("Install/update (from a clone):")
-            print("  git pull")
-            print('  python -m pip install -e ".[dev,mcp]"')
-        # exit 0 if up to date or no remote; 2 if newer available; 1 on auth/network hard fail
         if info.error in ("auth",) and info.remote_version is None:
             return 1
-        return 2 if info.is_newer else 0
+        if not info.is_newer:
+            return 0
+        if getattr(args, "check", False):
+            if info.release_url:
+                print(f"Release page: {info.release_url}")
+            return 2
+        print("Updating in place. Settings, user plugins, and language packs are kept.")
+        ok, msg = apply_update(repo=getattr(args, "repo", None) or "DimV3rs3/Kerniq")
+        print(msg)
+        return 0 if ok else 1
 
     if args.command == "autostart":
         from Kerniq.devtools.autostart import configure, current
@@ -879,6 +918,29 @@ async def async_main(argv: Optional[list] = None) -> int:
         if args.action == "ui":
             import os
 
+            if getattr(args, "background", False):
+                import subprocess
+
+                root = pin_process_root() or Path.cwd()
+                log_dir = anchored_dir(config.storage.state_dir).parent / "logs"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                log_path = log_dir / "ui.log"
+                cmd = [sys.executable, "-m", "Kerniq", "plugins", "ui"]
+                if args.host:
+                    cmd.extend(["--host", str(args.host)])
+                if args.port:
+                    cmd.extend(["--port", str(args.port)])
+                log_handle = open(log_path, "ab", buffering=0)
+                subprocess.Popen(
+                    cmd,
+                    cwd=str(root),
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+                print(f"Kerniq UI is starting in the background. Log: {log_path}")
+                return 0
+
             _apply_ui_log_level()
             state_dir = anchored_dir(config.storage.state_dir)
             if getattr(args, "settings", None):
@@ -1020,6 +1082,10 @@ async def async_main(argv: Optional[list] = None) -> int:
             quota = int(core.get("user_quota_bytes") or 0)
             print(f"user_quota_gb={quota / (1024 * 1024 * 1024):.1f}")
             print(f"model_base_url={core.get('model_base_url') or 'http://127.0.0.1:1234'}")
+            print("debug=" + ("on" if core.get("debug_enabled") else "off"))
+            extras = core.get("users_roots") or []
+            if extras:
+                print("users_roots=" + ", ".join(str(item) for item in extras))
             if core.get("database_url"):
                 print("storage=mysql")
             else:
@@ -1032,6 +1098,26 @@ async def async_main(argv: Optional[list] = None) -> int:
             from Kerniq.server.database import init_server_database
 
             return init_server_database(state_dir)
+        if args.action == "debug":
+            from Kerniq.server.debug import arm, status
+
+            switch = getattr(args, "switch", "status") or "status"
+            if switch == "status":
+                row = status(state_dir)
+                print("debug=" + ("on" if row["enabled"] else "off"))
+                print("Host freedom stays off. The unlock is one browser cookie, not a privilege for the model.")
+                return 0
+            row = arm(state_dir, switch == "on")
+            if not row["enabled"]:
+                print("Debug mode is off. Existing unlock cookies stop working.")
+                return 0
+            port = int(row.get("port") or 8765)
+            token = row["token"]
+            print("Debug mode is on for the admin browser only.")
+            print("Host freedom stays off. The model still sees ./workspace and ./attachments.")
+            print("Open this once, on the server machine, then remove it from the address bar:")
+            print(f"  http://127.0.0.1:{port}/?debug={token}")
+            return 0
         if args.action == "db":
             from Kerniq.server.database import provision_mysql
 
@@ -1084,7 +1170,7 @@ async def async_main(argv: Optional[list] = None) -> int:
                 print(f"Local models are reached at {value.rstrip('/')}")
                 print("This is LM Studio or Ollama on the server machine, usually http://127.0.0.1:1234.")
                 return 0
-        print("Usage: server show | server key [--rotate] | server init | server db --user USER --password PASS | server set users-root|quota-gb|model-url VALUE")
+        print("Usage: server show | server key [--rotate] | server init | server debug on|off|status | server db --user USER --password PASS | server set users-root|quota-gb|model-url VALUE")
         return 1
     if args.command == "sessions":
         if args.action == "list":

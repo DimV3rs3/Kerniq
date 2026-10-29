@@ -177,7 +177,7 @@ else
 fi
 echo "Done."
 if [ "$SERVER_INIT" = "1" ]; then
-  echo "Server setup: Kerniq looks for a database, then asks for the login."
+  echo "Server setup: database, UI port, user folders, and an optional Linux account."
   if [ -t 0 ]; then
     "$TARGET" -m Kerniq server init || echo "Server setup did not finish. Run: $TARGET -m Kerniq server init"
   else
@@ -185,9 +185,11 @@ if [ "$SERVER_INIT" = "1" ]; then
   fi
 fi
 if [ "$CREATED_VENV" = "1" ]; then
-  echo "UI:  $TARGET -m Kerniq plugins ui"
-  echo "Or:  $META/kerniq plugins ui"
+  echo "UI in the background (Linux):  $ROOT/scripts/kerniq-ui.sh"
+  echo "UI in this terminal:  $TARGET -m Kerniq plugins ui"
+  echo "Or:  $META/kerniq plugins ui --background"
 else
-  echo "UI:  python3 -m Kerniq plugins ui"
-  echo "Or:  $META/kerniq plugins ui"
+  echo "UI in the background (Linux):  $ROOT/scripts/kerniq-ui.sh"
+  echo "UI in this terminal:  python3 -m Kerniq plugins ui"
+  echo "Or:  $META/kerniq plugins ui --background"
 fi

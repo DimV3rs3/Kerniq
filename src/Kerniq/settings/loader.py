@@ -12,7 +12,12 @@ from .schema import PlatformConfig
 
 class SettingsProvider:
     def __init__(self, config_path: Optional[Path] = None):
-        self.config_path = config_path or Path("config/default.toml")
+        if config_path is None:
+            from Kerniq.devtools.paths import find_project_root
+
+            root = find_project_root()
+            config_path = (root / "config" / "default.toml") if root else Path("config/default.toml")
+        self.config_path = config_path
         self._config: Optional[PlatformConfig] = None
 
     def load(self) -> PlatformConfig:

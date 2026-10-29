@@ -22,8 +22,12 @@ def public_settings(payload: dict[str, Any], *, server_mode: bool) -> dict[str, 
     api.pop("api_token_sealed", None)
     out["api"] = api
     agent = dict(out.get("agent") or {})
-    agent["workspace"] = "/workspace"
+    agent["workspace"] = ""
+    agent.pop("host_freedom", None)
     out["agent"] = agent
+    chat = dict(out.get("chat") or {})
+    chat["developer_mode"] = False
+    out["chat"] = chat
     out["client_owned"] = True
     return out
 

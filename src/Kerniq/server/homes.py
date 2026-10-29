@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 DISPLAY_ROOT = "/workspace"
+VIRT_WORKSPACE = "./workspace"
+VIRT_ATTACHMENTS = "./attachments"
 _DEFAULT_QUOTA = 8 * 1024 * 1024 * 1024
 _MIN_QUOTA = 32 * 1024 * 1024
 _quota: contextvars.ContextVar[dict | None] = contextvars.ContextVar("kerniq_disk_quota", default=None)
@@ -23,21 +25,90 @@ def safe_user_dir(user_id: str) -> str:
 
 
 def users_root(state_dir: Path | str, core: dict | None = None) -> Path:
-    """Where user folders live. Empty means <project>/workspace, not the installer's home."""
+    """Primary folder for new homes. Empty means <project>/workspace."""
+    roots = user_roots(state_dir, core)
+    return roots[0]
+
+
+def user_roots(state_dir: Path | str, core: dict | None = None) -> list[Path]:
+    """Every disk the admin offered. The first entry is the primary root.
+
+    An existing cookie folder is reused wherever it already lives. A new
+    folder is created on the root with the most free space.
+    """
     from ..devtools.paths import anchored_dir, find_project_root
 
-    raw = str((core or {}).get("users_root") or "").strip()
+    core = core or {}
+    raw = str(core.get("users_root") or "").strip()
     if raw:
-        root = Path(raw).expanduser().resolve()
+        primary = Path(raw).expanduser().resolve()
     else:
         project = find_project_root()
         if project is None:
             project = anchored_dir(state_dir).parent
-        root = (project / "workspace").resolve()
-    root.mkdir(parents=True, exist_ok=True)
+        primary = (project / "workspace").resolve()
+    primary.mkdir(parents=True, exist_ok=True)
     if not raw:
-        _adopt_legacy_homes(state_dir, root)
-    return root
+        _adopt_legacy_homes(state_dir, primary)
+    roots = [primary]
+    seen = {str(primary)}
+    for extra in core.get("users_roots") or []:
+        text = str(extra or "").strip()
+        if not text:
+            continue
+        try:
+            folder = assert_users_root(text)
+        except ValueError:
+            continue
+        key = str(folder)
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(folder)
+    return roots
+
+
+def _free_bytes(folder: Path) -> int:
+    try:
+        return int(os.statvfs(folder).f_bavail * os.statvfs(folder).f_frsize)
+    except (AttributeError, OSError):
+        try:
+            import shutil
+
+            return int(shutil.disk_usage(folder).free)
+        except OSError:
+            return 0
+
+
+def user_home(state_dir: Path | str, user_id: str, core: dict | None = None) -> Path:
+    """Create this user's private environment.
+
+    Layout, under whichever root already holds the cookie or has room::
+
+        <cookie-id>/workspace
+        <cookie-id>/attachments
+
+    Older releases stored files directly in the cookie folder. Those files
+    move into workspace/ once. The cookie id is not shown to the model.
+    """
+    roots = user_roots(state_dir, core)
+    name = safe_user_dir(user_id)
+    for root in roots:
+        folder = (root / name).resolve()
+        try:
+            folder.relative_to(root)
+        except ValueError:
+            continue
+        if folder.is_dir():
+            return ensure_user_layout(folder)
+    best = max(roots, key=_free_bytes)
+    folder = (best / name).resolve()
+    try:
+        folder.relative_to(best)
+    except ValueError as exc:
+        raise PermissionError("User folder escapes the home root.") from exc
+    folder.mkdir(parents=True, exist_ok=True)
+    return ensure_user_layout(folder)
 
 
 def gather_stray_workspace(dest: Path, relative: Path | str) -> Path:
@@ -109,16 +180,27 @@ def assert_users_root(path: str) -> Path:
     return root
 
 
-def user_home(state_dir: Path | str, user_id: str, core: dict | None = None) -> Path:
-    """Create and return this user's folder. It stays inside the admin root."""
-    root = users_root(state_dir, core)
-    folder = (root / safe_user_dir(user_id)).resolve()
-    try:
-        folder.relative_to(root)
-    except ValueError as exc:
-        raise PermissionError("User folder escapes the home root.") from exc
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
+def ensure_user_layout(folder: Path) -> Path:
+    """Create workspace/ and attachments/ and move loose files into workspace/."""
+    import shutil
+
+    root = Path(folder).resolve()
+    workspace = root / "workspace"
+    attachments = root / "attachments"
+    workspace.mkdir(parents=True, exist_ok=True)
+    attachments.mkdir(parents=True, exist_ok=True)
+    keep = {"workspace", "attachments", ".kerniq-venv", ".kerniq-guard"}
+    for child in list(root.iterdir()):
+        if child.name in keep or child.name.startswith("."):
+            continue
+        dest = workspace / child.name
+        if dest.exists():
+            continue
+        try:
+            child.rename(dest)
+        except OSError:
+            shutil.move(str(child), str(dest))
+    return root
 
 
 def quota_bytes(core: dict | None) -> int:
@@ -187,7 +269,7 @@ def jail_root() -> Path | None:
 
 
 def display_path(path: Path | str, root: Path | None = None) -> str:
-    """Hide the real directory. /workspace is the only root a user is shown."""
+    """Hide the real directory. The model sees ./workspace or ./attachments."""
     root = Path(root).resolve() if root is not None else _jail.get()
     if root is None:
         return str(path)
@@ -196,38 +278,66 @@ def display_path(path: Path | str, root: Path | None = None) -> str:
     except OSError:
         resolved = Path(path)
     try:
-        rel = resolved.relative_to(root)
+        rel = resolved.relative_to(Path(root).resolve())
     except ValueError:
-        return DISPLAY_ROOT
-    text = rel.as_posix()
-    if text in ("", "."):
-        return DISPLAY_ROOT
-    return DISPLAY_ROOT + "/" + text
+        return VIRT_WORKSPACE
+    parts = rel.parts
+    if not parts or parts == (".",):
+        return "."
+    head, rest = parts[0], "/".join(parts[1:])
+    if head == "workspace":
+        return VIRT_WORKSPACE if not rest else VIRT_WORKSPACE + "/" + rest
+    if head == "attachments":
+        return VIRT_ATTACHMENTS if not rest else VIRT_ATTACHMENTS + "/" + rest
+    return VIRT_WORKSPACE + "/" + rel.as_posix()
+
+
+def _virtual_bucket(text: str) -> tuple[str, str]:
+    """Return ``(workspace|attachments, remainder)`` for a model path."""
+    norm = str(text or "").replace("\\", "/").strip()
+    while norm.startswith("./"):
+        norm = norm[2:]
+    if norm.startswith("/"):
+        norm = norm.lstrip("/")
+    for bucket in ("workspace", "attachments"):
+        if norm == bucket:
+            return bucket, ""
+        prefix = bucket + "/"
+        if norm.startswith(prefix):
+            return bucket, norm[len(prefix) :]
+    return "workspace", norm
 
 
 def logical_path(raw: str, root: Path) -> Path:
-    """Map a browser or model path into one user folder.
+    """Map a browser or model path into this user's workspace or attachments.
 
-    /workspace/notes/a.txt is that folder. A real disk path, a symlink that
-    leaves the folder, or .. that climbs out is refused. The error does not
-    repeat the machine path.
+    ``/workspace/notes/a.txt``, ``./workspace/notes/a.txt`` and ``notes/a.txt``
+    all land in ``<cookie>/workspace``. ``./attachments/...`` lands beside it.
+    A real disk path, a symlink that leaves the folder, or ``..`` that climbs
+    out is refused. The error does not repeat the machine path.
     """
     text = str(raw or "").replace("\\", "/").strip()
     if "\x00" in text or text.startswith("//") or text.startswith("\\\\"):
-        raise PermissionError("That path is outside /workspace.")
-    if text in (DISPLAY_ROOT, DISPLAY_ROOT + "/"):
-        text = ""
-    elif text.startswith(DISPLAY_ROOT + "/"):
-        text = text[len(DISPLAY_ROOT) + 1 :]
-    candidate = Path(text) if text else Path(".")
-    if candidate.is_absolute():
-        raise PermissionError("That path is outside /workspace.")
-    base = Path(root).resolve()
-    target = (base / candidate).resolve()
+        raise PermissionError("That path is outside ./workspace.")
+    if len(text) > 2 and text[1] == ":":
+        raise PermissionError("That path is outside ./workspace.")
+    if text.startswith("/") and not (
+        text == DISPLAY_ROOT
+        or text.startswith(DISPLAY_ROOT + "/")
+        or text == "/attachments"
+        or text.startswith("/attachments/")
+    ):
+        raise PermissionError("That path is outside ./workspace.")
+    bucket, rest = _virtual_bucket(text)
+    if rest.startswith("/") or ".." in Path(rest).parts:
+        raise PermissionError("That path is outside ./workspace.")
+    base = (Path(root).resolve() / bucket).resolve()
+    target = base if not rest else (base / rest).resolve()
     try:
         target.relative_to(base)
+        target.relative_to(Path(root).resolve())
     except ValueError as exc:
-        raise PermissionError("That path is outside /workspace.") from exc
+        raise PermissionError("That path is outside ./workspace.") from exc
     return target
 
 

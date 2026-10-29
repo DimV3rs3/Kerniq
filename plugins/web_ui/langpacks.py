@@ -91,7 +91,7 @@ def validate_pack(data: Any) -> dict[str, Any]:
             if not isinstance(key, str) or not isinstance(value, str):
                 bad += 1
                 continue
-            source = _plain(key, limit=400)
+            source = _plain(key, limit=400, allow_newline=True)
             target = _plain(value, limit=2000, allow_newline=True)
             if not source or not target:
                 bad += 1
@@ -135,15 +135,21 @@ def validate_pack(data: Any) -> dict[str, Any]:
 
 
 def ensure_seeded(state_dir: Path | str) -> None:
+    """Copy bundled packs that are not already stored.
+
+    An empty ``state/languages`` directory must not hide Russian. A pack the
+    user already imported, including their own edit of ru.json, is left alone.
+    """
     dest = packs_dir(state_dir)
-    if dest.exists():
-        return
     dest.mkdir(parents=True, exist_ok=True)
     source = bundled_dir()
     if not source.is_dir():
         return
     for path in source.glob("*.json"):
-        shutil.copy2(path, dest / path.name)
+        target = dest / path.name
+        if target.is_file():
+            continue
+        shutil.copy2(path, target)
 
 
 def list_packs(state_dir: Path | str, *, with_strings: bool = False) -> list[dict[str, Any]]:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Kerniq"
-version = "0.1.7"
+version = "0.1.8"
 description = "A modular Open Source AI Agent Platform"
 readme = "README.md"
 license = { text = "MIT" }
@@ -36,8 +36,10 @@ include = ["Kerniq*"]
 exclude = []
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "plugins"]
 pythonpath = ["src"]
+python_files = ["test_*.py"]
+norecursedirs = [".git", "node_modules", "__pycache__", "*.egg-info", "static", "vendor"]
 
 [tool.ruff]
 line-length = 100

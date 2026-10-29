@@ -13,6 +13,8 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
+from .confinement import confined_reason, destructive_reason
+
 
 @dataclass(frozen=True)
 class CommandVerdict:
@@ -71,12 +73,15 @@ def _prepare(command: str) -> str:
     return text.replace("`", "").replace("^", "")
 
 
-def assess_command(command: str, *, allow_network: bool = False) -> CommandVerdict:
+def assess_command(command: str, *, allow_network: bool = False, host_freedom: bool = False) -> CommandVerdict:
     if command is None or not str(command).strip():
         return CommandVerdict(False, "Empty command")
     cmd = _prepare(str(command))
     if "\x00" in cmd:
         return CommandVerdict(False, "NUL byte in command")
+    destroyed = destructive_reason(cmd)
+    if destroyed:
+        return CommandVerdict(False, destroyed)
     if _ENCODED.search(cmd) or _NESTED_PS_ENC.search(cmd):
         return CommandVerdict(
             False,
@@ -94,6 +99,11 @@ def assess_command(command: str, *, allow_network: bool = False) -> CommandVerdi
         )
     if _OBFUSCATION.search(cmd):
         return CommandVerdict(False, "Obfuscated command construction is denied")
+    if host_freedom:
+        return CommandVerdict(True, "")
+    locked = confined_reason(cmd)
+    if locked:
+        return CommandVerdict(False, locked)
     if "\\\\" in cmd or _UNC.search(cmd):
         return CommandVerdict(False, "UNC or \\\\?\\ paths are outside the workspace")
     if _DRIVE.search(cmd) or _DRIVE_TAIL.search(cmd):

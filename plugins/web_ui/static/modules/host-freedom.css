@@ -1,0 +1,26 @@
+/* Host-freedom confirmation. Kept out of the main stylesheet on purpose. */
+.hf-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 10, 14, 0.62);
+  padding: 24px;
+}
+.hf-modal.on { display: flex; }
+.hf-card {
+  width: min(520px, 100%);
+  background: var(--panel, #1b1f27);
+  color: var(--text, #e8eaed);
+  border: 1px solid var(--line, #2c3340);
+  border-radius: 16px;
+  padding: 22px 22px 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+}
+.hf-card h3 { margin: 0 0 10px; font-size: 18px; }
+.hf-card p { margin: 0 0 10px; line-height: 1.45; }
+.hf-card .hf-warn { color: #e7b15a; }
+.hf-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.hf-actions button[disabled] { opacity: 0.55; cursor: not-allowed; }

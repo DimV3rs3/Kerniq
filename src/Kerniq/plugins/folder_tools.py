@@ -61,8 +61,58 @@ def register_folder_tools(plugin, plugin_path: Path, context) -> None:
         logger.exception("create_tools failed in %s", plugin_path)
         return
     expose = expose_to_agent(Path(plugin_path))
+    plugin_id = str(getattr(plugin, "plugin_id", "") or getattr(getattr(plugin, "manifest", None), "plugin_id", "") or "")
     for tool in tools:
         try:
+            if plugin_id:
+                tool.plugin_id = plugin_id
             context.register_tool(tool, expose_to_agent=expose)
         except Exception:
             logger.exception("Could not register a tool from %s", plugin_path)
+
+
+def preview_plugin_tools(plugin_path: Path):
+    """Instantiate a plugin's tools for the settings list. Import errors stay local."""
+    path = Path(plugin_path)
+    if not expose_to_agent(path):
+        return []
+    init = path / "tools" / "__init__.py"
+    if not init.is_file():
+        return []
+    try:
+        with open(path / "manifest.toml", "rb") as handle:
+            raw = tomllib.load(handle)
+    except Exception:
+        return []
+    block = raw.get("plugin") if isinstance(raw.get("plugin"), dict) else raw
+    plugin_id = str((block or {}).get("plugin_id") or path.name)
+    module_name = f"Kerniq_plugin_{path.name}_tools_preview"
+    spec = importlib.util.spec_from_file_location(module_name, init)
+    if spec is None or spec.loader is None:
+        return []
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        logger.exception("Plugin tool preview failed: %s", path)
+        return []
+    factory = getattr(module, "create_tools", None)
+    if not callable(factory):
+        return []
+
+    class _Stub:
+        pass
+
+    stub = _Stub()
+    stub.plugin_id = plugin_id
+    try:
+        tools = list(factory(stub) or [])
+    except Exception:
+        logger.exception("create_tools preview failed: %s", path)
+        return []
+    for tool in tools:
+        try:
+            tool.plugin_id = plugin_id
+        except Exception:
+            pass
+    return tools

@@ -1,6 +1,6 @@
 """Install, identify, and update plugins that are not part of the default kit.
 
-The default kit is the Web UI, Context Compact, and the Plugin Manager.
+The default kit is the Web UI, Context Compact, the Plugin Manager, and Git session.
 Every other plugin is a folder with its own manifest. Kerniq does not import
 it by name. A folder is loaded only after it has been installed under
 ``plugins/``.
@@ -24,7 +24,12 @@ import httpx
 from Kerniq.devtools.update_check import is_newer
 
 ORIGIN_NAME = ".kerniq-origin.json"
-KIT_IDS = frozenset({"plugin_plugin_manager", "plugin_web_ui", "plugin_context_compact"})
+KIT_IDS = frozenset({
+    "plugin_plugin_manager",
+    "plugin_web_ui",
+    "plugin_context_compact",
+    "plugin_git_session",
+})
 _GITHUB_API = "https://api.github.com"
 _DANGEROUS = [
     (re.compile(r"\beval\s*\("), "use of eval()"),

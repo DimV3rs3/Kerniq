@@ -278,17 +278,16 @@ function loadChats() {
   chats = [];
 }
 function saveChats() {
-  if (chats.length > MAX_CHATS) {
-    chats = chats.slice(-MAX_CHATS);
-    if (!chats.find(c => c.id === activeChatId)) {
-      activeChatId = chats.length ? chats[chats.length - 1].id : null;
-    }
-  }
   clearTimeout(saveChats._t);
   saveChats._t = setTimeout(() => {
     api('/api/ui/chats', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chats }),
+    }).then((res) => {
+      if (res && res.error === 'chats_full') {
+        toast(t('chatsFull'), true);
+        loadChatsFromServer().then(() => { renderChatList(); renderMessages(); });
+      }
     }).catch(() => {});
   }, 250);
 }
@@ -298,7 +297,6 @@ async function loadChatsFromServer() {
     const data = await api('/api/ui/chats');
     chats = Array.isArray(data && data.chats) ? data.chats : [];
   } catch (_) { chats = []; }
-  if (chats.length > MAX_CHATS) chats = chats.slice(-MAX_CHATS);
   chats.forEach(c => {
     if (c.prompt_tokens == null) c.prompt_tokens = null;
     if (c.context_limit == null) c.context_limit = null;
@@ -748,10 +746,26 @@ function buildTree(entries) {
   }
   return root;
 }
+function explorerRoot() {
+  try { return localStorage.getItem('kerniq.explorer.root') || 'workspace'; }
+  catch (_) { return 'workspace'; }
+}
+function activeTree() {
+  const open = document.querySelector('.root-pane.open .tree');
+  return open || document.getElementById('tree');
+}
+function applyExplorerRoot(name) {
+  document.querySelectorAll('#root-stack .root-pane').forEach(pane => {
+    pane.classList.toggle('open', pane.dataset.root === name);
+  });
+}
 async function refreshTree(silent) {
-  const data = await api('/api/fs/tree' + (silent ? '' : '?fresh=1'));   // the poll may be served from a short server cache
-  if (data.error) { if (!silent) document.getElementById('tree').textContent = data.error; return; }
-  const key = JSON.stringify(data.entries || []);
+  const root = explorerRoot();
+  applyExplorerRoot(root);
+  const data = await api('/api/fs/tree?root=' + encodeURIComponent(root) + (silent ? '' : '&fresh=1'));
+  const el = activeTree();
+  if (data.error) { if (!silent && el) el.textContent = data.error; return; }
+  const key = root + JSON.stringify(data.entries || []);
   if (silent && key === refreshTree._last) return;
   refreshTree._last = key;
   treeData = data.entries || [];
@@ -766,7 +780,8 @@ function fileSvg(name) {
 }
 function renderTree() {
   const root = buildTree(treeData);
-  const el = document.getElementById('tree');
+  const el = activeTree();
+  if (!el) return;
   el.innerHTML = '';
   el.oncontextmenu = (ev) => {
     if (ev.target !== el && !ev.target.classList.contains('tree')) return;
@@ -786,6 +801,7 @@ function renderTree() {
       const open = expanded.has(ch.path);
       if (ch.type === 'dir') {
         row.innerHTML = `<span class="twist${open ? ' open' : ''}">${TWIST_SVG}</span>${DIR_SVG}<span class="fname">${esc(ch.name)}</span>`;
+        row.title = ch.name;
         if (ch.hidden) row.classList.add('hidden-entry');
         row.onclick = () => { if (expanded.has(ch.path)) expanded.delete(ch.path); else expanded.add(ch.path); renderTree(); };
         row.oncontextmenu = ev => { ev.preventDefault(); showCtx(ev, ch.path, true); };
@@ -793,6 +809,7 @@ function renderTree() {
         if (open) walk(ch, depth + 1);
       } else {
         row.innerHTML = `<span class="twist"></span>${fileSvg(ch.name)}<span class="fname">${esc(ch.name)}</span>`;
+        row.title = ch.name;
         if (ch.hidden) row.classList.add('hidden-entry');
         row.onclick = () => openFile(ch.path);
         row.oncontextmenu = ev => { ev.preventDefault(); showCtx(ev, ch.path, false); };
@@ -805,6 +822,14 @@ function renderTree() {
 let treePoll = null;
 function startTreePoll() { stopTreePoll(); treePoll = setInterval(() => refreshTree(true), 2500); }
 function stopTreePoll() { if (treePoll) clearInterval(treePoll); treePoll = null; }
+document.querySelectorAll('#root-stack .root-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const name = btn.dataset.root || 'workspace';
+    try { localStorage.setItem('kerniq.explorer.root', name); } catch (_) {}
+    applyExplorerRoot(name);
+    refreshTree();
+  });
+});
 
 function showCtx(ev, path, isDir, isRoot) {
   const ctx = document.getElementById('ctx');

@@ -506,16 +506,18 @@ def _safe_download_name(url: str, header: str = "") -> str:
 
 
 def downloads_dir(workspace):
-    """Visible ``.downloads`` folder. Server mode writes under the user workspace."""
+    """Physical downloads folder. The model sees it as ./downloads."""
     from pathlib import Path
 
-    from Kerniq.server.homes import jail_root
+    from Kerniq.server.homes import downloads_folder, jail_root
 
     jail = jail_root()
     if jail is not None:
-        dest = Path(jail) / "workspace" / ".downloads"
+        dest = downloads_folder(Path(jail))
     else:
-        dest = Path(workspace) / ".downloads"
+        from Kerniq.security.roots import desktop_roots
+
+        dest = desktop_roots(workspace).downloads
     dest.mkdir(parents=True, exist_ok=True)
     return dest
 
@@ -652,7 +654,7 @@ class DownloadFileTool(Tool):
                 async with client.stream(
                     "GET",
                     url,
-                    headers={"User-Agent": "Kerniq/0.1.8 (download_file)"},
+                    headers={"User-Agent": "Kerniq/0.1.9 (download_file)"},
                 ) as resp:
                     resp.raise_for_status()
                     header = resp.headers.get("content-disposition") or ""

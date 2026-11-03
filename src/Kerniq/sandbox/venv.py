@@ -233,6 +233,7 @@ def apply_sandbox_env(
     external_roots: list | None = None,
     confine: bool = True,
     visible_roots: list | None = None,
+    use_venv: bool = True,
 ) -> dict:
     """Point python/pip at the workspace sandbox and hide the computer's PATH.
 
@@ -240,16 +241,40 @@ def apply_sandbox_env(
     anything else installed on the machine. ``external_roots`` are attached
     folders the script may read but must not modify. When ``confine`` is set,
     Python itself may not open paths outside ``visible_roots``.
+
+    ``use_venv`` false leaves the host PATH (minus ``.kerniq-venv``) so
+    ``ls`` and ``cat`` exist. Host freedom (``confine`` false) keeps those
+    programs even when the venv is still prepended.
     """
-    python = ensure_sandbox_python(workspace)
     out = dict(env)
-    if python is None:
+    python = ensure_sandbox_python(workspace) if use_venv else None
+
+    def host_path() -> str:
+        raw = out.get("PATH") or os.defpath
+        kept = []
+        for part in str(raw).split(os.pathsep):
+            if not part or ".kerniq-venv" in part.replace("\\", "/"):
+                continue
+            if part not in kept:
+                kept.append(part)
+        return os.pathsep.join(kept) if kept else os.defpath
+
+    if not use_venv or python is None and not use_venv:
+        out.pop("VIRTUAL_ENV", None)
+        out.pop("KERNIQ_SANDBOX", None)
+        out.pop("PYTHONSAFEPATH", None)
+        out.pop("PYTHONNOUSERSITE", None)
+        out.pop("PYTHONHOME", None)
+        out["PATH"] = host_path()
+    elif python is None:
         _install_loose_guard(workspace)
         guard = Path(workspace) / ".kerniq-guard"
         if (guard / "sitecustomize.py").is_file():
             out["PYTHONPATH"] = str(guard.resolve())
             out.pop("PYTHONSAFEPATH", None)
             out["PYTHONNOUSERSITE"] = "1"
+        if not confine:
+            out["PATH"] = host_path()
     else:
         install_guard(python)
         bindir = python.parent.resolve()
@@ -259,7 +284,11 @@ def apply_sandbox_env(
         parts = [str(bindir)]
         if os.name == "nt":
             parts.append(str(venv_root))
-        out["PATH"] = os.pathsep.join(parts)
+        if confine:
+            out["PATH"] = os.pathsep.join(parts)
+        else:
+            extra = host_path()
+            out["PATH"] = os.pathsep.join(parts + ([extra] if extra else []))
         out["PYTHONNOUSERSITE"] = "1"
         out["PYTHONSAFEPATH"] = "1"
         out.pop("PYTHONPATH", None)

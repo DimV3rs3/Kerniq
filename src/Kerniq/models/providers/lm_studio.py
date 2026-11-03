@@ -607,12 +607,34 @@ class LMStudioProvider(ModelProvider):
         return False
 
     async def load_model(self, model_key: str, context_length: Optional[int] = None) -> Dict[str, Any]:
-        if await self.model_is_loaded(model_key):
-            logger.info("load skipped, already loaded: %s", model_key)
-            return {"ok": True, "already_loaded": True, "model": model_key}
-        payload: Dict[str, Any] = {"model": model_key}
+        requested = None
         if context_length is not None:
-            payload["context_length"] = context_length
+            try:
+                requested = int(context_length)
+            except (TypeError, ValueError):
+                requested = None
+            if requested is not None and requested < 1:
+                requested = None
+        if await self.model_is_loaded(model_key):
+            loaded_now = await self._loaded_context_length(model_key)
+            if requested is None or loaded_now == requested:
+                logger.info("load skipped, already loaded: %s", model_key)
+                return {
+                    "ok": True,
+                    "already_loaded": True,
+                    "model": model_key,
+                    "context_length": loaded_now,
+                }
+            logger.info(
+                "reloading %s: loaded context %s, requested %s",
+                model_key,
+                loaded_now,
+                requested,
+            )
+            await self.unload_model_instances(model_key)
+        payload: Dict[str, Any] = {"model": model_key}
+        if requested is not None:
+            payload["context_length"] = requested
         url = self._url("/api/v1/models/load")
         async with self._client(timeout=600) as client:
             r = await client.post(url, json=payload, headers=self._headers())
@@ -622,7 +644,29 @@ class LMStudioProvider(ModelProvider):
                     f"Load failed: {r.status_code} {r.text[:400]}",
                 )
             _invalidate_model_cache()
-            return r.json() if r.content else {}
+            body = r.json() if r.content else {}
+            if isinstance(body, dict):
+                body.setdefault("context_length", requested)
+            return body
+
+    async def _loaded_context_length(self, model_key: str) -> Optional[int]:
+        from Kerniq.models.identity import instance_model_key, same_model
+
+        want = instance_model_key(model_key)
+        for item in await self.loaded_instances():
+            if not same_model(str(item.get("model") or ""), want):
+                continue
+            cfg = item.get("config") if isinstance(item.get("config"), dict) else {}
+            raw = (
+                cfg.get("context_length")
+                or item.get("context_length")
+                or item.get("loaded_context_length")
+            )
+            try:
+                return int(raw) if raw else None
+            except (TypeError, ValueError):
+                return None
+        return None
 
     async def embed_text(self, model: str, text: str) -> List[float]:
         """Run a prompt through an embedding model. Returns the vector, or []."""
@@ -668,19 +712,19 @@ class LMStudioProvider(ModelProvider):
                 continue
             if tdef.get("type") == "function" and "function" in tdef:
                 fn = dict(tdef.get("function") or {})
-                from Kerniq.models.text_tools import normalize_parameters
+                from Kerniq.models.text_tools import soften_schema_for_lmstudio
 
-                fn["parameters"] = normalize_parameters(fn.get("parameters"))
+                fn["parameters"] = soften_schema_for_lmstudio(fn.get("parameters"))
                 out.append({"type": "function", "function": fn})
                 continue
             name = tdef.get("name") or tdef.get("tool") or ""
             desc = tdef.get("description") or ""
             params = tdef.get("input_schema") or tdef.get("parameters") or {"type": "object", "properties": {}}
-            from Kerniq.models.text_tools import normalize_parameters
+            from Kerniq.models.text_tools import soften_schema_for_lmstudio
 
             out.append({
                 "type": "function",
-                "function": {"name": name, "description": desc, "parameters": normalize_parameters(params)},
+                "function": {"name": name, "description": desc, "parameters": soften_schema_for_lmstudio(params)},
             })
         return out
 

@@ -13,6 +13,14 @@ from Kerniq.tools.filesystem import FileSystemTools
 from Kerniq.tools.registry import ToolRegistry
 
 
+def _catalog_file(relative: str):
+    import pytest
+    path = Path(__file__).resolve().parents[2] / relative
+    if not path.exists():
+        pytest.skip(relative + " is not part of Kerniq. That plugin ships its own tests.")
+    return path
+
+
 def _load(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
@@ -21,7 +29,7 @@ def _load(path: Path, name: str):
 
 
 def test_office_roundtrip_and_plain_text_refusal(tmp_path):
-    engine = _load(Path(__file__).resolve().parents[2] / "catalog" / "Kerniq-office" / "engine.py", "office_engine_test")
+    engine = _load(_catalog_file("catalog/Kerniq-office/engine.py"), "office_engine_test")
     docx = tmp_path / "note.docx"
     created = engine.create_document(docx, {
         "paragraphs": [
@@ -95,7 +103,7 @@ def test_office_roundtrip_and_plain_text_refusal(tmp_path):
 
 
 def test_model_advice_presets_stay_local():
-    engine = _load(Path(__file__).resolve().parents[2] / "catalog" / "Kerniq-model-advisor" / "engine.py", "advisor_engine_test")
+    engine = _load(_catalog_file("catalog/Kerniq-model-advisor/engine.py"), "advisor_engine_test")
     system = {
         "os": "Linux",
         "arch": "x86_64",
@@ -124,10 +132,12 @@ def test_model_advice_presets_stay_local():
 
 def test_catalog_plugins_are_offered(tmp_path):
     repo = Path(__file__).resolve().parents[2]
-    assert inspect_plugin(repo / "catalog" / "Kerniq-office")["standalone"] is True
-    assert inspect_plugin(repo / "catalog" / "Kerniq-model-advisor")["standalone"] is True
-    assert install_tree(repo / "catalog" / "Kerniq-office", plugins_dir=tmp_path)["ok"] is True
-    assert install_tree(repo / "catalog" / "Kerniq-model-advisor", plugins_dir=tmp_path)["ok"] is True
+    office = _catalog_file("catalog/Kerniq-office")
+    advisor = _catalog_file("catalog/Kerniq-model-advisor")
+    assert inspect_plugin(office)["standalone"] is True
+    assert inspect_plugin(advisor)["standalone"] is True
+    assert install_tree(office, plugins_dir=tmp_path)["ok"] is True
+    assert install_tree(advisor, plugins_dir=tmp_path)["ok"] is True
 
     async def go():
         registry = ToolRegistry()

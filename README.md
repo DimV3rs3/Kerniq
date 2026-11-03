@@ -1,4 +1,4 @@
-# Kerniq 0.1.8
+# Kerniq 0.1.9
 
 Kerniq is a local-first platform for AI agents. One process takes a task, asks a model, runs the tools that model requests, and keeps the session. The same loop is used by the command line, the Web UI, and the MCP server. A model provider or a plugin is an adapter. It is not a second copy of the loop.
 
@@ -73,7 +73,7 @@ Stop the UI from the status bar, or with Ctrl+C in the terminal that started it.
 
 ## Commands
 
-`kerniq` and `python -m Kerniq` are the same program after install. `kerniq --help` prints the command list. `kerniq --version` prints `0.1.8`. Every flag is in [docs/cli.md](docs/cli.md).
+`kerniq` and `python -m Kerniq` are the same program after install. `kerniq --help` prints the command list. `kerniq --version` prints `0.1.9`. Every flag is in [docs/cli.md](docs/cli.md).
 
 | Command | What it does |
 |---------|----------------|
@@ -171,7 +171,7 @@ Uninstall resets settings, `sessions/`, `logs/`, and `state/`, then removes only
 ## Documentation
 
 - [docs/cli.md](docs/cli.md) — every command and flag
-- [RELEASE_NOTES.md](RELEASE_NOTES.md) — what changed in 0.1.8
+- [CHANGELOG.md](CHANGELOG.md) — what changed since 0.1.8
 - [docs/architecture/overview.md](docs/architecture/overview.md) — how the pieces fit
 - [docs/architecture/security.md](docs/architecture/security.md) — workspace and approvals
 - [docs/plugins/development.md](docs/plugins/development.md) — writing a plugin

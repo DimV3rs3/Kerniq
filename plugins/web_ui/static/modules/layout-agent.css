@@ -5,7 +5,10 @@ html[data-server="1"] #host-freedom-field { display: none !important; }
 
 /* ---- agent layout: chats | conversation (no editor) ---- */
 .side-chats { display: none; flex: 1; flex-direction: column; min-height: 0; padding: 10px 8px 8px; gap: 8px; }
-html[data-layout="agent"] #explorer > .tree { display: none; }
+html[data-layout="agent"] #explorer > .tree,
+html[data-layout="agent"] #explorer > .root-stack { display: none; }
+html[data-layout="agent"] #explorer > h3 button,
+html[data-layout="agent"] #explorer .explorer-create { display: none !important; }
 html[data-layout="agent"] #explorer > .side-chats { display: flex; }
 .side-new {
   gap: 8px;

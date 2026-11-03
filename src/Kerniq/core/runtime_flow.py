@@ -141,18 +141,37 @@ async def probe_context_limit(provider, model: str) -> int:
     return int(loaded_fallback or catalog_fallback or 0)
 
 
-async def use_model_for_mode(provider, api, mode: str) -> Optional[str]:
+def _load_accepts_context(provider) -> bool:
+    """True when ``load_model`` can take a context window. Other providers must not see the kwarg."""
+    import inspect
+
+    fn = getattr(provider, "load_model", None)
+    if fn is None:
+        return False
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return any(
+        param.kind is inspect.Parameter.VAR_KEYWORD or param.name == "context_length"
+        for param in params.values()
+    )
+
+
+async def use_model_for_mode(provider, api, mode: str, context_length: int | None = None) -> Optional[str]:
     """Point the provider at the model for this mode.
 
     Plan uses ``api.model``. Act uses ``api.act_model`` when split models
     are on, otherwise the same model. Shells call this and only display
     the result. Returns an error string, or None when the switch worked
-    or was not needed.
+    or was not needed. LM Studio also reloads when the saved context
+    length is not the one the model was loaded with.
     """
     plan_model = str(getattr(api, "model", "") or "").strip()
     act_model = str(getattr(api, "act_model", "") or "").strip()
     split = bool(getattr(api, "split_models", False))
     target = act_model if mode == "act" and split and act_model else plan_model
+    provider_id = str(getattr(api, "provider", "") or getattr(provider, "provider_id", "") or "")
     if not target:
         if hasattr(provider, "resolve_auto_model") and not str(getattr(provider, "model", "") or "").strip():
             try:
@@ -171,18 +190,29 @@ async def use_model_for_mode(provider, api, mode: str) -> Optional[str]:
         except Exception:
             logger.exception("loaded-model check failed")
             already = False
-    if already:
+    requested = context_length
+    if requested is None:
+        requested = getattr(api, "context_length", None)
+    try:
+        requested = int(requested) if requested else None
+    except (TypeError, ValueError):
+        requested = None
+    if requested is not None and requested < 1:
+        requested = None
+    if already and not (provider_id == "lm_studio" and requested is not None and _load_accepts_context(provider)):
         if hasattr(provider, "model"):
             provider.model = target
         logger.info("Model for %s mode is already loaded: %s", mode, target)
         return None
     current = str(getattr(provider, "model", "") or "").strip()
-    if current == target and not hasattr(provider, "load_model"):
+    if current == target and not hasattr(provider, "load_model") and provider_id != "lm_studio":
         return None
-    provider_id = str(getattr(api, "provider", "") or getattr(provider, "provider_id", "") or "")
     try:
-        if provider_id == "lm_studio" and hasattr(provider, "load_model"):
-            await provider.load_model(target)
+        if hasattr(provider, "load_model"):
+            if provider_id == "lm_studio" and _load_accepts_context(provider):
+                await provider.load_model(target, context_length=requested)
+            else:
+                await provider.load_model(target)
         elif provider_id == "ollama":
             import httpx
 
@@ -193,7 +223,7 @@ async def use_model_for_mode(provider, api, mode: str) -> Optional[str]:
                 await client.post(base + "/api/generate", json={"model": target, "keep_alive": "10m"})
         if hasattr(provider, "model"):
             provider.model = target
-        logger.info("Model for %s mode is %s", mode, target)
+        logger.info("Model for %s mode is %s (context=%s)", mode, target, requested or "model max")
         return None
     except Exception as exc:
         logger.exception("model switch failed")

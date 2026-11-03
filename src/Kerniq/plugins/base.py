@@ -34,6 +34,9 @@ class PluginContext:
         elif "_agent_visible" not in getattr(tool, "__dict__", {}):
             tool._agent_visible = False
         tool._plugin_owned = True
+        plugin_id = str(getattr(self, "plugin_id", "") or "")
+        if plugin_id and not getattr(tool, "plugin_id", ""):
+            tool.plugin_id = plugin_id
         try:
             register(tool, replace=True)
         except TypeError:

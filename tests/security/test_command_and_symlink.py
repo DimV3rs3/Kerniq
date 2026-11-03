@@ -77,6 +77,27 @@ def test_symlink_escape_is_denied(tmp_path):
     assert "outside" in (result.human_readable or "").lower() or "denied" in (result.human_readable or "").lower()
 
 
+def test_open_host_skips_the_symlink_gate(tmp_path):
+    from Kerniq.tools.packs.terminal.tools import TerminalTools
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "out").symlink_to(tmp_path / "secret")
+    held = SecurityPolicy(workspace, host_freedom=True)
+    tool = TerminalTools(workspace, held)
+
+    async def run():
+        return await tool.execute({"command": "pwd", "timeout": 5}, None)
+
+    denied = asyncio.run(run())
+    assert denied.success is False
+    assert "symlink" in (denied.human_readable or "").lower()
+    held.use_venv = False
+    opened = asyncio.run(run())
+    assert opened.success is True
+    assert "symlink" not in (opened.human_readable or "").lower()
+
+
 def test_move_cannot_leave_workspace(tmp_path):
     workspace = tmp_path / "ws"
     workspace.mkdir()

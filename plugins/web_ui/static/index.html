@@ -49,7 +49,20 @@
 <div id="view-main">
   <aside class="panel" id="explorer">
     <h3><span class="grow">Explorer</span></h3>
-    <div class="tree" id="tree"></div>
+    <div class="root-stack" id="root-stack">
+      <section class="root-pane open" data-root="workspace">
+        <button type="button" class="root-tab" data-root="workspace"><span data-i18n="workspace">Workspace</span></button>
+        <div class="tree" id="tree" data-root="workspace"></div>
+      </section>
+      <section class="root-pane" data-root="attachments">
+        <button type="button" class="root-tab" data-root="attachments"><span data-i18n="attachments">Attachments</span></button>
+        <div class="tree" id="tree-attachments" data-root="attachments"></div>
+      </section>
+      <section class="root-pane" data-root="downloads">
+        <button type="button" class="root-tab" data-root="downloads"><span data-i18n="downloads">Downloads</span></button>
+        <div class="tree" id="tree-downloads" data-root="downloads"></div>
+      </section>
+    </div>
     <div class="side-chats" id="side-chats">
       <div class="drawer-head phone-only">
         <span class="brand-mark" aria-hidden="true"></span>
@@ -150,6 +163,18 @@
             <button class="ghost" type="button" id="btn-pick-ws" data-i18n="browse">Browse…</button>
           </div>
         </div>
+        <div class="field" id="attachments-field"><label class="lbl"><span data-i18n="attachmentsFolder">Attachments folder</span><span class="info-tip" tabindex="0" data-i18n-tip="attachmentsFolderTip" data-tip="Where attached files are stored. A relative path starts at the Kerniq install folder, not inside the workspace.">i</span></label>
+          <div class="row">
+            <input id="s-attachments" placeholder="./attachments" style="flex:1"/>
+            <button class="ghost" type="button" id="btn-pick-att" data-i18n="browse">Browse…</button>
+          </div>
+        </div>
+        <div class="field" id="downloads-field"><label class="lbl"><span data-i18n="downloadsFolder">Downloads folder</span><span class="info-tip" tabindex="0" data-i18n-tip="downloadsFolderTip" data-tip="Where downloaded files are stored. A relative path starts at the Kerniq install folder, not inside the workspace.">i</span></label>
+          <div class="row">
+            <input id="s-downloads" placeholder="./downloads" style="flex:1"/>
+            <button class="ghost" type="button" id="btn-pick-dl" data-i18n="browse">Browse…</button>
+          </div>
+        </div>
         <div class="field-grid">
         <div class="field"><label class="lbl"><span data-i18n="maxIterations">Max iterations</span><span class="info-tip" tabindex="0" data-tip="Maximum agent steps per run. Leave empty for default (20).">i</span></label>
           <input type="number" id="s-max-iter" min="1" max="10000" step="1" placeholder="20"/>
@@ -171,12 +196,26 @@
           <input type="number" id="s-undo-size" min="10" max="1000" step="1" placeholder="100"/>
         </div>
         </div>
-        <div class="field field-check" id="host-freedom-field">
+        <div class="field field-check" id="host-freedom-field" hidden>
           <label class="check-line">
             <input type="checkbox" id="s-host-freedom" class="soft-check"/>
             <span data-i18n="hostFreedom">Allow host paths and privileged commands</span>
-            <span class="info-tip" tabindex="0" data-tip="Off by default. The agent only sees ./workspace and ./attachments. On: it may use real paths and privileged commands. Server mode never offers this. Turning it on asks you to wait 5 seconds.">i</span>
+            <span class="info-tip" tabindex="0" data-tip="Off by default. Shown only after developer mode is on and the virtual environment is off. Server mode never offers this.">i</span>
           </label>
+        </div>
+        <div class="field field-check" id="use-venv-field" hidden>
+          <label class="check-line">
+            <input type="checkbox" id="s-leave-venv" class="soft-check" checked/>
+            <span data-i18n="useVenv">Use the virtual environment</span>
+            <span class="info-tip" tabindex="0" data-tip="On by default. Shown only in developer mode. Turning it off asks you to wait 3 seconds. Host freedom appears only after it is off.">i</span>
+          </label>
+        </div>
+        <div class="usage-card" id="folder-usage">
+          <h3 data-i18n="folderSpace">Folder space</h3>
+          <p class="hint" data-i18n="folderSpaceHint">Each folder has its own limit for space Kerniq adds. Files that were already there are not counted. The default is 4 GB of new space.</p>
+          <div class="usage-total" id="usage-total"></div>
+          <div class="usage-stack" id="usage-stack"></div>
+          <div id="usage-rows"></div>
         </div>
       </div>
       <div class="scard tabp" id="tab-api" style="display:none">
@@ -238,6 +277,9 @@
         <div class="field"><label class="lbl"><span data-i18n="maxTokens">Max tokens</span><span class="info-tip" tabindex="0" data-tip="Max tokens to generate. Empty = model maximum.">i</span></label>
           <input type="number" id="s-api-max-tokens" min="1" max="1000000" step="1" placeholder="auto (model max)"/>
         </div>
+        <div class="field"><label class="lbl"><span data-i18n="contextLength">Context length</span><span class="info-tip" tabindex="0" data-tip="Tokens to load a local model with. Empty uses the model's maximum. A model that is already loaded at a different length is reloaded.">i</span></label>
+          <input type="number" id="s-api-context" min="256" max="2000000" step="1" placeholder="model maximum"/>
+        </div>
         </div>
       </div>
       <div class="scard tabp" id="tab-prompt" style="display:none">
@@ -284,6 +326,13 @@
             <input type="checkbox" id="s-chat-debug" class="soft-check"/>
             <span data-i18n="developerMode">Developer mode</span>
             <span class="info-tip" tabindex="0" data-tip="Show tool-call arguments in chat. Also unlocks a risk bypass that auto-approves every level, including critical.">i</span>
+          </label>
+        </div>
+        <div class="field field-check" id="parallel-tools-field" hidden>
+          <label class="check-line">
+            <input type="checkbox" id="s-parallel-tools" class="soft-check"/>
+            <span data-i18n="parallelTools">Run tools in parallel</span>
+            <span class="info-tip" tabindex="0" data-tip="Developer mode only. Several tools in one turn run at the same time. Off keeps them in order so they do not step on each other.">i</span>
           </label>
         </div>
         </div>
@@ -334,6 +383,13 @@
             <input type="checkbox" id="s-compose-plan" class="soft-check" checked/>
             <span data-i18n="composePlan">Build a plan</span>
             <span class="info-tip" id="compose-plan-tip" tabindex="0" data-tip="When this is on, the first model turn can only edit the TODO. It is forced off when the plan tool is missing, disabled, or not included in Plan mode.">i</span>
+          </label>
+        </div>
+        <div class="field field-check">
+          <label class="check-line">
+            <input type="checkbox" id="s-show-plan" class="soft-check" checked/>
+            <span data-i18n="showPlan">Show plan</span>
+            <span class="info-tip" tabindex="0" data-tip="Shows the plan list above the chat. Off hides that panel and does not leave an empty gap.">i</span>
           </label>
         </div>
         <div class="field field-check">
@@ -639,6 +695,16 @@ Its options show up here.</div></div>
 <input type="file" id="photo-picker" accept="image/png,image/jpeg,image/gif,image/webp,.bmp" multiple style="display:none"/>
 <input type="file" id="folder-picker" webkitdirectory directory multiple style="display:none"/>
 
+<div class="modal-bg" id="guard-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="guard-title">
+    <h3 id="guard-title">Confirm</h3>
+    <p id="guard-text"></p>
+    <div class="btn-row">
+      <button type="button" id="guard-cancel" class="cancel-active">Cancel</button>
+      <button type="button" id="guard-ok" class="save-active" disabled>3</button>
+    </div>
+  </div>
+</div>
 <div class="hf-modal" id="host-freedom-modal">
   <div class="hf-card" role="dialog" aria-modal="true" aria-labelledby="hf-title">
     <h3 id="hf-title">Allow the agent out of its folder?</h3>

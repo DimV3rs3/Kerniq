@@ -43,14 +43,15 @@ function renderSideChats() {
     el.appendChild(d);
   });
 }
+function chatLimit() {
+  return (typeof serverModeOn === 'function' && serverModeOn()) ? 3 : Infinity;
+}
+function chatsFullMessage() {
+  return t('chatsFull');
+}
 function renderChatList() {
   const el = document.getElementById('chat-hist');
   if (!el) return;
-  // Enforce max chats in memory
-  if (chats.length > MAX_CHATS) {
-    chats = chats.slice(-MAX_CHATS);
-    saveChats();
-  }
   renderSideChats();
   refreshChatHeading();
   // Collapse strip when 0 or 1 chat
@@ -103,8 +104,17 @@ function applyChatContextFooter() {
 function newChat(force) {
   const empty = chats.find(c => !c.messages.length);
   if (!force && empty) { activeChatId = empty.id; renderChatList(); renderMessages(); toast('An empty chat already exists'); return; }
+  if (chats.length >= chatLimit()) {
+    toast(chatsFullMessage(), true);
+    return;
+  }
   const c = { id: uid(), title: 'New chat', messages: [], created: Date.now() };
-  chats.push(c); if (chats.length > MAX_CHATS) chats = chats.slice(-MAX_CHATS); activeChatId = c.id; saveChats(); applyChatContextFooter(); renderChatList(); renderMessages();
+  chats.push(c);
+  activeChatId = c.id;
+  saveChats();
+  applyChatContextFooter();
+  renderChatList();
+  renderMessages();
 }
 
 function isToolCollapsible(name) {
@@ -148,18 +158,18 @@ function aggregateMessages(msgs) {
   const source = retainOnlyLatestThought(msgs);
   for (const m of source) {
     if (m.kind === 'think_collapsed' && !(m.text || '').trim()) continue;
-    if (m.kind === 'tool' && m.status === 'pending') continue;
-    if (m.kind === 'file_op' && fileOnly) { out.push(m); continue; }
+    if (m.kind === 'tool' && (m.status === 'pending' || m.status === 'error' || m.success === false)) {
+      out.push(m);
+      continue;
+    }
     if (aggOn && m.kind === 'tool' && isToolCollapsible(m.name)) {
       const prev = out[out.length - 1];
-      if (prev && prev.kind === 'tool_agg' && prev.name === m.name) {
+      if (prev && prev.kind === 'tool_agg' && prev.name === m.name && !prev.errors) {
         prev.count += 1;
-        if (m.status === 'error' || m.success === false) prev.errors += 1;
         continue;
       }
       out.push({
-        kind: 'tool_agg', name: m.name, count: 1,
-        errors: (m.status === 'error' || m.success === false) ? 1 : 0,
+        kind: 'tool_agg', name: m.name, count: 1, errors: 0,
       });
       continue;
     }
@@ -421,10 +431,10 @@ function renderMessagesNow() {
     } else if (m.kind === 'tool') {
       const ok = m.success !== false && m.status !== 'error';
       const pending = m.status === 'pending';
-      d.className = 'msg tool ' + (pending ? '' : (ok ? 'ok' : 'err'));
+      d.className = 'msg tool' + (pending ? ' pending' : (ok ? ' ok' : ' err'));
       const debug = !!(settings && settings.chat && settings.chat.developer_mode);
       let body = '<span class="tool-ico">' + HAMMER_SVG + '</span><span class="tool-name">' + esc(m.name) + '</span>'
-        + '<span class="tool-state">' + (pending ? '…' : (ok ? esc(toolStatePhrase(m.name, 1)) : 'error')) + '</span>';
+        + '<span class="tool-state">' + (pending ? esc(t('waitingForTool')) : (ok ? esc(toolStatePhrase(m.name, 1)) : 'error')) + '</span>';
       if (!pending && m.stop_reason && m.stop_reason !== 'completed') body += '<span class="muted">(' + esc(m.stop_reason) + ')</span>';
       if (debug && m.args && !pending) body += '<span class="tool-detail">' + esc(typeof m.args === 'string' ? m.args : JSON.stringify(m.args)) + '</span>';
       if (!pending && m.summary) body += '<span class="tool-detail">' + esc(m.summary) + '</span>';
@@ -554,7 +564,11 @@ async function ensureModelReady(override) {
     toast('LM Studio: ' + plan.error, true);
     return true;
   }
-  if (plan && (plan.status === 'ready' || plan.selected_loaded)) return true;
+  if (plan && (plan.status === 'ready' || plan.selected_loaded)) {
+    const want = Number(document.getElementById('s-api-context')?.value || (settings && settings.api && settings.api.context_length) || 0);
+    const have = Number(plan.loaded_context_length || 0);
+    if (!want || (have && have === want)) return true;
+  }
   const auto = !!(settings && settings.api && settings.api.auto_model_load);
   let choice = '';
   if (plan && plan.status === 'foreign') {
@@ -572,7 +586,11 @@ async function ensureModelReady(override) {
   try {
     const l = await api('/api/lms/load', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: selected, choice: choice || 'alongside' }),
+      body: JSON.stringify({
+        model: selected,
+        choice: choice || 'alongside',
+        context_length: Number(document.getElementById('s-api-context')?.value || (settings && settings.api && settings.api.context_length) || 0) || null,
+      }),
     });
     if (l && l.needs_choice && l.plan) {
       const again = auto ? autoLoadChoice(l.plan, savedLoadAction()) : await askLoadChoice(l.plan);
@@ -886,8 +904,8 @@ const STATUS_KEYS = {
   processing: 'processing',
   thinking: 'thinking',
   generating: 'generating',
-  tool: 'processing',
-  waiting_tool: 'processing',
+  tool: 'waitingForTool',
+  waiting_tool: 'waitingForTool',
   cancelled: 'stopped',
   done: 'done',
   error: 'error',
@@ -1095,7 +1113,7 @@ function handleEvent(e) {
     } else if (st === 'tool' || st === 'waiting_tool') {
       generatingTokens = false;
       setFooterActivity('work');
-      setStatus(statusLabel(st, e.text), true);
+      setStatus(t('waitingForTool'), true);
     } else {
       setStatus(e.text || statusLabel(st), true);
     }
@@ -1205,10 +1223,32 @@ function handleEvent(e) {
       }
     }
     c.messages = retainOnlyLatestThought(c.messages);
-    c.messages.push({
-      kind: 'tool', name: e.name, status: e.status, success: e.success,
-      stop_reason: e.stop_reason, summary: e.summary, args: e.args,
-    });
+    const callId = e.call_id ? String(e.call_id) : '';
+    const incoming = {
+      kind: 'tool', name: e.name, status: e.status || 'pending', success: e.success,
+      stop_reason: e.stop_reason, summary: e.summary, args: e.args, call_id: callId,
+    };
+    let target = null;
+    if (incoming.status !== 'pending') {
+      if (callId) {
+        target = c.messages.find(m => m.kind === 'tool' && m.call_id === callId);
+      }
+      if (!target) {
+        target = c.messages.find(m => m.kind === 'tool' && m.status === 'pending' && m.name === e.name);
+      }
+    } else if (callId) {
+      target = c.messages.find(m => m.kind === 'tool' && m.call_id === callId);
+    }
+    if (target) {
+      target.status = incoming.status;
+      target.success = incoming.success;
+      target.stop_reason = incoming.stop_reason;
+      target.summary = incoming.summary;
+      target.args = incoming.args;
+      if (callId) target.call_id = callId;
+    } else {
+      c.messages.push(incoming);
+    }
     if (e.status === 'error' || e.success === false) {
       const brief = translate(e.summary || e.name || 'Error');
       const detail = developerOn()
@@ -1271,11 +1311,22 @@ function coercePlan(items) {
   });
   return list;
 }
+function planShown() {
+  const box = document.getElementById('s-show-plan');
+  if (box) return box.checked;
+  const chat = (typeof settings !== 'undefined' && settings && settings.chat) || {};
+  return chat.show_plan !== false;
+}
 function renderPlan() {
   const box = document.getElementById('plan-float');
   const body = document.getElementById('plan-body');
   const chev = document.getElementById('plan-chevron');
   if (!box || !body) return;
+  if (!planShown()) {
+    box.hidden = true;
+    box.classList.remove('all-done');
+    return;
+  }
   const chat = typeof currentChat === 'function' ? currentChat() : null;
   if (chat && chat.planDismissed) {
     box.hidden = true;

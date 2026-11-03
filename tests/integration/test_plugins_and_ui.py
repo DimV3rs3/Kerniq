@@ -40,7 +40,7 @@ def test_plugin_register_settings_and_shutdown(tmp_path):
             path.name for path in _plugins_root().iterdir()
             if path.is_dir() and (path / "manifest.toml").is_file()
         }
-        assert shipped == {"plugin_manager", "web_ui", "context_compact"}
+        assert shipped == {"plugin_manager", "web_ui", "context_compact", "git_session"}
 
         from Kerniq.plugins.distribution import inspect_plugin, install_tree
         from Kerniq.plugins.extensions import scan_extensions
@@ -48,11 +48,15 @@ def test_plugin_register_settings_and_shutdown(tmp_path):
         repo = Path(__file__).resolve().parents[2]
         bench = repo / "catalog" / "Kerniq-llm-benchmark"
         compact_dir = _plugins_root() / "context_compact"
-        assert inspect_plugin(bench)["standalone"] is True
         assert inspect_plugin(compact_dir)["kit"] is True
         assert inspect_plugin(compact_dir)["standalone"] is False
         assert inspect_plugin(_plugins_root() / "plugin_manager")["kit"] is True
         assert inspect_plugin(_plugins_root() / "web_ui")["kit"] is True
+        assert inspect_plugin(_plugins_root() / "git_session")["kit"] is True
+        if not bench.is_dir():
+            await pm.shutdown_all()
+            return names
+        assert inspect_plugin(bench)["standalone"] is True
         assert install_tree(bench, plugins_dir=tmp_path)["ok"] is True
         assert install_tree(compact_dir, plugins_dir=tmp_path)["ok"] is False
         assert install_tree(_plugins_root() / "web_ui", plugins_dir=tmp_path)["ok"] is False

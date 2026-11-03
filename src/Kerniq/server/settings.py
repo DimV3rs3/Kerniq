@@ -77,6 +77,7 @@ def load_server_settings(state_dir: Path | str, config: Any = None) -> dict[str,
         "model_base_url": "http://127.0.0.1:1234",
         "debug_enabled": False,
         "debug_token": "",
+        "rpm_limit": 30,
     }
     server = getattr(config, "server", None) if config is not None else None
     if server is not None:
@@ -126,6 +127,11 @@ def load_server_settings(state_dir: Path | str, config: Any = None) -> dict[str,
             out["user_quota_bytes"] = int(raw.get("user_quota_bytes"))
         except (TypeError, ValueError):
             pass
+    if "rpm_limit" in raw:
+        try:
+            out["rpm_limit"] = int(raw.get("rpm_limit"))
+        except (TypeError, ValueError):
+            pass
     if os.environ.get("KERNIQ_SERVER_MODE", "").strip().lower() in {"1", "true", "yes", "on"}:
         out["enabled"] = True
     if os.environ.get("KERNIQ_DATABASE_URL", "").strip():
@@ -153,7 +159,7 @@ def save_server_settings(state_dir: Path | str, values: dict[str, Any]) -> dict[
     for key in (
         "enabled", "host", "port", "database_url", "api_key", "lan_access",
         "users_root", "users_roots", "user_quota_bytes", "model_base_url",
-        "debug_enabled", "debug_token",
+        "debug_enabled", "debug_token", "rpm_limit",
     ):
         if key in values and values[key] is not None:
             current[key] = values[key]
@@ -176,6 +182,10 @@ def save_server_settings(state_dir: Path | str, values: dict[str, Any]) -> dict[
     current["model_base_url"] = str(current.get("model_base_url") or "http://127.0.0.1:1234")
     current["debug_enabled"] = bool(current.get("debug_enabled"))
     current["debug_token"] = str(current.get("debug_token") or "")
+    try:
+        current["rpm_limit"] = int(current.get("rpm_limit") if current.get("rpm_limit") is not None else 30)
+    except (TypeError, ValueError):
+        current["rpm_limit"] = 30
     stored = {
         "enabled": current["enabled"],
         "host": current["host"],
@@ -187,6 +197,7 @@ def save_server_settings(state_dir: Path | str, values: dict[str, Any]) -> dict[
         "model_base_url": current["model_base_url"],
         "debug_enabled": current["debug_enabled"],
         "debug_token": _seal(root, current["debug_token"]),
+        "rpm_limit": current["rpm_limit"],
         "database_url": _seal(root, str(current.get("database_url") or "")),
         "api_key": _seal(root, str(current.get("api_key") or "")),
     }

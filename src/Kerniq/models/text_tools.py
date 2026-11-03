@@ -602,6 +602,43 @@ def normalize_parameters(params: Any) -> dict:
     return out
 
 
+def soften_schema_for_lmstudio(params: Any) -> dict:
+    """Schema LM Studio's grammar parser will accept.
+
+    Current LM Studio rejects ``"items": true`` ("schema must be an object").
+    Array ``items`` stay a JSON Schema object. A missing or non-object value
+    becomes ``{"type": "string"}``. ``additionalProperties`` stays a boolean
+    because the older Jinja template tests it with ``{% if %}``.
+    """
+    schema = normalize_parameters(params)
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        if not isinstance(node, dict):
+            return node
+        is_array = node.get("type") == "array"
+        out = {}
+        for key, value in node.items():
+            if is_array and key == "items":
+                continue
+            out[key] = walk(value)
+        if "additionalProperties" in node and not isinstance(node.get("additionalProperties"), bool):
+            out["additionalProperties"] = True
+        if is_array:
+            items = node.get("items")
+            if isinstance(items, dict):
+                out["items"] = walk(items)
+            elif isinstance(items, list) and items:
+                options = [walk(item) if isinstance(item, dict) else {"type": "string"} for item in items]
+                out["items"] = {"anyOf": options}
+            else:
+                out["items"] = {"type": "string"}
+        return out
+
+    return walk(schema)
+
+
 def protocol_messages(messages: Sequence, protocol: str = TEXT_PROTOCOL):
     """Return a copy of messages with the text-tool note on the system prompt."""
     from Kerniq.interfaces.models import Message, MessageRole

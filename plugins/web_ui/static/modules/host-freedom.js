@@ -83,7 +83,6 @@
         if (input) input.checked = false;
         return;
       }
-      if (row) row.hidden = false;
       if (!input) return;
       silent = true;
       input.checked = !!opts.enabled;

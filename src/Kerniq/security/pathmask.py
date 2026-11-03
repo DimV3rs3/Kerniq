@@ -84,6 +84,13 @@ def rewrite_model_path(raw: str) -> str:
         if virt in aliases:
             return aliases[virt]
         return f"attachments/{rest}" if rest else "attachments"
+    if bare == "downloads" or bare.startswith("downloads/") or bare == ".downloads" or bare.startswith(".downloads/"):
+        rest = bare.split("/", 1)[1] if "/" in bare else ""
+        return f".downloads/{rest}" if rest else ".downloads"
+    if bare == ".kerniq-view":
+        return "."
+    if bare.startswith(".kerniq-view/"):
+        return rewrite_model_path(bare.split("/", 1)[1])
     if bare == "workspace" or bare.startswith("workspace/"):
         rest = bare[len("workspace") :].lstrip("/")
         return rest or "."
@@ -120,8 +127,20 @@ def _known_replacements(workspace: Path | str | None) -> list[tuple[str, str]]:
         except OSError:
             ws = Path(workspace)
         if jail is None or Path(str(jail)).resolve() != ws:
+            pairs.append((str(ws / ".downloads"), "./downloads"))
             pairs.append((str(ws / "attachments"), VIRT_ATTACHMENTS))
             pairs.append((str(ws), VIRT_WORKSPACE))
+        else:
+            pairs.append((str(ws / ".downloads"), "./downloads"))
+            pairs.append((str(Path(jail) / "downloads"), "./downloads"))
+        try:
+            from Kerniq.security.roots import desktop_roots
+
+            roots = desktop_roots(ws)
+            pairs.append((str(roots.downloads), "./downloads"))
+            pairs.append((str(roots.attachments), VIRT_ATTACHMENTS))
+        except Exception:
+            pass
     for virtual, real in attachment_aliases().items():
         pairs.append((real, virtual))
     try:
@@ -176,13 +195,21 @@ def scrub_for_model(
 
 
 def terminal_cwd(requested: str, policy) -> Path:
-    """Where a shell starts. Server mode starts above ./workspace and ./attachments."""
-    from Kerniq.server.homes import jail_root, logical_path
+    """Where a shell starts. ``.`` is the link view, not a copy of the workspace."""
+    from Kerniq.security.roots import ensure_view
+    from Kerniq.server.homes import downloads_folder, jail_root, logical_path
 
     jail = jail_root()
     text = str(requested or ".").replace("\\", "/").strip() or "."
     if jail is not None:
         if text in {".", "./", ""}:
-            return Path(jail).resolve()
+            root = Path(jail)
+            return ensure_view(
+                root / "workspace",
+                attachments=root / "attachments",
+                downloads=downloads_folder(root),
+            )
         return logical_path(text, Path(jail))
+    if text in {".", "./", "", ".kerniq-view", "./.kerniq-view"}:
+        return ensure_view(policy.workspace_root)
     return policy.validate_path(text)

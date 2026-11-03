@@ -71,11 +71,17 @@ class AgentRuntimeSettings(BaseModel):
     top_p: Optional[float] = 1.0
     timeout_seconds: Optional[int] = 120
     workspace: str = "./workspace"
+    # Relative paths are the Kerniq install root (KERNIQ_ROOT), not the workspace.
+    # ./attachments stays put when the workspace moves to another disk.
+    attachments: str = "./attachments"
+    downloads: str = "./downloads"
     undo_history_size: int = 100
     # How many identical replies / tool repeats to allow before loop protection stops.
     loop_retries: int = 4
     # Desktop only. Server mode ignores this. Default off.
     host_freedom: bool = False
+    # Desktop only. True keeps the private venv on PATH. False uses the host PATH.
+    use_venv: bool = True
 
 
 class ApiModelSettings(BaseModel):
@@ -89,6 +95,8 @@ class ApiModelSettings(BaseModel):
     binary_path: str = ""  # Claude Code CLI path
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = None  # null = auto: the loaded model's context window
+    # Tokens to load the local model with. Empty uses the model's maximum.
+    context_length: Optional[int] = None
     # Off: ask before loading next to another model. On: apply model_load_action.
     auto_model_load: bool = False
     # alongside | unload_idle | unload_busy | notify. Used only when auto is on.
@@ -122,6 +130,10 @@ class ChatSettings(BaseModel):
     response_language: str = "en"  # key from RESPONSE_LANGUAGES
     # read_only | low | medium | high | all. "all" is the developer bypass.
     auto_approve_up_to: str = "low"
+    # Developer mode only. Several tools in one turn then run together.
+    parallel_tools: bool = False
+    # The floating plan list. Off hides it and leaves no empty gap.
+    show_plan: bool = True
     # plan studies the project and writes a TODO list. act edits files.
     agent_mode: str = "act"
     auto_act_after_plan: bool = True

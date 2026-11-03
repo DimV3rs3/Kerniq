@@ -223,11 +223,15 @@ class PluginImpl(Plugin):
             body = groups[1:]
         kept_rev = []
         count = 0
+        # keep_last is the total non-system messages that stay, including the
+        # original request. The tail fills whatever is left.
+        budget = max(2, int(self.cfg_keep_last))
+        tail_budget = max(1, budget - len(pinned)) if pinned else budget
         for group in reversed(body):
+            if count >= tail_budget and kept_rev:
+                break
             kept_rev.append(group)
             count += len(group)
-            if count >= self.cfg_keep_last:
-                break
         tail: List[Message] = []
         for group in reversed(kept_rev):
             tail.extend(group)
@@ -259,6 +263,9 @@ class PluginImpl(Plugin):
         if not outline.strip():
             return None
         _systems, pinned, _omitted, tail = self._split(messages)
+        goal = ""
+        if pinned:
+            goal = outline_text(pinned[0].content or "", limit=1500)
         kept_tokens = self.estimate_tokens(list(_systems) + list(pinned) + list(tail))
         budget = self.summary_token_budget(kept_tokens)
         if budget <= 0:
@@ -269,10 +276,14 @@ class PluginImpl(Plugin):
                 Message(
                     role=MessageRole.USER,
                     content=(
-                        "Compact these omitted turns into the memory note. "
+                        "Compact the omitted turns below into the memory note. "
                         f"Budget about {budget} tokens. "
-                        "The runtime already removed source bodies and left file names plus class and method names. "
-                        "The agent will be given your note and then the recent messages, and will not see this transcript.\n\n"
+                        "The original request is repeated only so you know the goal. "
+                        "It is NOT the transcript. The turns under 'Omitted turns' are what you must compress. "
+                        "The agent will not see those turns again. Your note replaces them.\n\n"
+                        "Goal (already kept verbatim, do not treat this as the only message):\n"
+                        + (goal or "(none)")
+                        + "\n\nOmitted turns:\n"
                         + outline
                     ),
                 ),
@@ -324,8 +335,36 @@ class PluginImpl(Plugin):
             + body[:cap]
         )
         self.last_summary = digest
-        mid = Message(role=MessageRole.SYSTEM, content=digest)
-        return systems + [mid] + pinned + tail
+        cleaned: List[Message] = []
+        for message in systems:
+            text = message.content or ""
+            cut = text.find(COMPACT_MARK)
+            if cut >= 0:
+                text = text[:cut].rstrip()
+            if text.startswith(COMPACT_MARK):
+                continue
+            cleaned.append(Message(
+                role=MessageRole.SYSTEM,
+                content=text,
+                tool_calls=message.tool_calls,
+                tool_call_id=message.tool_call_id,
+                name=message.name,
+                metadata=message.metadata,
+            ))
+        if cleaned:
+            first = cleaned[0]
+            cleaned[0] = Message(
+                role=MessageRole.SYSTEM,
+                content=(first.content or "").rstrip() + "\n\n" + digest,
+                tool_calls=first.tool_calls,
+                tool_call_id=first.tool_call_id,
+                name=first.name,
+                metadata=first.metadata,
+            )
+            systems = cleaned
+        else:
+            systems = [Message(role=MessageRole.SYSTEM, content=digest)]
+        return systems + pinned + tail
 
     async def initialize(self, context: PluginContext) -> bool:
         if context.logger:

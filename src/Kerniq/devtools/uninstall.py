@@ -180,11 +180,24 @@ def _purge_project_state(project_root: Path) -> List[str]:
         targets.append(extra)
     venv_hits: List[Path] = []
     try:
-        for found in project_root.rglob(".kerniq-venv"):
-            if found.is_dir():
-                venv_hits.append(found)
+        for name in (".kerniq-venv", ".kerniq-view", ".kerniq"):
+            for found in project_root.rglob(name):
+                if found.is_dir():
+                    venv_hits.append(found)
     except Exception:
         venv_hits = []
+    try:
+        from Kerniq.security.roots import model_roots
+
+        ws = extra or (project_root / "workspace")
+        view = model_roots(ws).view
+        if view.exists():
+            venv_hits.append(view)
+    except Exception:
+        pass
+    home_views = Path.home() / ".kerniq" / "views"
+    if home_views.is_dir():
+        venv_hits.append(home_views)
     targets.extend(venv_hits)
     seen: set[str] = set()
     for p in targets:
@@ -197,11 +210,14 @@ def _purge_project_state(project_root: Path) -> List[str]:
         seen.add(key)
         if not p.exists():
             continue
+        outside_ok = p.name in {".kerniq-view", ".kerniq-venv", ".kerniq"} or "kerniq" in p.parts and p.name == "views"
         try:
             rel = p.resolve().relative_to(project_root.resolve())
         except Exception:
-            cleaned.append(f"{p} (kept: outside the project)")
-            continue
+            if not outside_ok:
+                cleaned.append(f"{p} (kept: outside the project)")
+                continue
+            rel = Path(p.name)
         if not rel.parts or rel.parts[0] in {"src", "plugins", "tests", "config", ".git"}:
             cleaned.append(f"{p} (kept: inside {rel.parts[0] if rel.parts else 'root'})")
             continue
@@ -432,6 +448,16 @@ def _do_uninstall(*, purge: bool = False, wipe_project: bool = False) -> int:
     state_report = list(_stop_ui_processes(root))
     for line in state_report:
         print(f"  - {line}")
+
+    if root is not None:
+        try:
+            from Kerniq.devtools.git_bootstrap import remove_managed_git
+
+            note = remove_managed_git(root / "state")
+            if note == "removed":
+                print("Removed git because Kerniq had installed it.")
+        except Exception:
+            print("Could not check whether Kerniq installed git.")
 
     # Settings and runtime dirs go first, while this package can still be imported.
     # The source tree is left in place unless --wipe-project is set.

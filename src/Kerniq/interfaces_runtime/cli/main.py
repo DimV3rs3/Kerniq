@@ -184,6 +184,10 @@ async def run_agent(args: argparse.Namespace, config) -> int:
         auto_approve_up_to=ceiling,
         host_freedom=freedom,
     )
+    if bool(getattr(config.server, "enabled", False)):
+        policy.use_venv = True
+    else:
+        policy.use_venv = bool(getattr(ui.agent, "use_venv", True))
 
     provider_name = args.provider or ui.api.provider or config.models.default_provider
     timeout = float(ui.agent.timeout_seconds or getattr(config.runtime, "timeout_seconds", None) or 600)
@@ -1018,12 +1022,12 @@ async def async_main(argv: Optional[list] = None) -> int:
                     # still continue if server thread might have started
             # Give server thread a moment
             await asyncio.sleep(0.3)
-            from Kerniq.server.firewall import lan_ipv4s, listen_lines, try_open_port
+            from Kerniq.server.firewall import announce_listen, lan_ipv4s, try_open_port
 
             ips = lan_ipv4s()
             lan = ips[0] if ips else "127.0.0.1"
             note = try_open_port(port) if host in ("0.0.0.0", "::") else ""
-            for line in listen_lines(host, port, firewall_note=note):
+            for line in announce_listen(host, port, firewall_note=note):
                 print(line)
             if resolved.get("server_mode"):
                 from Kerniq.server.settings import JSON_STORAGE_WARNING, load_server_settings

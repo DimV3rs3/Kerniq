@@ -148,6 +148,36 @@ def test_default_user_folders_live_in_the_project_workspace(tmp_path, monkeypatc
     assert moved.parent == (project / "workspace").resolve()
 
 
+def test_user_home_has_a_view_downloads_and_its_own_venv(tmp_path):
+    core = {"users_root": str(tmp_path / "homes")}
+    home = user_home(tmp_path, "cookie-1", core)
+    assert (home / "workspace").is_dir()
+    assert (home / "attachments").is_dir()
+    assert (home / "downloads").is_dir()
+    assert (home / ".kerniq-venv").is_dir()
+    view = home / ".kerniq-view"
+    assert view.is_dir()
+    assert (view / "workspace").is_symlink()
+    assert (view / "downloads").resolve() == (home / "downloads").resolve()
+
+
+def test_empty_server_root_prefers_the_kerniq_home(tmp_path, monkeypatch):
+    preferred = tmp_path / "home" / "Kerniq" / "kerniq-workspace"
+    monkeypatch.setattr("Kerniq.server.homes.SERVER_USERS_ROOT", preferred)
+    home = user_home(tmp_path / "state", "abc", {"prefer_server_root": True})
+    assert home.parent == preferred.resolve()
+    assert (home / ".kerniq-view" / "workspace").is_symlink()
+
+
+def test_local_providers_need_debug_in_server_mode():
+    from Kerniq.server.homes import local_provider_allowed
+
+    assert local_provider_allowed(server_mode=False, provider="lm_studio", debug=False)
+    assert not local_provider_allowed(server_mode=True, provider="ollama", debug=False)
+    assert local_provider_allowed(server_mode=True, provider="lm_studio", debug=True)
+    assert local_provider_allowed(server_mode=True, provider="openai", debug=False)
+
+
 def test_default_quota_is_eight_gigabytes():
     assert quota_bytes({}) == 8 * 1024 * 1024 * 1024
 

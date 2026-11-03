@@ -27,7 +27,7 @@ _SECRET_MARKERS = (
 )
 
 
-def _scrub_env(workspace: Path, *, host_freedom: bool = False) -> dict:
+def _scrub_env(workspace: Path, *, host_freedom: bool = False, use_venv: bool = True) -> dict:
     """Drop credential-bearing variables before spawning a shell."""
     import os
 
@@ -60,20 +60,59 @@ def _scrub_env(workspace: Path, *, host_freedom: bool = False) -> dict:
             external_roots=roots,
             confine=not host_freedom,
             visible_roots=visible,
+            use_venv=use_venv,
         )
     except Exception as exc:
         logger.warning("Sandbox env was not applied: %s", exc)
     return env
 
 
-async def _stop_process(process, comm) -> None:
-    """Kill the child and let communicate() reap it. Do not wait() beside communicate()."""
+def kill_tree_command(pid: int) -> list[str] | None:
+    """Windows needs taskkill /T. POSIX kills the process group instead."""
+    import sys
+
+    if sys.platform == "win32":
+        return ["taskkill", "/PID", str(int(pid)), "/T", "/F"]
+    return None
+
+
+def _kill_tree(process) -> None:
+    """Stop the shell and every child. A bare kill leaves the Windows console up."""
+    import os
+    import signal
+    import subprocess
+    import sys
+
+    pid = getattr(process, "pid", None)
+    if not pid:
+        try:
+            process.kill()
+        except Exception:
+            pass
+        return
+    if sys.platform == "win32":
+        command = kill_tree_command(pid)
+        if command:
+            try:
+                subprocess.run(command, capture_output=True, timeout=8, check=False)
+                return
+            except Exception:
+                pass
+    else:
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+            return
+        except Exception:
+            pass
     try:
         process.kill()
-    except ProcessLookupError:
-        pass
     except Exception:
         pass
+
+
+async def _stop_process(process, comm) -> None:
+    """Kill the child tree and let communicate() reap it. Do not wait() beside communicate()."""
+    _kill_tree(process)
     if comm is not None and not comm.done():
         try:
             await asyncio.wait_for(comm, 2)
@@ -133,8 +172,9 @@ class TerminalTools(Tool):
     @property
     def description(self) -> str:
         return (
-            "Run a shell command inside ./workspace. "
-            "Attached files are ./attachments. "
+            "Run a shell command. The shell starts in .kerniq-view, which contains "
+            "only links: ./workspace, ./attachments, and ./downloads. "
+            "It does not copy those folders. "
             "python and pip in this shell are the workspace sandbox .kerniq-venv. "
             "Do not use absolute paths, UNC paths, '..', sudo, or commands that inspect the host. "
             "On Windows this is PowerShell (not cmd). On Linux/macOS this is bash/sh."
@@ -214,21 +254,28 @@ class TerminalTools(Tool):
                 error="PERMISSION_DENIED"
             )
 
-        from ....security.command_guard import escaping_symlink
+        # Host freedom is decided before the symlink walk. While the venv is
+        # still on, a link that leaves the workspace still refuses the shell.
+        open_host = False
+        opener = getattr(self._security_policy, "host_is_open", None)
+        if callable(opener):
+            open_host = bool(opener())
+        if not open_host:
+            from ....security.command_guard import escaping_symlink
 
-        escaped = escaping_symlink(self._workspace_root)
-        if escaped:
-            return ToolResult(
-                tool_call_id=getattr(context, "last_tool_call_id", "unknown"),
-                tool_id=self.tool_id,
-                status="error",
-                output="",
-                human_readable=(
-                    "Refusing shell: a symlink leaves ./workspace. "
-                    "Remove it before running commands."
-                ),
-                error="PERMISSION_DENIED",
-            )
+            escaped = escaping_symlink(self._workspace_root)
+            if escaped:
+                return ToolResult(
+                    tool_call_id=getattr(context, "last_tool_call_id", "unknown"),
+                    tool_id=self.tool_id,
+                    status="error",
+                    output="",
+                    human_readable=(
+                        "Refusing shell: a symlink leaves ./workspace. "
+                        "Remove it before running commands."
+                    ),
+                    error="PERMISSION_DENIED",
+                )
 
         # Security check for working directory
         try:
@@ -260,6 +307,7 @@ class TerminalTools(Tool):
             env=_scrub_env(
                 self._workspace_root,
                 host_freedom=bool(getattr(self._security_policy, "host_freedom", False)),
+                use_venv=bool(getattr(self._security_policy, "use_venv", True)),
             ),
         )
         # Ensure the spawned process never creates a visible window or attaches to a console.
@@ -268,6 +316,8 @@ class TerminalTools(Tool):
             flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
             # Additionally hide any possible console window that might be opened by PowerShell.
             kwargs["creationflags"] = flags | 0x00000010  # DETACHED_PROCESS
+        else:
+            kwargs["start_new_session"] = True
         try:
             import shlex
             if sys.platform == "win32":

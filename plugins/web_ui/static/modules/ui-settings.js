@@ -54,6 +54,7 @@ function syncSettingLocks() {
     if (!devOn && approve.value === 'all') approve.value = 'high';
   }
   if (typeof applyModeSwitch === 'function') applyModeSwitch();
+  if (typeof syncPrivilegeFields === 'function') syncPrivilegeFields();
 }
 function bindSettingsDirty() {
   const root = document.getElementById('view-settings');
@@ -68,7 +69,7 @@ function bindSettingsDirty() {
     }
     const node = ev.target;
     if (!node || !node.closest) return;
-    if (node.id === 's-show-hidden-plugins') return;
+    if (node.id === 's-show-hidden-plugins' || node.id === 's-auto-approve' || node.id === 's-leave-venv') return;
     if (node.closest('.settings-actions') || node.closest('#tab-reset')) return;
     syncSettingLocks();
     markSettingsDirty();
@@ -118,6 +119,10 @@ function applyServerChrome() {
   if (dev) dev.hidden = server && !debug;
   const wsField = document.getElementById('workspace-field');
   if (wsField) wsField.hidden = server && !debug;
+  const attField = document.getElementById('attachments-field');
+  if (attField) attField.hidden = server && !debug;
+  const dlField = document.getElementById('downloads-field');
+  if (dlField) dlField.hidden = server && !debug;
   const top = document.getElementById('top-workspace');
   const input = document.getElementById('s-workspace');
   const pick = document.getElementById('btn-pick-ws');
@@ -134,11 +139,29 @@ function applyServerChrome() {
   if (server && debug) {
     const real = String((window.__SERVER_INFO && window.__SERVER_INFO.workspace_real) || '');
     if (input) { input.value = real; input.readOnly = true; }
-    if (top) { top.textContent = real || 'debug'; top.title = real; }
+    if (top) { fitPathTail(top, real || 'debug'); }
   }
 }
 function applyServerWorkspace() {
   applyServerChrome();
+}
+function fitPathTail(el, full) {
+  const text = String(full || '');
+  if (!el) return;
+  el.title = text;
+  el.textContent = text;
+  if (!text || el.clientWidth <= 0) return;
+  if (el.scrollWidth <= el.clientWidth + 1) return;
+  let lo = 1;
+  let hi = text.length;
+  let best = 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    el.textContent = '…' + text.slice(text.length - mid);
+    if (el.scrollWidth <= el.clientWidth + 1) { best = mid; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  el.textContent = best < text.length ? ('…' + text.slice(text.length - best)) : text;
 }
 function paintWorkspaceLabel(fromServer) {
   if (serverModeOn()) {
@@ -153,8 +176,14 @@ function paintWorkspaceLabel(fromServer) {
   const absolute = text.startsWith('/') || /^[A-Za-z]:[\\/]/.test(text);
   const typedAbsolute = typed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(typed);
   if (absolute && !typedAbsolute) text = typed || './workspace';
-  top.textContent = text;
-  top.title = text;
+  fitPathTail(top, text);
+}
+if (!window.__pathTailResize) {
+  window.__pathTailResize = true;
+  window.addEventListener('resize', () => {
+    const top = document.getElementById('top-workspace');
+    if (top && top.title) fitPathTail(top, top.title);
+  });
 }
 function lockServerModelField() {
   const input = document.getElementById('s-base-url');
@@ -350,6 +379,229 @@ function askExternalWrite() {
   });
 }
 
+function askCountdown(title, body, seconds) {
+  return new Promise(resolve => {
+    const bg = document.getElementById('guard-modal');
+    const ok = document.getElementById('guard-ok');
+    const cancel = document.getElementById('guard-cancel');
+    const titleEl = document.getElementById('guard-title');
+    const textEl = document.getElementById('guard-text');
+    if (!bg || !ok || !cancel) { resolve(false); return; }
+    if (titleEl) titleEl.textContent = title;
+    if (textEl) textEl.textContent = body;
+    cancel.textContent = translate('Cancel');
+    let left = seconds || 3;
+    let settled = false;
+    let timer = null;
+    const paint = () => {
+      ok.disabled = left > 0;
+      ok.textContent = left > 0 ? String(left) : translate('Confirm');
+    };
+    const finish = (yes) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearInterval(timer);
+      bg.classList.remove('on');
+      if (!document.querySelector('.modal-bg.on')) document.body.classList.remove('modal-open');
+      resolve(!!yes);
+    };
+    ok.onclick = (e) => { e.preventDefault(); if (!ok.disabled) finish(true); };
+    cancel.onclick = (e) => { e.preventDefault(); finish(false); };
+    bg.onclick = (e) => { if (e.target === bg) finish(false); };
+    bg.classList.add('on');
+    document.body.classList.add('modal-open');
+    paint();
+    timer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) { clearInterval(timer); left = 0; }
+      paint();
+    }, 1000);
+  });
+}
+function syncPrivilegeFields() {
+  const devBox = document.getElementById('s-chat-debug');
+  const devChecked = !!(devBox && devBox.checked);
+  const devOn = !serverModeOn() && devChecked;
+  const parallelOn = devChecked && (!serverModeOn() || debugUnlocked());
+  const venv = document.getElementById('s-leave-venv');
+  const venvRow = document.getElementById('use-venv-field');
+  const host = document.getElementById('s-host-freedom');
+  const hostRow = document.getElementById('host-freedom-field');
+  const par = document.getElementById('s-parallel-tools');
+  const parRow = document.getElementById('parallel-tools-field');
+  const silent = (node, value) => {
+    if (!node) return;
+    node.dataset.silent = '1';
+    node.checked = value;
+    node.dataset.silent = '';
+  };
+  if (!devOn) {
+    if (venvRow) venvRow.hidden = true;
+    if (hostRow) hostRow.hidden = true;
+    silent(venv, true);
+    silent(host, false);
+  } else {
+    if (venvRow) venvRow.hidden = false;
+    const venvOn = !venv || venv.checked;
+    if (hostRow) hostRow.hidden = venvOn;
+    if (venvOn) silent(host, false);
+  }
+  if (!parallelOn) {
+    if (parRow) parRow.hidden = true;
+    silent(par, false);
+  } else if (parRow) {
+    parRow.hidden = false;
+  }
+}
+function wirePrivilege() {
+  const venv = document.getElementById('s-leave-venv');
+  const approve = document.getElementById('s-auto-approve');
+  if (venv && !venv.dataset.privWired) {
+    venv.dataset.privWired = '1';
+    venv.addEventListener('change', async () => {
+      if (venv.dataset.silent) return;
+      if (venv.checked) {
+        syncPrivilegeFields();
+        markSettingsDirty();
+        return;
+      }
+      venv.dataset.silent = '1';
+      venv.checked = true;
+      venv.dataset.silent = '';
+      const ok = await askCountdown(t('useVenv'), t('venvOffBody'), 3);
+      if (!ok) return;
+      venv.dataset.silent = '1';
+      venv.checked = false;
+      venv.dataset.silent = '';
+      const host = document.getElementById('s-host-freedom');
+      if (host) host.checked = false;
+      syncPrivilegeFields();
+      markSettingsDirty();
+    });
+  }
+  if (approve && !approve.dataset.privWired) {
+    approve.dataset.privWired = '1';
+    let previous = approve.value || 'low';
+    approve.addEventListener('focus', () => { previous = approve.value; });
+    approve.addEventListener('change', async () => {
+      if (approve.dataset.silent) return;
+      if (approve.value !== 'all') {
+        previous = approve.value;
+        markSettingsDirty();
+        return;
+      }
+      const back = previous;
+      approve.dataset.silent = '1';
+      approve.value = back;
+      approve.dataset.silent = '';
+      const ok = await askCountdown(t('approveAllTitle'), t('approveAllBody'), 3);
+      if (!ok) return;
+      approve.dataset.silent = '1';
+      approve.value = 'all';
+      approve.dataset.silent = '';
+      previous = 'all';
+      markSettingsDirty();
+    });
+  }
+}
+function formatBytes(n) {
+  let v = Math.max(0, Number(n) || 0);
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  if (i === 0) return Math.round(v) + ' B';
+  const floored = Math.floor(v * 10 + 1e-9) / 10;
+  return floored.toFixed(1) + ' ' + units[i];
+}
+function paintFolderUsage(data) {
+  const stack = document.getElementById('usage-stack');
+  const rows = document.getElementById('usage-rows');
+  if (!stack || !rows) return;
+  const folders = (data && data.folders) || [];
+  const usedSum = folders.reduce((sum, row) => sum + Math.max(0, Number(row.used) || 0), 0);
+  const limitSum = folders.reduce((sum, row) => sum + Math.max(0, Number(row.limit) || 0), 0);
+  let total = document.getElementById('usage-total');
+  if (!total) {
+    total = document.createElement('div');
+    total.id = 'usage-total';
+    total.className = 'usage-total';
+    stack.parentNode.insertBefore(total, stack);
+  }
+  total.textContent = formatBytes(usedSum) + ' / ' + formatBytes(limitSum);
+  stack.innerHTML = '';
+  folders.forEach(row => {
+    const used = Math.max(0, Number(row.used) || 0);
+    if (!used || !limitSum) return;
+    const seg = document.createElement('i');
+    seg.className = 'usage-seg ' + row.name;
+    seg.style.width = (used / limitSum * 100) + '%';
+    seg.title = t(row.name === 'workspace' ? 'workspace' : row.name);
+    stack.appendChild(seg);
+  });
+  rows.innerHTML = '';
+  folders.forEach(row => {
+    const used = Math.max(0, Number(row.used) || 0);
+    const limit = Math.max(1, Number(row.limit) || 1);
+    const box = document.createElement('div');
+    box.className = 'usage-row';
+    const gb = limit / (1024 * 1024 * 1024);
+    const asGb = gb >= 1;
+    box.innerHTML = '<div class="usage-meta"><span></span><span></span></div>'
+      + '<div class="usage-line"><i></i></div>'
+      + '<div class="row"><input type="number" min="1" step="1" class="usage-amount"/>'
+      + '<select class="usage-unit"><option value="gb">GB</option><option value="mb">MB</option></select>'
+      + '<button type="button" class="ghost usage-clear"></button></div>';
+    box.querySelector('.usage-meta span').textContent = t(row.name === 'workspace' ? 'workspace' : row.name);
+    box.querySelector('.usage-meta span + span').textContent = formatBytes(used) + ' / ' + formatBytes(limit)
+      + (row.retention_days ? ' · ' + row.retention_days + 'd' : '');
+    const line = box.querySelector('.usage-line i');
+    line.style.width = Math.min(100, used / limit * 100) + '%';
+    line.className = row.name;
+    const amount = box.querySelector('.usage-amount');
+    const unit = box.querySelector('.usage-unit');
+    amount.value = String(asGb ? Math.round(gb) : Math.max(1, Math.round(limit / (1024 * 1024))));
+    unit.value = asGb ? 'gb' : 'mb';
+    amount.oninput = () => markSettingsDirty();
+    unit.onchange = () => markSettingsDirty();
+    const button = box.querySelector('.usage-clear');
+    button.textContent = t('clearFolder');
+    button.onclick = async () => {
+      const ok = await askCountdown(t('clearFolder'), t('clearFolderBody'), 3);
+      if (!ok) return;
+      const result = await api('/api/fs/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root: row.name }) });
+      if (result && result.error) toast(String(result.error), true);
+      else { toast(t('saved')); if (typeof refreshTree === 'function') refreshTree(); }
+      loadFolderUsage();
+    };
+    rows.appendChild(box);
+  });
+}
+async function loadFolderUsage() {
+  try {
+    const data = await api('/api/usage');
+    paintFolderUsage(data);
+  } catch (_) {}
+}
+async function saveFolderLimits() {
+  const rows = document.querySelectorAll('#usage-rows .usage-row');
+  if (!rows.length) return;
+  const names = ['workspace', 'attachments', 'downloads'];
+  const body = {};
+  rows.forEach((row, index) => {
+    const name = names[index];
+    if (!name) return;
+    body[name + '_amount'] = row.querySelector('.usage-amount').value;
+    body[name + '_unit'] = row.querySelector('.usage-unit').value;
+  });
+  await api('/api/usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+if (!window.__usageTimer) {
+  window.__usageTimer = setInterval(() => { if (typeof loadFolderUsage === 'function') loadFolderUsage(); }, 5 * 60 * 1000);
+}
+
 async function loadSettings() {
   settingsHydrating = true;
   try {
@@ -376,7 +628,11 @@ async function loadSettings() {
   applyInterface(settings.interface || {});
   const a = settings.agent || {}, apiS = settings.api || {}, p = settings.prompt || {};
   document.getElementById('s-workspace').value = serverModeOn() ? '' : (a.workspace || './workspace');
-  document.getElementById('top-workspace').textContent = serverModeOn() ? '' : (a.workspace || './workspace');
+  const attInput = document.getElementById('s-attachments');
+  if (attInput) attInput.value = a.attachments || './attachments';
+  const dlInput = document.getElementById('s-downloads');
+  if (dlInput) dlInput.value = a.downloads || './downloads';
+  paintWorkspaceLabel(serverModeOn() ? '' : (a.workspace || './workspace'));
   applyServerChrome();
   document.getElementById('s-max-iter').value = a.max_iterations != null ? a.max_iterations : '';
   // timeout with unit
@@ -392,8 +648,16 @@ async function loadSettings() {
   if (window.KerniqHostFreedom) {
     KerniqHostFreedom.sync({ server: serverModeOn(), enabled: !serverModeOn() && !!a.host_freedom });
   }
+  const leave = document.getElementById('s-leave-venv');
+  const leaveRow = document.getElementById('use-venv-field');
+  if (leaveRow) leaveRow.hidden = serverModeOn();
+  if (leave) leave.checked = serverModeOn() || a.use_venv !== false;
+  if (typeof wirePrivilege === 'function') wirePrivilege();
+  if (typeof syncPrivilegeFields === 'function') syncPrivilegeFields();
   undoLimit = a.undo_history_size ?? 100;
   document.getElementById('s-api-max-tokens').value = apiS.max_tokens != null ? apiS.max_tokens : '';
+  const ctxEl = document.getElementById('s-api-context');
+  if (ctxEl) ctxEl.value = apiS.context_length != null ? apiS.context_length : '';
   document.getElementById('s-api-temp').value = apiS.temperature ?? 0.7;
   await loadProviderCatalog(apiS.provider || 'lm_studio');
   document.getElementById('s-system').value = p.system_prompt || '';
@@ -409,6 +673,10 @@ async function loadSettings() {
   if (elE) elE.checked = ch.empty_response_status !== false;
   const elD = document.getElementById('s-chat-debug');
   if (elD) elD.checked = !!ch.developer_mode;
+  const elP = document.getElementById('s-parallel-tools');
+  if (elP) elP.checked = !!ch.parallel_tools && !!ch.developer_mode;
+  const elPlan = document.getElementById('s-show-plan');
+  if (elPlan) elPlan.checked = ch.show_plan !== false;
   const elF = document.getElementById('s-chat-fileops');
   if (elF) elF.checked = !!ch.file_ops_only;
   const elA = document.getElementById('s-chat-agg');
@@ -482,6 +750,8 @@ async function loadSettings() {
     settingsHydrating = false;
     bindSettingsDirty();
     syncSettingLocks();
+    wirePrivilege();
+    loadFolderUsage();
   }
 }
 
@@ -772,11 +1042,22 @@ function syncComposePlanLock() {
   el.title = ok ? '' : text;
   if (tip) tip.setAttribute('data-tip', text);
 }
+function pluginIsOn(pluginId) {
+  if (!pluginId) return true;
+  const plugin = (componentsCache.plugins || []).find(item => item.id === pluginId);
+  if (!plugin) return true;
+  const vals = (draftPlugins[plugin.id] && draftPlugins[plugin.id].values) || plugin.values || {};
+  return vals.enabled !== false;
+}
 function renderToolsList() {
   const by = {};
-  (componentsCache.tools || []).forEach(t => { const c = t.category || 'other'; (by[c] = by[c] || []).push(t); });
-  const order = ['filesystem', 'terminal', 'web', 'fetch', 'plan', 'other'];
-  const labels = { filesystem: 'Filesystem', terminal: 'Terminal', web: 'Web', fetch: 'Fetch', plan: 'Plan', other: 'Other' };
+  (componentsCache.tools || []).forEach(t => {
+    if (!pluginIsOn(t.plugin_id)) return;
+    const c = t.category || 'other';
+    (by[c] = by[c] || []).push(t);
+  });
+  const order = ['filesystem', 'terminal', 'web', 'fetch', 'plan', 'git', 'other'];
+  const labels = { filesystem: 'Filesystem', terminal: 'Terminal', web: 'Web', fetch: 'Fetch', plan: 'Plan', git: 'Git', other: 'Other' };
   Object.keys(by).forEach(k => { if (!order.includes(k)) order.push(k); });
   const cats = document.getElementById('s-cats');
   if (cats) cats.innerHTML = '';
@@ -794,7 +1075,10 @@ function renderToolsList() {
     pack.className = 'pack';
     const head = document.createElement('div');
     head.className = 'pack-row' + (selectedPack === k && !selectedToolId ? ' selected' : '');
-    const anyOn = by[k].some(t => (draftTools[t.id] || {}).enabled !== false);
+    const anyOn = by[k].some(t => {
+      const draft = draftTools[t.id];
+      return draft ? draft.enabled !== false : t.enabled !== false;
+    });
     const open = !!expandedPacks[k];
     head.innerHTML = `<input type="checkbox" class="soft-check" ${anyOn ? 'checked' : ''}/><button type="button" class="twist">${open ? '▾' : '▸'}</button><span class="pname"></span>`;
     head.querySelector('.pname').textContent = labels[k] || k;
@@ -803,7 +1087,7 @@ function renderToolsList() {
     cb.onchange = e => {
       draftPacks[k] = { forceEnabled: !!e.target.checked };
       by[k].forEach(t => {
-        draftTools[t.id] = draftTools[t.id] || { enabled: true, values: {} };
+        draftTools[t.id] = draftTools[t.id] || { enabled: t.enabled !== false, values: {} };
         draftTools[t.id].enabled = e.target.checked;
       });
       markSettingsDirty();
@@ -824,7 +1108,7 @@ function renderToolsList() {
     pack.appendChild(head);
     if (open) {
       by[k].forEach(t => {
-        const d = draftTools[t.id] || { enabled: true, values: {} };
+        const d = draftTools[t.id] || { enabled: t.enabled !== false, values: { ...(t.values || {}) } };
         const row = document.createElement('div');
         row.className = 'tool-sub' + (selectedToolId === t.id ? ' selected' : '');
         row.innerHTML = `<input type="checkbox" class="soft-check" ${d.enabled !== false ? 'checked' : ''}/><span class="tname"></span>`;
@@ -832,7 +1116,7 @@ function renderToolsList() {
         const tcb = row.querySelector('input');
         tcb.onclick = e => e.stopPropagation();
         tcb.onchange = e => {
-          draftTools[t.id] = draftTools[t.id] || { enabled: true, values: {} };
+          draftTools[t.id] = draftTools[t.id] || { enabled: t.enabled !== false, values: {} };
           draftTools[t.id].enabled = e.target.checked;
           if (draftPacks[k]) draftPacks[k].forceEnabled = null;
           markSettingsDirty();
@@ -893,7 +1177,7 @@ function renderPackDetail(cat, tools) {
       const value = inp.type === 'checkbox' ? inp.checked : (inp.type === 'number' ? Number(inp.value) : inp.value);
       if (inp.type === 'checkbox') inp.indeterminate = false;
       list.forEach(tool => {
-        draftTools[tool.id] = draftTools[tool.id] || { enabled: true, values: {} };
+        draftTools[tool.id] = draftTools[tool.id] || { enabled: tool.enabled !== false, values: {} };
         draftTools[tool.id].values = draftTools[tool.id].values || {};
         draftTools[tool.id].values[inp.dataset.pk] = value;
       });
@@ -906,7 +1190,7 @@ function renderToolDetail(id) {
   const panel = document.getElementById('s-tool-detail');
   const t = (componentsCache.tools || []).find(x => x.id === id);
   if (!panel || !t) return;
-  const draft = draftTools[id] || { enabled: true, values: {} };
+  const draft = draftTools[id] || { enabled: t.enabled !== false, values: { ...(t.values || {}) } };
   let html = `<h3>${esc(t.name)}</h3><div class="hint">risk: ${esc(t.risk_level || 'medium')} · ${esc(t.description || '')}</div>`;
   const fields = (t.schema && t.schema.fields) || [];
   if (!fields.length) html += '<div class="empty">No extra settings</div>';
@@ -939,7 +1223,7 @@ function renderToolDetail(id) {
       const input = panel.querySelector('[data-fk="' + btn.dataset.pick + '"]');
       if (input && picked.path) {
         input.value = picked.path;
-        draftTools[id] = draftTools[id] || { enabled: true, values: {} };
+        draftTools[id] = draftTools[id] || { enabled: t.enabled !== false, values: {} };
         draftTools[id].values[btn.dataset.pick] = picked.path;
         markSettingsDirty();
       }
@@ -1123,6 +1407,7 @@ function bindPluginForm(panel, p) {
       else if (inp.type === 'number') v = Number(inp.value);
       else v = inp.value;
       draftPlugins[id].values[inp.dataset.fk] = v;
+      if (inp.dataset.fk === 'enabled') renderToolsList();
       if (inp.dataset.fk === 'slot_count') redraw();
       else {
         if (inp.dataset.fk === 'target_mode' || inp.dataset.fk === 'trigger_percent' || inp.dataset.fk === 'target_percent') syncCompactLimit(panel);
@@ -1353,11 +1638,14 @@ async function saveAllSettings() {
   };
   const agent = {
     workspace: document.getElementById('s-workspace').value,
+    attachments: document.getElementById('s-attachments')?.value || './attachments',
+    downloads: document.getElementById('s-downloads')?.value || './downloads',
     max_iterations: emptyNum('s-max-iter'),
     timeout_seconds: toSec(),
     undo_history_size: Number(document.getElementById('s-undo-size').value) || 100,
     loop_retries: Number(document.getElementById('s-loop-retries')?.value) || 4,
     host_freedom: window.KerniqHostFreedom ? KerniqHostFreedom.checked() : false,
+    use_venv: serverModeOn() ? true : document.getElementById('s-leave-venv')?.checked !== false,
   };
   undoLimit = agent.undo_history_size;
   const apiBody = {
@@ -1376,6 +1664,7 @@ async function saveAllSettings() {
     act_model: document.getElementById('s-act-model')?.value || document.getElementById('s-model')?.value || '',
     temperature: Number(document.getElementById('s-api-temp').value),
     max_tokens: emptyNum('s-api-max-tokens'),
+    context_length: emptyNum('s-api-context'),
     auto_model_load: !!document.getElementById('s-auto-load')?.checked,
     model_load_action: document.getElementById('s-load-action')?.value || 'notify',
     model_sort: document.getElementById('s-model-sort')?.value || 'name',
@@ -1397,6 +1686,8 @@ async function saveAllSettings() {
     show_reasoning_live: document.getElementById('s-chat-reasoning')?.checked !== false,
     empty_response_status: document.getElementById('s-chat-empty')?.checked !== false,
     developer_mode: !!document.getElementById('s-chat-debug')?.checked,
+    parallel_tools: !!document.getElementById('s-chat-debug')?.checked && !!document.getElementById('s-parallel-tools')?.checked,
+    show_plan: document.getElementById('s-show-plan')?.checked !== false,
     send_key: document.getElementById('s-send-shift-enter')?.checked ? 'shift_enter' : 'enter',
     file_ops_only: !!document.getElementById('s-chat-fileops')?.checked,
     aggregate_tools: document.getElementById('s-chat-agg')?.checked !== false,
@@ -1431,7 +1722,8 @@ async function saveAllSettings() {
     if (!d) continue;
     await api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'plugin', id: p.id, values: d.values }) });
   }
-  document.getElementById('top-workspace').textContent = serverModeOn() ? '' : agent.workspace;
+  await saveFolderLimits();
+  paintWorkspaceLabel(serverModeOn() ? '' : agent.workspace);
   applyServerChrome();
   settings = settings || {};
   settings.agent = Object.assign({}, settings.agent || {}, agent);
@@ -1511,6 +1803,21 @@ document.getElementById('btn-pick-ws').onclick = async () => {
     markSettingsDirty();
   }
 };
+async function pickDataFolder(inputId) {
+  if (serverModeOn() && !debugUnlocked()) return;
+  const r = await api('/api/fs/pick_folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  if (r.error) { toast(r.error, true); return; }
+  if (r.cancelled) return;
+  const input = document.getElementById(inputId);
+  if (r.path && input) {
+    input.value = r.path;
+    markSettingsDirty();
+  }
+}
+const pickAtt = document.getElementById('btn-pick-att');
+if (pickAtt) pickAtt.onclick = () => pickDataFolder('s-attachments');
+const pickDl = document.getElementById('btn-pick-dl');
+if (pickDl) pickDl.onclick = () => pickDataFolder('s-downloads');
 
 function flashSetting(el) {
   if (!el) return;

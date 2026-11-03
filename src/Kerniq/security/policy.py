@@ -110,6 +110,16 @@ class SecurityPolicy:
             parsed = RiskLevel.HIGH
         self.auto_approve_up_to = parsed
 
+    def host_is_open(self) -> bool:
+        """Leave the workspace only when host freedom is on and the venv is off.
+
+        Host freedom alone reveals absolute paths. The path checks stay until
+        ``use_venv`` is false. Missing ``use_venv`` stays closed.
+        """
+        if not self.host_freedom:
+            return False
+        return not bool(getattr(self, "use_venv", True))
+
     def validate_path(self, path: str) -> Path:
         from Kerniq.server.homes import jail_root, logical_path
 
@@ -136,7 +146,7 @@ class SecurityPolicy:
             if p.is_absolute():
                 resolved = p.expanduser().resolve()
                 allowed = [Path(item).resolve() for item in attachment_aliases().values()]
-                if self.host_freedom or any(_alias_hit(resolved, root) for root in allowed):
+                if self.host_is_open() or any(_alias_hit(resolved, root) for root in allowed):
                     return resolved
                 p = resolved
             else:
@@ -186,10 +196,11 @@ class SecurityPolicy:
         return max(candidates, key=lambda item: _RISK_RANK[item])
 
     def terminal_block_reason(self, command: str) -> Optional[str]:
+        open_host = self.host_is_open()
         verdict = assess_command(
             command,
-            allow_network=self.allow_terminal_network or self.host_freedom,
-            host_freedom=self.host_freedom,
+            allow_network=self.allow_terminal_network or open_host,
+            host_freedom=open_host,
         )
         if not verdict.allowed:
             return verdict.reason

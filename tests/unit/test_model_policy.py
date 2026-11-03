@@ -94,6 +94,36 @@ def test_already_loaded_model_is_not_loaded_again():
     assert provider.loads == 0
 
 
+def test_loaded_model_reloads_when_context_length_changes():
+    import asyncio
+    from types import SimpleNamespace
+
+    from Kerniq.core.runtime_flow import use_model_for_mode
+
+    class Provider:
+        provider_id = "lm_studio"
+        model = ""
+        loads = []
+
+        async def model_is_loaded(self, key):
+            return True
+
+        async def load_model(self, key, context_length=None):
+            self.loads.append((key, context_length))
+
+    provider = Provider()
+    api = SimpleNamespace(
+        model="qwen3.5-9b",
+        act_model="",
+        split_models=False,
+        provider="lm_studio",
+        context_length=524288,
+    )
+    assert asyncio.run(use_model_for_mode(provider, api, "act")) is None
+    assert provider.loads == [("qwen3.5-9b", 524288)]
+    assert provider.model == "qwen3.5-9b"
+
+
 def test_textual_tool_call_is_parsed():
     raw = (
         'update_plan{items:[{id:<|"|>1<|"|>,status:<|"|>pending<|"|>,'

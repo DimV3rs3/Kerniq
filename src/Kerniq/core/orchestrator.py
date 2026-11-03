@@ -22,6 +22,23 @@ class _RunStopped(Exception):
     """User stop aborted the current model call or tool."""
 
 
+class _ToolCallContext:
+    """One tool call's id, so parallel tools do not overwrite each other."""
+
+    def __init__(self, inner, call_id: str):
+        object.__setattr__(self, "_inner", inner)
+        object.__setattr__(self, "last_tool_call_id", call_id)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def __setattr__(self, name, value):
+        if name in {"_inner", "last_tool_call_id"}:
+            object.__setattr__(self, name, value)
+            return
+        setattr(self._inner, name, value)
+
+
 def _spec_name(spec) -> str:
     if not isinstance(spec, dict):
         return ""
@@ -62,6 +79,8 @@ class Orchestrator:
         self.on_progress = None
         self.on_plan = None
         self.require_plan = True
+        # Several tools in one model turn stay in order unless this is on.
+        self.parallel_tools = False
         # Kept so a recovered text call can be observed. It must not turn the
         # native tools array off: that array is what LM Studio's template uses.
         self._text_only_models: set[str] = set()
@@ -79,6 +98,98 @@ class Orchestrator:
             )
         except Exception:
             return text or ""
+
+    async def _run_tool_body(self, call, tool, context):
+        proxy = _ToolCallContext(context, call.id)
+        with use_task(context):
+            return await self._await_or_stop(tool.execute(call.arguments, proxy), context)
+
+    def _record_tool_error(self, context, call, exc: BaseException) -> None:
+        text = str(exc)
+        low = text.lower()
+        if "timed out" in low or "timeout" in low:
+            note = "External error: the tool timed out. " + text
+        elif isinstance(exc, FileNotFoundError):
+            note = "File not found. " + text
+        elif isinstance(exc, PermissionError):
+            note = "Execution error: permission denied. " + text
+        else:
+            note = "Execution error: the tool failed. " + text
+        context.add_message(Message(
+            role=MessageRole.TOOL,
+            content=self._mask_for_model(note),
+            tool_call_id=call.id,
+            name=call.name,
+        ))
+
+    def _record_tool_result(self, context, call, tool, result) -> None:
+        content = result.to_model_content() if hasattr(result, "to_model_content") else (result.human_readable or "")
+        content = self._mask_for_model(content)
+        image = None
+        output = getattr(result, "output", None)
+        if isinstance(output, dict) and isinstance(output.get("image"), dict):
+            image = output.get("image")
+        context.add_message(Message(
+            role=MessageRole.TOOL,
+            content=content,
+            tool_call_id=call.id,
+            name=tool.name,
+            metadata={"images": [image]} if image else None,
+        ))
+        if call.name == "update_plan":
+            plan = (context.metadata or {}).get("plan")
+            archive = (context.metadata or {}).get("plan_archive") or []
+            cb = getattr(self, "on_plan", None)
+            if callable(cb):
+                try:
+                    cb(plan or [], archive)
+                except Exception:
+                    logger.exception("on_plan failed")
+            self._pin_todo(context)
+
+    async def _execute_prepared(self, call, tool, context) -> str:
+        try:
+            result = await self._run_tool_body(call, tool, context)
+        except _RunStopped:
+            logger.info("Stop requested during tool %s", call.name)
+            return "stop"
+        except Exception as exc:
+            logger.exception("Tool %s raised", call.name)
+            self._record_tool_error(context, call, exc)
+            return ""
+        if self._stop_requested(context) or getattr(result, "stop_reason", "") == "cancelled":
+            logger.info("Stop requested after tool %s", call.name)
+            self._record_tool_result(context, call, tool, result)
+            return "stop"
+        self._record_tool_result(context, call, tool, result)
+        return ""
+
+    async def _execute_parallel(self, pending, context) -> str:
+        """Run a whole turn together. Results are written back in call order."""
+
+        async def one(pair):
+            call, tool = pair
+            try:
+                return await self._run_tool_body(call, tool, context)
+            except _RunStopped:
+                return "stop"
+            except Exception as exc:
+                logger.exception("Tool %s raised", call.name)
+                return exc
+
+        outcomes = await asyncio.gather(*(one(pair) for pair in pending))
+        stopped = False
+        for (call, tool), outcome in zip(pending, outcomes):
+            if outcome == "stop":
+                stopped = True
+                continue
+            if isinstance(outcome, Exception):
+                self._record_tool_error(context, call, outcome)
+                continue
+            if self._stop_requested(context) or getattr(outcome, "stop_reason", "") == "cancelled":
+                stopped = True
+            self._record_tool_result(context, call, tool, outcome)
+        return "stop" if stopped else ""
 
     def _state_dir(self):
         try:
@@ -1299,6 +1410,7 @@ class Orchestrator:
             skip_gate = bool((context.metadata or {}).get("skip_plan_gate"))
             todo_missing = self.compose_plan and not skip_gate and self._todo_missing(context)
             offered = self._offered_tool_names(context)
+            pending_exec = []
             for call in tool_calls:
                 if self._stop_requested(context):
                     logger.info("Stop requested before the next tool")
@@ -1461,61 +1573,14 @@ class Orchestrator:
                     ))
                     continue
 
-                try:
-                    with use_task(context):
-                        result = await self._await_or_stop(
-                            tool.execute(call.arguments, context), context
-                        )
-                except _RunStopped:
-                    logger.info("Stop requested during tool %s", call.name)
-                    return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
-                except Exception as exc:
-                    logger.exception("Tool %s raised", call.name)
-                    text = str(exc)
-                    low = text.lower()
-                    if "timed out" in low or "timeout" in low:
-                        note = "External error: the tool timed out. " + text
-                    elif isinstance(exc, FileNotFoundError):
-                        note = "File not found. " + text
-                    elif isinstance(exc, PermissionError):
-                        note = "Execution error: permission denied. " + text
-                    else:
-                        note = "Execution error: the tool failed. " + text
-                    context.add_message(Message(
-                        role=MessageRole.TOOL,
-                        content=self._mask_for_model(note),
-                        tool_call_id=call.id,
-                        name=call.name,
-                    ))
+                if getattr(self, "parallel_tools", False) and len(tool_calls) > 1:
+                    pending_exec.append((call, tool))
                     continue
-
-                if self._stop_requested(context) or getattr(result, "stop_reason", "") == "cancelled":
-                    logger.info("Stop requested after tool %s", call.name)
+                if await self._execute_prepared(call, tool, context) == "stop":
                     return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
 
-                content = result.to_model_content() if hasattr(result, "to_model_content") else (result.human_readable or "")
-                content = self._mask_for_model(content)
-                image = None
-                output = getattr(result, "output", None)
-                if isinstance(output, dict) and isinstance(output.get("image"), dict):
-                    image = output.get("image")
-                context.add_message(Message(
-                    role=MessageRole.TOOL,
-                    content=content,
-                    tool_call_id=call.id,
-                    name=tool.name,
-                    metadata={"images": [image]} if image else None,
-                ))
-                if call.name == "update_plan":
-                    plan = (context.metadata or {}).get("plan")
-                    archive = (context.metadata or {}).get("plan_archive") or []
-                    cb = getattr(self, "on_plan", None)
-                    if callable(cb):
-                        try:
-                            cb(plan or [], archive)
-                        except Exception:
-                            logger.exception("on_plan failed")
-                    self._pin_todo(context)
+            if pending_exec and await self._execute_parallel(pending_exec, context) == "stop":
+                return self._finish(context, "Stopped by user.", "cancelled", "Stopped by user.")
 
         return self._finish(
             context,

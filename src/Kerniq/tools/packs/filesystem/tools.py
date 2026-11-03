@@ -169,16 +169,52 @@ class FileSystemToolBase(Tool):
     def _host_freedom(self) -> bool:
         return bool(getattr(getattr(self, "_security_policy", None), "host_freedom", False))
 
+    def _host_is_open(self) -> bool:
+        """Leave the workspace only after host freedom and leaving the venv."""
+        policy = getattr(self, "_security_policy", None)
+        if policy is None:
+            return False
+        opener = getattr(policy, "host_is_open", None)
+        if callable(opener):
+            return bool(opener())
+        return bool(getattr(policy, "host_freedom", False)) and not bool(getattr(policy, "use_venv", True))
+
+    def _moved_bucket(self, rewritten: str):
+        """Real attachments or downloads when they are not inside the workspace."""
+        from Kerniq.security.roots import _join, desktop_roots, model_roots
+
+        norm = str(rewritten or "").replace("\\", "/")
+        kind = ""
+        rest = ""
+        if norm == "attachments" or norm.startswith("attachments/"):
+            kind = "attachments"
+            rest = norm.split("/", 1)[1] if "/" in norm else ""
+        elif norm in {".downloads", "downloads"} or norm.startswith(".downloads/") or norm.startswith("downloads/"):
+            kind = "downloads"
+            rest = norm.split("/", 1)[1] if "/" in norm else ""
+        if not kind:
+            return None
+        live = desktop_roots(self.workspace)
+        legacy = model_roots(self.workspace)
+        folder = getattr(live, kind)
+        if folder == getattr(legacy, kind):
+            return None
+        return _join(folder, rest)
+
     def _shown_path(self, path: pathlib.Path) -> str | None:
         if self._host_freedom():
             try:
                 return str(path.resolve())
             except OSError:
                 return str(path)
+        from Kerniq.security.roots import shown_virtual
         from Kerniq.server.homes import display_path, jail_root
 
         if jail_root() is not None:
             return display_path(path)
+        shown = shown_virtual(path, self.workspace)
+        if shown:
+            return shown
         try:
             resolved = path.resolve()
         except OSError:
@@ -202,6 +238,12 @@ class FileSystemToolBase(Tool):
             return VIRT_ATTACHMENTS + "/" + resolved.name
         if rel in ("", "."):
             return "./workspace"
+        if rel == ".downloads" or rel.startswith(".downloads/"):
+            tail = rel.split("/", 1)[1] if "/" in rel else ""
+            return "./downloads" if not tail else "./downloads/" + tail
+        if rel == "attachments" or rel.startswith("attachments/"):
+            tail = rel.split("/", 1)[1] if "/" in rel else ""
+            return "./attachments" if not tail else "./attachments/" + tail
         return "./workspace/" + rel
 
     def _admit(self, path: pathlib.Path, payload: str | bytes) -> None:
@@ -229,6 +271,10 @@ class FileSystemToolBase(Tool):
                 target = logical_path(str(path_str), jail)
             except PermissionError as exc:
                 raise PermissionError("Access denied: that path is outside ./workspace") from exc
+            from Kerniq.storage.folder_usage import is_private_path
+
+            if is_private_path(target):
+                raise PermissionError("Access denied")
             writing = self.name in {
                 "write_file", "create_file", "edit_file", "delete_file", "create_directory",
                 "move_file",
@@ -254,25 +300,45 @@ class FileSystemToolBase(Tool):
 
         raw = rewrite_model_path(raw)
         base = self.workspace
-        candidate = pathlib.Path(raw)
         writing = self.name in {
             "write_file", "create_file", "edit_file", "delete_file", "create_directory",
         } if write is None else bool(write)
+        moved = self._moved_bucket(raw)
+        if moved is not None:
+            target = moved
+            from Kerniq.storage.folder_usage import is_private_path
+
+            if is_private_path(target):
+                raise PermissionError("Access denied")
+            if writing:
+                from Kerniq.server.homes import write_blocked_reason
+
+                blocked = write_blocked_reason()
+                if blocked:
+                    raise PermissionError(blocked)
+            if must_exist and not target.exists():
+                raise FileNotFoundError(f"File not found: {path_str}")
+            return target
+        candidate = pathlib.Path(raw)
         # An absolute path must not replace the workspace via Path.__truediv__.
         if candidate.is_absolute():
             target = candidate.resolve()
-            if self._host_freedom():
-                if writing:
-                    from Kerniq.security.confinement import os_write_forbidden
-
-                    blocked_os = os_write_forbidden(target)
-                    if blocked_os:
-                        raise PermissionError(blocked_os)
-                if must_exist and not target.exists():
-                    raise FileNotFoundError(f"File not found: {path_str}")
-                return target
         else:
             target = (base / candidate).resolve()
+        from Kerniq.storage.folder_usage import is_private_path
+
+        if is_private_path(target):
+            raise PermissionError("Access denied")
+        if self._host_is_open():
+            if writing:
+                from Kerniq.security.confinement import os_write_forbidden
+
+                blocked_os = os_write_forbidden(target)
+                if blocked_os:
+                    raise PermissionError(blocked_os)
+            if must_exist and not target.exists():
+                raise FileNotFoundError(f"File not found: {path_str}")
+            return target
         if writing:
             from Kerniq.server.homes import write_blocked_reason
 
@@ -927,8 +993,9 @@ class ListDirectoryTool(FileSystemToolBase):
     @property
     def description(self) -> str:
         return (
-            "Lists files in a directory relative to the workspace. "
-            "Set recursive=true to walk the tree (with optional max_depth)."
+            "Lists files. '.' is the link view: workspace, attachments, and downloads. "
+            "workspace/file.txt, ./file.txt, and file.txt are the same workspace file. "
+            "Set recursive=true to walk a directory (with optional max_depth)."
         )
 
     @property
@@ -948,6 +1015,25 @@ class ListDirectoryTool(FileSystemToolBase):
         call_id = arguments.get("tool_call_id", "unknown")
         try:
             path_str = arguments.get("path", ".")
+            from Kerniq.security.roots import ensure_view, is_view_root
+
+            if is_view_root(str(path_str)) and not bool(arguments.get("recursive", False)):
+                try:
+                    ensure_view(self.workspace)
+                except OSError:
+                    pass
+                entries = [
+                    {"name": name, "path": "./" + name, "type": "dir", "size": None}
+                    for name in ("workspace", "attachments", "downloads")
+                ]
+                lines = [f"d {item['path']}" for item in entries]
+                return ToolResult(
+                    tool_call_id=call_id,
+                    tool_id=self.tool_id,
+                    status="success",
+                    output={"entries": entries, "truncated": False},
+                    human_readable="Listing . (3 entries):\n" + "\n".join(lines),
+                )
             path = self._safe_path(path_str)
             if not path.is_dir():
                 return self._create_error_result(call_id, f"Not a directory: {path_str}", "FS_ERROR")
@@ -975,6 +1061,7 @@ class ListDirectoryTool(FileSystemToolBase):
             else:
                 base_depth = len(path.parts)
                 for root, dirs, files in os.walk(path):
+                    dirs[:] = [name for name in dirs if name != ".kerniq-view"]
                     root_path = pathlib.Path(root)
                     depth = len(root_path.parts) - base_depth
                     if depth > max_depth:

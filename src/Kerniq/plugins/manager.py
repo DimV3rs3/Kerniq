@@ -150,6 +150,7 @@ class PluginManager:
 
             plugin_instance = plugin_class()
             context = self.context_factory()
+            context.plugin_id = pid
             if _plugin_disabled(context, pid):
                 self.statuses[pid] = PluginStatus.STOPPED
                 logger.info("Plugin %s is disabled.", pid)

@@ -12,6 +12,18 @@ from .tools.runtime_settings import apply_stored_tool_settings
 from .tools.settings import ToolSettingsStore
 
 
+def _plugin_allows(state_dir: Path | str, tool: Any) -> bool:
+    plugin_id = str(getattr(tool, "plugin_id", "") or "")
+    if not plugin_id:
+        return True
+    from types import SimpleNamespace
+
+    from .plugins.manager import _plugin_disabled
+
+    context = SimpleNamespace(config=SimpleNamespace(storage=SimpleNamespace(state_dir=state_dir)))
+    return not _plugin_disabled(context, plugin_id)
+
+
 def _tool_enabled(settings: Any, tool: Any) -> bool:
     enabled_map = getattr(settings, "enabled_tools", None) or {}
     if tool.tool_id in enabled_map:
@@ -48,7 +60,7 @@ def build_tool_registry(
     tools = load_all_tools(str(workspace_path), policy=policy)
     apply_stored_tool_settings(tools, state_dir)
     for tool in tools:
-        if not _tool_enabled(ts, tool):
+        if not _tool_enabled(ts, tool) or not _plugin_allows(state_dir, tool):
             continue
         try:
             if tool.name == "web_search" and hasattr(tool, "apply_settings"):

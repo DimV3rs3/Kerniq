@@ -25,6 +25,8 @@ from Kerniq.interfaces.settings_schema import SettingsSchema, SettingField, Sett
 # them after its own file operations and on manual refresh) always walk again.
 _TREE_CACHE: Dict[str, Any] = {}
 _TREE_LOCK = threading.Lock()
+_CHAT_SAVE_LOCK = threading.Lock()
+SERVER_CHAT_LIMIT = 3
 
 logger = logging.getLogger("plugin.web_ui")
 
@@ -295,6 +297,7 @@ class _State:
     jobs_lock = threading.Lock()
     pending: list = []
     history = None
+    rpm = None
 
 
 STATE = _State()
@@ -665,11 +668,98 @@ def _state_dir() -> Path:
     return Path(SettingsProvider().config.storage.state_dir)
 
 
+def _sessions_dir() -> Path:
+    cfg = getattr(getattr(STATE, "context", None), "config", None)
+    storage = getattr(cfg, "storage", None)
+    raw = getattr(storage, "sessions_dir", None)
+    if raw:
+        return Path(raw)
+    from Kerniq.settings.loader import SettingsProvider
+
+    return Path(SettingsProvider().config.storage.sessions_dir)
+
+
+def _chat_ids(chats) -> set:
+    found = set()
+    for chat in chats or []:
+        if isinstance(chat, dict) and chat.get("id"):
+            found.add(str(chat.get("id")))
+    return found
+
+
+def _prune_sessions(keep_ids: set) -> int:
+    """Drop session files that no longer belong to a chat.
+
+    A UI chat and a ``sessions/session-*.json`` file are different stores.
+    Every agent run writes one session and nothing deleted it, so the folder
+    grew even when the UI showed two chats. Files written before they carried
+    a chat id are removed only after an hour, so a run that just started is
+    not deleted mid-flight.
+    """
+    root = _sessions_dir()
+    if not root.is_dir():
+        return 0
+    removed = 0
+    now = time.time()
+    for path in root.glob("session-*.json"):
+        chat_id = ""
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data, dict):
+            meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+            chat_id = str(meta.get("chat_id") or data.get("chat_id") or "")
+        if chat_id and chat_id in keep_ids:
+            continue
+        if not chat_id:
+            try:
+                age = now - path.stat().st_mtime
+            except OSError:
+                age = 0
+            if age < 3600:
+                continue
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            logger.info("session file was not removed: %s", path, exc_info=True)
+    return removed
+
+
+def _forget_chat_memory(removed: set, user_id: str = "local") -> None:
+    if not removed:
+        return
+    with STATE.chat_lock:
+        for key in list(STATE.chat_histories):
+            text = str(key)
+            if text in removed or any(text == chat_id or text.endswith("\x1f" + chat_id) for chat_id in removed):
+                STATE.chat_histories.pop(key, None)
+    try:
+        log = _chat_log()
+        for chat_id in removed:
+            log.forget(chat_id)
+    except Exception:
+        logger.exception("chat log forget")
+    if not STATE.server_mode:
+        return
+    try:
+        store = _history_store()
+        for chat_id in removed:
+            store.drop_replies(user_id, chat_id)
+    except Exception:
+        logger.exception("reply forget")
+
+
 def _server_core() -> dict:
     from Kerniq.server.settings import load_server_settings
     from Kerniq.settings.loader import SettingsProvider
 
-    return load_server_settings(_state_dir(), SettingsProvider().config)
+    core = dict(load_server_settings(_state_dir(), SettingsProvider().config))
+    if not str(core.get("users_root") or "").strip():
+        core["prefer_server_root"] = True
+    return core
 
 
 def _history_store():
@@ -781,14 +871,28 @@ def _safe(ws: Path, rel: str) -> Path:
         from Kerniq.server.homes import logical_path
 
         return logical_path(rel or ".", ws)
+    from Kerniq.security.roots import model_roots, resolve_virtual
+    from Kerniq.storage.folder_usage import is_private_path
+
     rel = _norm_rel(rel)
-    ws = ws.resolve()
-    target = (ws / (rel or ".")).resolve()
     try:
-        target.relative_to(ws)
-    except ValueError as e:
-        raise PermissionError("path outside workspace") from e
-    return target
+        target = resolve_virtual(rel or ".", ws)
+    except PermissionError as exc:
+        raise PermissionError("path outside workspace") from exc
+    if target is None or is_private_path(target):
+        raise PermissionError("path outside workspace")
+    allowed = model_roots(ws).as_list()
+    try:
+        resolved = target.resolve()
+    except OSError:
+        resolved = target
+    for root in allowed:
+        try:
+            resolved.relative_to(root.resolve())
+            return resolved
+        except (ValueError, OSError):
+            continue
+    raise PermissionError("path outside workspace")
 
 
 class UIHandler(BaseHTTPRequestHandler):
@@ -857,7 +961,23 @@ class UIHandler(BaseHTTPRequestHandler):
             return _json(self, 200, public_settings(payload, server_mode=bool(STATE.server_mode)))
         if path == "/api/providers":
             from Kerniq.models.catalog import public_specs
-            return _json(self, 200, {"providers": public_specs()})
+            from Kerniq.server.homes import LOCAL_PROVIDERS, local_provider_allowed
+
+            specs = public_specs()
+            debug = False
+            if STATE.server_mode:
+                from Kerniq.server.debug import request_unlocked
+
+                debug = bool(request_unlocked(self.headers, _state_dir()))
+            specs = [
+                row for row in specs
+                if local_provider_allowed(
+                    server_mode=bool(STATE.server_mode),
+                    provider=str((row or {}).get("id") or ""),
+                    debug=debug,
+                )
+            ]
+            return _json(self, 200, {"providers": specs, "local_providers": sorted(LOCAL_PROVIDERS)})
         if path == "/api/languages":
             from Kerniq.settings.ui_store import RESPONSE_LANGUAGES
             return _json(self, 200, {"languages": RESPONSE_LANGUAGES})
@@ -876,7 +996,9 @@ class UIHandler(BaseHTTPRequestHandler):
         if path == "/api/lms/loaded":
             return _json(self, 200, self._lms_loaded())
         if path == "/api/fs/tree":
-            return _json(self, 200, self._tree(fresh=(qs.get("fresh") == "1")))
+            return _json(self, 200, self._tree(fresh=(qs.get("fresh") == "1"), root=qs.get("root") or "workspace"))
+        if path == "/api/usage":
+            return _json(self, 200, self._folder_usage())
         if path == "/api/fs/file":
             return _json(self, 200, self._read_file(qs.get("path", "")))
         if path == "/api/fs/download":
@@ -973,6 +1095,10 @@ class UIHandler(BaseHTTPRequestHandler):
             return _json(self, 200, self._lms_unload_all())
         if path == "/api/fs/create":
             return _json(self, 200, self._create_path(data))
+        if path == "/api/fs/clear":
+            return _json(self, 200, self._clear_root(data))
+        if path == "/api/usage":
+            return _json(self, 200, self._save_folder_limits(data))
         if path == "/api/attachments/import":
             return _json(self, 200, self._import_attachment(data))
         if path == "/api/chat/cancel":
@@ -1075,11 +1201,19 @@ class UIHandler(BaseHTTPRequestHandler):
                 "id": t.tool_id,
                 "description": t.description,
                 "display_phrase": getattr(t, "display_phrase", "") or "",
+                "plugin_id": str(getattr(t, "plugin_id", "") or ""),
             }
+
+        from Kerniq.assembly import _plugin_allows
+        from Kerniq.settings.loader import SettingsProvider
+
+        state_dir = SettingsProvider().config.storage.state_dir
 
         if STATE.context and STATE.context.tool_registry:
             for t in STATE.context.tool_registry.list_tools():
                 if getattr(t, "agent_visible", True) is False:
+                    continue
+                if not _plugin_allows(state_dir, t):
                     continue
                 tools.append(_one(t))
         if not tools:
@@ -1087,6 +1221,8 @@ class UIHandler(BaseHTTPRequestHandler):
                 from Kerniq.tools.loader import load_all_tools
 
                 for t in load_all_tools(str(_workspace())):
+                    if not _plugin_allows(state_dir, t):
+                        continue
                     tools.append(_one(t))
             except Exception as exc:
                 logger.warning("tool pack discovery failed: %s", exc)
@@ -1125,6 +1261,19 @@ class UIHandler(BaseHTTPRequestHandler):
         client = client or {}
         provider_id = str(client.get("provider") or ui.api.provider or "lm_studio").strip() or "lm_studio"
         ui.api.provider = provider_id
+        if STATE.server_mode:
+            from Kerniq.server.debug import request_unlocked
+            from Kerniq.server.homes import local_provider_allowed
+            from Kerniq.server.queue import LOCAL_PROVIDER_REFUSED
+
+            debug = bool(request_unlocked(self.headers, _state_dir()))
+            if not local_provider_allowed(server_mode=True, provider=provider_id, debug=debug):
+                return {
+                    "models": [],
+                    "reachable": False,
+                    "error": LOCAL_PROVIDER_REFUSED,
+                    "provider": provider_id,
+                }
         if "base_url" in client:
             ui.api.base_url = str(client.get("base_url") or "").strip()
         if "api_token" in client:
@@ -1205,10 +1354,85 @@ class UIHandler(BaseHTTPRequestHandler):
             }
         return {"models": [], "embeddings": [], "reachable": False, "error": last or "unreachable", "provider": provider_id}
 
-    def _tree(self, fresh: bool = False) -> Dict[str, Any]:
+    def _folder_roots(self):
+        if STATE.server_mode:
+            from Kerniq.security.roots import model_roots
+
+            roots = model_roots(_workspace())
+        else:
+            from Kerniq.security.roots import desktop_roots
+
+            roots = desktop_roots(_workspace())
+        roots.attachments.mkdir(parents=True, exist_ok=True)
+        roots.downloads.mkdir(parents=True, exist_ok=True)
+        return {
+            "workspace": roots.workspace,
+            "attachments": roots.attachments,
+            "downloads": roots.downloads,
+        }
+
+    def _folder_usage(self) -> Dict[str, Any]:
+        from Kerniq.storage.folder_usage import account
+
+        rows = []
+        for name, folder in self._folder_roots().items():
+            if name == "downloads":
+                from Kerniq.storage.folder_usage import purge_older_than
+
+                purge_older_than(folder, 30)
+            row = account(folder)
+            row["name"] = name
+            if name == "downloads":
+                row["retention_days"] = 30
+            rows.append(row)
+        return {"folders": rows}
+
+    def _save_folder_limits(self, data: dict) -> Dict[str, Any]:
+        from Kerniq.storage.folder_usage import parse_quota, set_limit
+
+        data = data or {}
+        roots = self._folder_roots()
+        for name, folder in roots.items():
+            if name not in data and name + "_amount" not in data:
+                continue
+            amount = data.get(name + "_amount", data.get(name))
+            unit = data.get(name + "_unit") or data.get("unit") or "gb"
+            set_limit(folder, parse_quota(amount, str(unit)))
+        return self._folder_usage()
+
+    def _clear_root(self, data: dict) -> Dict[str, Any]:
+        import shutil
+
+        from Kerniq.storage.folder_usage import account
+
+        name = str((data or {}).get("root") or "")
+        roots = self._folder_roots()
+        folder = roots.get(name)
+        if folder is None:
+            return {"error": "Unknown folder."}
+        keep = {".git", ".kerniq-venv"}
+        if name == "workspace":
+            keep.update({"attachments", ".downloads"})
+        for child in list(folder.iterdir()):
+            if child.name in keep:
+                continue
+            try:
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            except OSError as exc:
+                return {"error": str(exc)}
+        account(folder)
+        return {"ok": True, "root": name}
+
+    def _tree(self, fresh: bool = False, root: str = "workspace") -> Dict[str, Any]:
         try:
-            ws = _workspace()
-            key = str(ws)
+            roots = self._folder_roots()
+            root_name = root if root in roots else "workspace"
+            base = roots[root_name]
+            ws = roots["workspace"]
+            key = str(base) + "|" + root_name
             if not fresh:
                 with _TREE_LOCK:
                     hit = _TREE_CACHE.get("tree")
@@ -1216,6 +1440,7 @@ class UIHandler(BaseHTTPRequestHandler):
                         return hit["data"]
             started = time.monotonic()
             entries = []
+            prefix_root = "" if root_name == "workspace" else root_name
 
             def walk(dir_path: Path, prefix: str, depth: int) -> None:
                 if depth > 32:
@@ -1226,6 +1451,10 @@ class UIHandler(BaseHTTPRequestHandler):
                     return
                 for p in kids:
                     name = p.name
+                    if name in {".kerniq-view", ".kerniq-venv"}:
+                        continue
+                    if root_name == "workspace" and depth == 0 and name in {"attachments", ".downloads"}:
+                        continue
                     rel = f"{prefix}/{name}" if prefix else name
                     rel = rel.replace(chr(92), "/")
                     hidden = name.startswith(".")
@@ -1235,14 +1464,14 @@ class UIHandler(BaseHTTPRequestHandler):
                         continue
                     if is_dir:
                         entries.append({"path": rel, "type": "dir", "name": name, "hidden": hidden})
-                        if not p.is_symlink():  # a linked folder is listed but not entered: no loops
+                        if not p.is_symlink():
                             walk(p, rel, depth + 1)
                     else:
                         entries.append({"path": rel, "type": "file", "name": name, "hidden": hidden})
 
-            walk(ws, "", 0)
+            walk(base, prefix_root, 0)
             shown = _workspace_label(ws)
-            data = {"entries": entries, "workspace": shown}
+            data = {"entries": entries, "workspace": shown, "root": root_name}
             cost = time.monotonic() - started
             with _TREE_LOCK:
                 _TREE_CACHE["tree"] = {"ws": key, "at": time.monotonic(), "ttl": min(30.0, cost * 10.0), "data": data}
@@ -1518,6 +1747,24 @@ class UIHandler(BaseHTTPRequestHandler):
             ws = _workspace()
             policy = SecurityPolicy(workspace_root=ws)
             instances = list(load_all_tools(str(ws), policy=policy))
+            try:
+                from Kerniq.devtools.paths import find_plugins_dirs
+                from Kerniq.plugins.folder_tools import preview_plugin_tools
+
+                seen = {getattr(tool, "tool_id", "") for tool in instances}
+                for folder in find_plugins_dirs():
+                    if not folder.is_dir():
+                        continue
+                    for child in sorted(folder.iterdir()):
+                        if not child.is_dir() or not (child / "manifest.toml").is_file():
+                            continue
+                        for tool in preview_plugin_tools(child):
+                            if getattr(tool, "tool_id", "") in seen:
+                                continue
+                            seen.add(getattr(tool, "tool_id", ""))
+                            instances.append(tool)
+            except Exception:
+                logger.exception("plugin tool preview")
             from Kerniq.settings.loader import SettingsProvider
             from Kerniq.tools.runtime_settings import apply_stored_tool_settings
             from Kerniq.tools.settings import ToolSettingsStore
@@ -1540,6 +1787,7 @@ class UIHandler(BaseHTTPRequestHandler):
                         "description": tool.description or "",
                         "category": getattr(tool, "category", "other") or "other",
                         "pack_id": getattr(tool, "pack_id", None) or getattr(tool, "category", "other"),
+                        "plugin_id": str(getattr(tool, "plugin_id", "") or ""),
                         "ui_icon": getattr(tool, "ui_icon", "tool"),
                         "collapsible": bool(getattr(tool, "collapsible", False)),
                         "risk_level": getattr(tool, "risk_level", "medium"),
@@ -1728,7 +1976,12 @@ class UIHandler(BaseHTTPRequestHandler):
         if suffix in _BLOCKED_ATTACH:
             return {"error": "This file type cannot be attached."}
         ws = _workspace()
-        att = ws / "attachments"
+        if STATE.server_mode:
+            att = ws / "attachments"
+        else:
+            from Kerniq.security.roots import desktop_roots
+
+            att = desktop_roots(ws).attachments
         att.mkdir(parents=True, exist_ok=True)
         try:
             if content_b64:
@@ -2050,18 +2303,47 @@ class UIHandler(BaseHTTPRequestHandler):
         warning = self._storage_warning()
         if STATE.server_mode:
             try:
-                _history_store().save_chats(user_id, chats[-40:])
+                previous = _history_store().list_chats(user_id)
+            except Exception:
+                logger.exception("server chats")
+                previous = []
+            added = _chat_ids(chats) - _chat_ids(previous)
+            if len(chats) > SERVER_CHAT_LIMIT and added:
+                return {
+                    "error": "chats_full",
+                    "limit": SERVER_CHAT_LIMIT,
+                    "message": "Chat limit reached. Delete a chat before creating a new one.",
+                    "storage_warning": warning,
+                }
+            try:
+                _history_store().save_chats(user_id, chats)
             except Exception:
                 logger.exception("server chats save")
                 return {"error": "chats were not saved", "storage_warning": warning}
-            return {"ok": True, "count": len(chats[-40:]), "storage_warning": warning}
+            removed = _chat_ids(previous) - _chat_ids(chats)
+            _forget_chat_memory(removed, user_id)
+            _prune_sessions(_chat_ids(chats))
+            return {"ok": True, "count": len(chats), "storage_warning": warning}
         path = self._ui_chats_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps({"chats": chats[-40:]}, ensure_ascii=False)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(payload, encoding="utf-8")
-        tmp.replace(path)
-        return {"ok": True, "count": len(chats[-40:]), "storage_warning": warning}
+        with _CHAT_SAVE_LOCK:
+            previous: list = []
+            if path.is_file():
+                try:
+                    old = json.loads(path.read_text(encoding="utf-8"))
+                    raw = old.get("chats") if isinstance(old, dict) else old
+                    if isinstance(raw, list):
+                        previous = raw
+                except Exception:
+                    logger.info("ui chats unreadable before save", exc_info=True)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = json.dumps({"chats": chats}, ensure_ascii=False)
+            tmp = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            os.replace(tmp, path)
+        removed = _chat_ids(previous) - _chat_ids(chats)
+        _forget_chat_memory(removed, user_id)
+        _prune_sessions(_chat_ids(chats))
+        return {"ok": True, "count": len(chats), "storage_warning": warning}
 
     def _load_plan(self, model: str) -> Dict[str, Any]:
         from Kerniq.models.identity import instance_model_key
@@ -2086,6 +2368,19 @@ class UIHandler(BaseHTTPRequestHandler):
             )
         if info.get("error"):
             body["error"] = info["error"]
+        loaded_ctx = None
+        for item in (info.get("loaded") or []):
+            if not isinstance(item, dict):
+                continue
+            cfg = item.get("config") if isinstance(item.get("config"), dict) else {}
+            raw = cfg.get("context_length") or item.get("context_length") or item.get("loaded_context_length")
+            try:
+                loaded_ctx = int(raw) if raw else loaded_ctx
+            except (TypeError, ValueError):
+                continue
+            if selected and str(item.get("model") or "") == selected:
+                break
+        body["loaded_context_length"] = loaded_ctx
         return body
 
     def _chat_title(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -2176,8 +2471,15 @@ class UIHandler(BaseHTTPRequestHandler):
                 for mid in loaded_ids:
                     if not same_model(mid, model):
                         asyncio.run(p.unload_model_instances(mid))
-            res = asyncio.run(p.load_model(model))
-            return {"ok": True, "result": res, "plan": plan.to_dict()}
+            requested = (data or {}).get("context_length")
+            if requested in ("", None):
+                requested = getattr(_settings_store().load().api, "context_length", None)
+            try:
+                requested = int(requested) if requested else None
+            except (TypeError, ValueError):
+                requested = None
+            res = asyncio.run(p.load_model(model, context_length=requested))
+            return {"ok": True, "result": res, "plan": plan.to_dict(), "context_length": requested}
         except Exception as e:
             return {"error": str(e)}
 
@@ -2388,17 +2690,26 @@ class UIHandler(BaseHTTPRequestHandler):
         payload["chat_id"] = chat_id
         if STATE.server_mode:
             from Kerniq.server.debug import request_unlocked
+            from Kerniq.server.queue import RateWindow, same_user_waiting
 
             payload["debug_unlocked"] = bool(request_unlocked(self.headers, _state_dir()))
+            if STATE.rpm is None:
+                STATE.rpm = RateWindow()
+            limit = int((_server_core().get("rpm_limit") if _server_core().get("rpm_limit") is not None else 30) or 0)
+            if not STATE.rpm.allow(user_id, limit, time.monotonic()):
+                return {
+                    "error": f"Too many requests. This account can start {limit} runs per minute.",
+                    "run_id": "",
+                }
         with STATE.runs_lock:
             pre_cancelled = chat_id in STATE.cancel_chats
             if pre_cancelled:
                 STATE.cancel_chats.discard(chat_id)
-            busy = any(
-                not run.get("done") and not run.get("queued")
-                for run in STATE.runs.values()
+            queued = bool(
+                STATE.server_mode
+                and not pre_cancelled
+                and same_user_waiting(STATE.runs, STATE.pending, user_id)
             )
-            queued = bool(STATE.server_mode and (busy or STATE.pending) and not pre_cancelled)
             if queued:
                 STATE.pending.append((run_id, payload.get("task") or "", payload))
             position = len(STATE.pending) if queued else 0
@@ -2427,7 +2738,7 @@ class UIHandler(BaseHTTPRequestHandler):
                 {
                     "type": "status",
                     "status": "queued",
-                    "text": "Queued until the working model finishes.",
+                    "text": "Queued until your previous run finishes.",
                 },
             )
             return {"run_id": run_id, "queued": True, "position": position}
@@ -2540,21 +2851,28 @@ def _finish_run(run_id: str, error: Optional[str] = None) -> None:
 def _release_queue() -> None:
     if not STATE.server_mode:
         return
-    nxt = None
+    start = []
     with STATE.runs_lock:
-        busy = any(
-            not run.get("done") and not run.get("queued")
+        still = []
+        busy_users = {
+            str(run.get("user_id") or "")
             for run in STATE.runs.values()
-        )
-        if busy or not STATE.pending:
-            return
-        nxt = STATE.pending.pop(0)
-        run = STATE.runs.get(nxt[0])
-        if run is not None:
-            run["queued"] = False
-    if nxt is None:
-        return
-    threading.Thread(target=_run_agent_thread, args=nxt, daemon=True).start()
+            if not run.get("done") and not run.get("queued")
+        }
+        for item in list(STATE.pending):
+            payload = item[2] if len(item) > 2 else {}
+            user_id = str((payload or {}).get("user_id") or "")
+            if user_id in busy_users:
+                still.append(item)
+                continue
+            run = STATE.runs.get(item[0])
+            if run is not None:
+                run["queued"] = False
+            busy_users.add(user_id)
+            start.append(item)
+        STATE.pending[:] = still
+    for run_id, task, payload in start:
+        threading.Thread(target=_run_agent_thread, args=(run_id, task, payload), daemon=True).start()
 
 
 def _run_agent_thread(run_id: str, task: str, payload: dict | None = None) -> None:
@@ -2633,16 +2951,44 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     else:
         ws = _workspace()
 
+    try:
+        import importlib.util
+        from pathlib import Path as _Path
+
+        engine_path = _Path(__file__).resolve().parents[1] / "git_session" / "engine.py"
+        spec = importlib.util.spec_from_file_location("kerniq_git_session_engine", engine_path)
+        if spec and spec.loader and engine_path.is_file():
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            module.note_session_start(ws, str(data.get("chat_id") or run_id))
+    except Exception:
+        logger.info("git session was not marked", exc_info=False)
+
     _emit(run_id, {"type": "status", "status": "processing", "text": "Processing prompt…"})
 
     cfg = SettingsProvider().config
     if STATE.server_mode:
         ui.agent.host_freedom = False
         ui.agent.workspace = "./workspace"
-        if not data.get("debug_unlocked"):
+        if STATE.server_mode and not data.get("debug_unlocked"):
             ui.chat.developer_mode = False
+            ui.chat.parallel_tools = False
             if str(getattr(ui.chat, "auto_approve_up_to", "") or "") == "all":
                 ui.chat.auto_approve_up_to = "low"
+        if STATE.server_mode:
+            from Kerniq.server.homes import local_provider_allowed
+            from Kerniq.server.queue import LOCAL_PROVIDER_REFUSED
+
+            provider_id = str(ui.api.provider or "lm_studio")
+            if not local_provider_allowed(
+                server_mode=True,
+                provider=provider_id,
+                debug=bool(data.get("debug_unlocked")),
+            ):
+                _emit(run_id, {"type": "status", "status": "error", "text": "Provider error"})
+                _emit(run_id, {"type": "assistant", "content": LOCAL_PROVIDER_REFUSED, "completed": False})
+                _finish_run(run_id, LOCAL_PROVIDER_REFUSED)
+                return
     ceiling = getattr(getattr(ui, "chat", None), "auto_approve_up_to", None) or getattr(
         cfg.security, "auto_approve_up_to", "low"
     )
@@ -2653,6 +2999,10 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         auto_approve_up_to=ceiling,
         host_freedom=bool(getattr(ui.agent, "host_freedom", False)) and not STATE.server_mode,
     )
+    if STATE.server_mode:
+        policy.use_venv = True
+    else:
+        policy.use_venv = bool(getattr(ui.agent, "use_venv", True))
 
     try:
         provider = build_provider(
@@ -2669,6 +3019,9 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
 
     agent = Agent(provider, reg)
     agent.orchestrator.security_policy = policy
+    agent.orchestrator.parallel_tools = bool(
+        getattr(ui.chat, "developer_mode", False) and getattr(ui.chat, "parallel_tools", False)
+    )
     from Kerniq.security.approval_broker import BrokerApprovalProvider
 
     def _on_approval(req):
@@ -2700,7 +3053,10 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                 result="",
                 workspace="/workspace" if STATE.server_mode else str(ws),
                 messages=transcript,
-                metadata={"outcome": (ctx.metadata or {}).get("outcome")},
+                metadata={
+                    "outcome": (ctx.metadata or {}).get("outcome"),
+                    "chat_id": str(data.get("chat_id") or ""),
+                },
             )
         except Exception:
             logger.exception("session checkpoint failed")
@@ -3017,6 +3373,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                         {
                             "type": "tool",
                             "name": tc.name,
+                            "call_id": str(tc.id or ""),
                             "status": "pending",
                             "summary": "",
                             "args": tc.arguments,
@@ -3067,8 +3424,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                     human_readable="Stopped by user.",
                     error="cancelled",
                 )
-            _emit(run_id, {"type": "status", "status": "tool", "text": f"Running tool: {_name}…"})
-            _emit(run_id, {"type": "status", "status": "waiting_tool", "text": f"Waiting for tool: {_name}…"})
+            _emit(run_id, {"type": "status", "status": "waiting_tool", "text": "Waiting for a tool"})
             before = None
             path = arguments.get("path")
             if _name in ("write_file", "create_file", "edit_file", "delete_file") and path:
@@ -3085,6 +3441,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                 {
                     "type": "tool",
                     "name": _name,
+                    "call_id": str(getattr(context, "last_tool_call_id", "") or ""),
                     "status": status,
                     "success": status == "success",
                     "stop_reason": getattr(result, "stop_reason", status),
@@ -3574,6 +3931,18 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         },
     )
     _emit(run_id, {"type": "cleanup_think"})
+    try:
+        import importlib.util
+        from pathlib import Path as _Path
+
+        engine_path = _Path(__file__).resolve().parents[1] / "git_session" / "engine.py"
+        spec = importlib.util.spec_from_file_location("kerniq_git_session_engine", engine_path)
+        if spec and spec.loader and engine_path.is_file():
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            module.commit_session(ws, str(data.get("chat_id") or run_id))
+    except Exception:
+        logger.info("git session was not committed", exc_info=False)
     _finish_run(run_id, outcome if failed else None)
 
 
@@ -3760,11 +4129,18 @@ class PluginImpl(Plugin):
                 return
             STATE.server = httpd
             _write_ui_pid(context)
-            from Kerniq.server.firewall import listen_lines, try_open_port
+            from Kerniq.server.firewall import announce_listen, try_open_port
 
             note = try_open_port(port) if host in ("0.0.0.0", "::") else ""
             STATE.firewall_note = note
-            for line in listen_lines(host, port, firewall_note=note):
+            try:
+                from Kerniq.devtools.git_bootstrap import ensure_git
+                from Kerniq.settings.loader import SettingsProvider
+
+                ensure_git(SettingsProvider().config.storage.state_dir)
+            except Exception:
+                logger.info("git check skipped", exc_info=False)
+            for line in announce_listen(host, port, firewall_note=note):
                 logger.info("%s", line)
                 print(line, flush=True)
             try:

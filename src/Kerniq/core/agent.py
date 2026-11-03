@@ -221,13 +221,15 @@ def host_shell_hint(*, host_freedom: bool = False) -> str:
         private = False
     if private:
         place = (
-            "The shell starts in a private directory that contains only ./workspace and ./attachments. "
-            "Work in those folders. Do not try to learn the real directory."
+            "The shell starts in .kerniq-view. That folder holds three links and nothing else: "
+            "./workspace, ./attachments, and ./downloads. Do not copy it into the project. "
+            "Work through those links. Do not try to learn the real directory."
         )
     else:
         place = (
-            "The shell's current directory is ./workspace. "
-            "Files the user attached are ./attachments/<name> and are opened with file tools. "
+            "The shell starts in .kerniq-view. It contains links named ./workspace, "
+            "./attachments, and ./downloads, not copies of those folders. "
+            "file.txt and workspace/file.txt are the same file. "
             "Do not try to learn the real directory."
         )
     return (

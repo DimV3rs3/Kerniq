@@ -6,6 +6,8 @@ const UI_I18N = {
     openFile: 'Open a file…', ready: 'Ready', done: 'Done', error: 'Error',
     stopping: 'Stopping…', stopped: 'Stopped',
     processing: 'Processing prompt…', thinking: 'Thinking…', generating: 'Generating…',
+    waitingForTool: 'Waiting for a tool',
+    chatsFull: 'Chat limit reached. Delete a chat before creating a new one.',
     aggHint: 'Merge consecutive collapsible tool calls into one chat block',
     aggLabel: 'Merge tool calls when possible',
     autoApprove: 'Auto-approve risk up to',
@@ -32,7 +34,7 @@ const UI_I18N = {
     workspace: 'Workspace', browse: 'Browse…', maxIterations: 'Max iterations',
     modelTimeout: 'Model response timeout', undoSize: 'Undo history size',
     provider: 'provider', model: 'model', temperature: 'Temperature',
-    maxTokens: 'Max tokens', apiToken: 'API token', refresh: 'Refresh',
+    maxTokens: 'Max tokens', contextLength: 'Context length', apiToken: 'API token', refresh: 'Refresh',
     sortModels: 'Sort models', sortByName: 'Name', sortByParams: 'Parameters',
     sortByContext: 'Context length', sortAsc: 'Ascending', sortDesc: 'Descending',
     includeTools: 'Include tool catalog in context',
@@ -56,7 +58,24 @@ const UI_I18N = {
     splitModels: 'Different model for Act',
     actModel: 'Act model',
     composePlan: 'Build a plan',
+    showPlan: 'Show plan',
+    parallelTools: 'Run tools in parallel',
     loopRetries: 'Loop retries',
+    leaveVenv: 'Leave the virtual environment',
+    useVenv: 'Use the virtual environment',
+    venvOffBody: 'Shell commands will see programs installed on this computer. Wait 3 seconds. Host freedom stays hidden until you confirm, and it stays off.',
+    approveAllTitle: 'Approve every action?',
+    approveAllBody: 'The agent will run tools, including dangerous ones, without asking. Wait 3 seconds. Cancel keeps the previous level.',
+    attachments: 'Attachments',
+    downloads: 'Downloads',
+    attachmentsFolder: 'Attachments folder',
+    downloadsFolder: 'Downloads folder',
+    attachmentsFolderTip: 'Where attached files are stored. A relative path starts at the Kerniq install folder, not inside the workspace.',
+    downloadsFolderTip: 'Where downloaded files are stored. A relative path starts at the Kerniq install folder, not inside the workspace.',
+    folderSpace: 'Folder space',
+    folderSpaceHint: 'Each folder has its own limit for space Kerniq adds. Files that were already there are not counted. The default is 4 GB of new space.',
+    clearFolder: 'Clear folder',
+    clearFolderBody: 'This deletes the files Kerniq can see in this folder. Git history and the virtual environment stay. Wait 3 seconds.',
     providerDesc: 'Description',
     packAuto: 'Auto-accept every tool in this pack',
     packMerge: 'Merge calls for every tool in this pack',
@@ -353,6 +372,7 @@ function applyUiLocale(locale) {
   if (!running) setStatus(t('ready'), false);
   setFooterContext(null, _modelContextLimit);
   if (typeof syncComposePlanLock === 'function') syncComposePlanLock();
+  if (typeof loadFolderUsage === 'function') loadFolderUsage();
 }
 const LS_CHATS = 'kerniq_chats_v1';
 const LS_PANEL = 'kerniq_panels_v1';
@@ -362,7 +382,6 @@ let openTabs = [];
 let activeTab = null;
 let chats = [];
 let activeChatId = null;
-const MAX_CHATS = 3;
 let running = false;
 let sendLock = false;
 let sendAbort = false;
@@ -391,7 +410,7 @@ let settingsDirty = false;
 let settingsHydrating = false;
 let settingsBaseline = "";
 function snapshotSettingsForm() {
-  const ids = ['s-workspace','s-timeout','s-timeout-unit','s-undo-size','s-provider','s-base-url','s-api-token','s-api-temp','s-system','s-max-iter','s-api-max-tokens','s-model','s-include-tools','s-chat-streaming','s-chat-reasoning','s-chat-empty','s-chat-debug'];
+  const ids = ['s-workspace','s-attachments','s-downloads','s-timeout','s-timeout-unit','s-undo-size','s-provider','s-base-url','s-api-token','s-api-temp','s-system','s-max-iter','s-api-max-tokens','s-api-context','s-model','s-include-tools','s-chat-streaming','s-chat-reasoning','s-chat-empty','s-chat-debug','s-leave-venv'];
   const o = {};
   ids.forEach(id => {
     const el = document.getElementById(id);

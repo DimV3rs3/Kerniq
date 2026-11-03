@@ -11,6 +11,7 @@ from typing import Any
 DISPLAY_ROOT = "/workspace"
 VIRT_WORKSPACE = "./workspace"
 VIRT_ATTACHMENTS = "./attachments"
+SERVER_USERS_ROOT = Path("/home/Kerniq/kerniq-workspace")
 _DEFAULT_QUOTA = 8 * 1024 * 1024 * 1024
 _MIN_QUOTA = 32 * 1024 * 1024
 _quota: contextvars.ContextVar[dict | None] = contextvars.ContextVar("kerniq_disk_quota", default=None)
@@ -30,23 +31,36 @@ def users_root(state_dir: Path | str, core: dict | None = None) -> Path:
     return roots[0]
 
 
+def _project_workspace(state_dir: Path | str) -> Path:
+    from ..devtools.paths import anchored_dir, find_project_root
+
+    project = find_project_root()
+    if project is None:
+        project = anchored_dir(state_dir).parent
+    folder = (project / "workspace").resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
 def user_roots(state_dir: Path | str, core: dict | None = None) -> list[Path]:
     """Every disk the admin offered. The first entry is the primary root.
 
     An existing cookie folder is reused wherever it already lives. A new
     folder is created on the root with the most free space.
     """
-    from ..devtools.paths import anchored_dir, find_project_root
-
     core = core or {}
     raw = str(core.get("users_root") or "").strip()
     if raw:
         primary = Path(raw).expanduser().resolve()
+    elif core.get("prefer_server_root"):
+        preferred = SERVER_USERS_ROOT
+        try:
+            preferred.mkdir(parents=True, exist_ok=True)
+            primary = preferred.resolve()
+        except OSError:
+            primary = _project_workspace(state_dir)
     else:
-        project = find_project_root()
-        if project is None:
-            project = anchored_dir(state_dir).parent
-        primary = (project / "workspace").resolve()
+        primary = _project_workspace(state_dir)
     primary.mkdir(parents=True, exist_ok=True)
     if not raw:
         _adopt_legacy_homes(state_dir, primary)
@@ -87,6 +101,9 @@ def user_home(state_dir: Path | str, user_id: str, core: dict | None = None) -> 
 
         <cookie-id>/workspace
         <cookie-id>/attachments
+        <cookie-id>/downloads
+        <cookie-id>/.kerniq-view
+        <cookie-id>/.kerniq-venv
 
     Older releases stored files directly in the cookie folder. Those files
     move into workspace/ once. The cookie id is not shown to the model.
@@ -189,7 +206,9 @@ def ensure_user_layout(folder: Path) -> Path:
     attachments = root / "attachments"
     workspace.mkdir(parents=True, exist_ok=True)
     attachments.mkdir(parents=True, exist_ok=True)
-    keep = {"workspace", "attachments", ".kerniq-venv", ".kerniq-guard"}
+    downloads = root / "downloads"
+    downloads.mkdir(parents=True, exist_ok=True)
+    keep = {"workspace", "attachments", "downloads", ".kerniq-venv", ".kerniq-guard", ".kerniq-view"}
     for child in list(root.iterdir()):
         if child.name in keep or child.name.startswith("."):
             continue
@@ -200,6 +219,14 @@ def ensure_user_layout(folder: Path) -> Path:
             child.rename(dest)
         except OSError:
             shutil.move(str(child), str(dest))
+    try:
+        from Kerniq.security.roots import ensure_view
+
+        ensure_view(workspace, attachments=attachments, downloads=downloads)
+    except Exception:
+        pass
+    venv = root / ".kerniq-venv"
+    venv.mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -286,19 +313,43 @@ def display_path(path: Path | str, root: Path | None = None) -> str:
         return "."
     head, rest = parts[0], "/".join(parts[1:])
     if head == "workspace":
+        if rest == ".downloads" or rest.startswith(".downloads/"):
+            tail = rest.split("/", 1)[1] if "/" in rest else ""
+            return "./downloads" if not tail else "./downloads/" + tail
         return VIRT_WORKSPACE if not rest else VIRT_WORKSPACE + "/" + rest
     if head == "attachments":
         return VIRT_ATTACHMENTS if not rest else VIRT_ATTACHMENTS + "/" + rest
+    if head == "downloads":
+        return "./downloads" if not rest else "./downloads/" + rest
+    if head == ".downloads":
+        return "./downloads" if not rest else "./downloads/" + rest
     return VIRT_WORKSPACE + "/" + rel.as_posix()
 
 
+def downloads_folder(root: Path) -> Path:
+    """Physical downloads for a server home. Old trees used workspace/.downloads."""
+    root = Path(root)
+    modern = root / "downloads"
+    legacy = root / "workspace" / ".downloads"
+    if not modern.exists() and legacy.exists():
+        return legacy
+    return modern
+
+
 def _virtual_bucket(text: str) -> tuple[str, str]:
-    """Return ``(workspace|attachments, remainder)`` for a model path."""
+    """Return ``(workspace|attachments|downloads, remainder)`` for a model path."""
     norm = str(text or "").replace("\\", "/").strip()
     while norm.startswith("./"):
         norm = norm[2:]
     if norm.startswith("/"):
         norm = norm.lstrip("/")
+    if norm == ".kerniq-view":
+        return "workspace", ""
+    if norm.startswith(".kerniq-view/"):
+        norm = norm.split("/", 1)[1]
+    if norm in {"downloads", ".downloads"} or norm.startswith("downloads/") or norm.startswith(".downloads/"):
+        rest = norm.split("/", 1)[1] if "/" in norm else ""
+        return "downloads", rest
     for bucket in ("workspace", "attachments"):
         if norm == bucket:
             return bucket, ""
@@ -331,7 +382,10 @@ def logical_path(raw: str, root: Path) -> Path:
     bucket, rest = _virtual_bucket(text)
     if rest.startswith("/") or ".." in Path(rest).parts:
         raise PermissionError("That path is outside ./workspace.")
-    base = (Path(root).resolve() / bucket).resolve()
+    if bucket == "downloads":
+        base = downloads_folder(Path(root)).resolve()
+    else:
+        base = (Path(root).resolve() / bucket).resolve()
     target = base if not rest else (base / rest).resolve()
     try:
         target.relative_to(base)
@@ -401,6 +455,15 @@ def disk_note(status: dict | None) -> str:
 
 
 LOCAL_PROVIDERS = {"lm_studio", "ollama"}
+
+
+def local_provider_allowed(*, server_mode: bool, provider: str, debug: bool) -> bool:
+    """Local model servers are a desktop feature. Server mode needs debug."""
+    if not server_mode:
+        return True
+    if str(provider or "") not in LOCAL_PROVIDERS:
+        return True
+    return bool(debug)
 
 
 def _host_of(url: str) -> str:

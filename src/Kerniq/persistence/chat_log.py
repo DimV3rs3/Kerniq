@@ -121,6 +121,22 @@ class ChatLog:
             self._mem["run:" + str(rec["run_id"])] = rec
         self._write(rec)
 
+    def forget(self, chat_id: str) -> None:
+        """Drop one chat from memory and from disk. Missing files are fine."""
+        key = str(chat_id or "")
+        with self._lock:
+            rec = self._mem.pop(key, None)
+            run_id = str((rec or {}).get("run_id") or "")
+            if run_id:
+                self._mem.pop("run:" + run_id, None)
+        for path in (self._path(key), self._run_path(str((rec or {}).get("run_id") or ""))):
+            try:
+                if path.is_file():
+                    path.unlink()
+            except OSError:
+                logger = __import__("logging").getLogger(__name__)
+                logger.info("chat log was not removed: %s", path, exc_info=True)
+
     def model_messages(self, chat_id: str) -> list:
         with self._lock:
             rec = self._mem.get(str(chat_id))

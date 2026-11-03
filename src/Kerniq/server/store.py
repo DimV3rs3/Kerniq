@@ -123,7 +123,7 @@ class HistoryStore:
         return list(self._read(user_id).get("chats") or [])
 
     def save_chats(self, user_id: str, chats: list) -> None:
-        kept = list(chats)[-40:]
+        kept = list(chats)
         if self._db is not None:
             self._db.save_chats(user_id, kept)
             return
@@ -131,6 +131,17 @@ class HistoryStore:
             data = self._read(user_id)
             data["chats"] = kept
             self._write(user_id, data)
+
+    def drop_replies(self, user_id: str, chat_id: str) -> None:
+        if self._db is not None:
+            self._db.drop_replies(user_id, chat_id)
+            return
+        with self._lock:
+            data = self._read(user_id)
+            bucket = data.get("replies")
+            if isinstance(bucket, dict) and chat_id in bucket:
+                bucket.pop(chat_id, None)
+                self._write(user_id, data)
 
     def save_replies(self, user_id: str, chat_id: str, rows: list) -> None:
         clean = []
@@ -313,6 +324,17 @@ class _Mysql:
         finally:
             conn.close()
         return [{"role": role, "content": content, "created_at": at} for role, content, at in found]
+
+    def drop_replies(self, user_id: str, chat_id: str) -> None:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM kerniq_reply WHERE user_id=%s AND chat_id=%s",
+                    (_safe_user(user_id), str(chat_id)[:80]),
+                )
+        finally:
+            conn.close()
 
 
 def open_history(state_dir: Path | str, database_url: str = "") -> HistoryStore:

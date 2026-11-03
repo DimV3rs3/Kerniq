@@ -6,6 +6,7 @@ import os
 import shutil
 import socket
 import subprocess
+import threading
 from typing import Iterable
 
 
@@ -146,6 +147,24 @@ def listen_lines(host: str, port: int, *, firewall_note: str = "") -> list[str]:
         "reaches here. A port test can succeed while the page stays blank."
     )
     return lines
+
+
+_announced_lock = threading.Lock()
+_announced_binds: set[tuple[str, int]] = set()
+
+
+def announce_listen(host: str, port: int, *, firewall_note: str = "") -> list[str]:
+    """Banner lines for this bind, or nothing if they were already printed.
+
+    The CLI and the Web UI plugin both start the same server. Each used to
+    print the address block, so `kerniq plugins ui` showed it twice.
+    """
+    key = (str(host or "127.0.0.1"), int(port))
+    with _announced_lock:
+        if key in _announced_binds:
+            return []
+        _announced_binds.add(key)
+    return listen_lines(host, port, firewall_note=firewall_note)
 
 
 def format_lines(lines: Iterable[str]) -> str:

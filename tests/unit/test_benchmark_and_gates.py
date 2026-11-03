@@ -15,11 +15,20 @@ from Kerniq.sandbox.venv import sandbox_workspace
 from Kerniq.security.policy import PolicyDecision, RiskLevel
 
 
+def _catalog_file(relative: str):
+    import pytest
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[2] / relative
+    if not path.is_file():
+        pytest.skip(relative + " is not part of Kerniq. That plugin ships its own tests.")
+    return path
+
+
 def test_benchmark_plugin_schema_validates():
     import importlib.util
     from pathlib import Path
 
-    path = Path(__file__).resolve().parents[2] / "catalog" / "Kerniq-llm-benchmark" / "main.py"
+    path = _catalog_file("catalog/Kerniq-llm-benchmark/main.py")
     spec = importlib.util.spec_from_file_location("llm-benchmark_main", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -38,7 +47,7 @@ def test_results_dir_stays_inside_the_workspace(tmp_path):
     import importlib.util
     from pathlib import Path
 
-    path = Path(__file__).resolve().parents[2] / "catalog" / "Kerniq-llm-benchmark" / "main.py"
+    path = _catalog_file("catalog/Kerniq-llm-benchmark/main.py")
     spec = importlib.util.spec_from_file_location("llm-benchmark_paths", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -124,7 +133,7 @@ def test_rank_puts_a_failed_load_behind_a_finished_run():
     import importlib.util
     from pathlib import Path
 
-    path = Path(__file__).resolve().parents[2] / "catalog" / "Kerniq-llm-benchmark" / "main.py"
+    path = _catalog_file("catalog/Kerniq-llm-benchmark/main.py")
     spec = importlib.util.spec_from_file_location("llm-benchmark_rank", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -198,7 +207,7 @@ def _benchmark_module(name: str):
     import importlib.util
     from pathlib import Path
 
-    path = Path(__file__).resolve().parents[2] / "catalog" / "Kerniq-llm-benchmark" / "main.py"
+    path = _catalog_file("catalog/Kerniq-llm-benchmark/main.py")
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

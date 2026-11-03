@@ -194,13 +194,79 @@ def scrub_for_model(
     return out
 
 
+def is_absolute_text(raw: str) -> bool:
+    """True for ``/``, ``C:\\``, and ``\\\\server`` — including on Windows, where ``Path('/')`` is not absolute."""
+    text = str(raw or "").strip()
+    if not text:
+        return False
+    try:
+        if Path(text).is_absolute():
+            return True
+    except OSError:
+        pass
+    norm = text.replace("\\", "/")
+    if norm.startswith("/"):
+        return True
+    return len(norm) >= 2 and norm[1] == ":"
+
+
+def resolve_unconfined(raw: str, workspace: Path | str) -> Path:
+    """A real path once host freedom is already on.
+
+    ``.`` and ``./workspace`` stay the workspace. ``/``, ``C:\\`` and ``..``
+    may leave it. Virtual ``./attachments`` still hits the attachments folder.
+    """
+    text = str(raw or "").strip() or "."
+    root = Path(workspace)
+    folded = text.replace("\\", "/")
+    if folded in {".", "./", "workspace", "./workspace"}:
+        return root.resolve()
+    if is_absolute_text(text):
+        path = Path(text).expanduser()
+        try:
+            return path.resolve()
+        except OSError:
+            return path.absolute()
+    from Kerniq.security.roots import resolve_virtual
+
+    try:
+        mapped = resolve_virtual(text, root)
+    except PermissionError:
+        mapped = None
+    if mapped is not None:
+        return mapped
+    path = (root / Path(text)).expanduser()
+    try:
+        return path.resolve()
+    except OSError:
+        return path.absolute()
+
+
+def _host_open(policy) -> bool:
+    opener = getattr(policy, "host_is_open", None)
+    return bool(opener()) if callable(opener) else False
+
+
 def terminal_cwd(requested: str, policy) -> Path:
-    """Where a shell starts. ``.`` is the link view, not a copy of the workspace."""
+    """Where a shell starts. ``.`` is the link view, not a copy of the workspace.
+
+    Host freedom is decided first. An open host may start in ``/`` or on another
+    drive. A view that cannot be created (Windows symlink privilege) falls back
+    to the workspace instead of pretending the path left it.
+    """
     from Kerniq.security.roots import ensure_view
     from Kerniq.server.homes import downloads_folder, jail_root, logical_path
 
     jail = jail_root()
-    text = str(requested or ".").replace("\\", "/").strip() or "."
+    original = str(requested or ".").strip() or "."
+    text = original.replace("\\", "/").strip() or "."
+    workspace = Path(policy.workspace_root)
+    if _host_open(policy) and jail is None:
+        # The link view is the cage. An open host starts in the real workspace
+        # and may point cwd at ``/`` or another drive.
+        if text in {".", "./", ""}:
+            return workspace.resolve()
+        return resolve_unconfined(original, workspace)
     if jail is not None:
         if text in {".", "./", ""}:
             root = Path(jail)
@@ -211,5 +277,8 @@ def terminal_cwd(requested: str, policy) -> Path:
             )
         return logical_path(text, Path(jail))
     if text in {".", "./", "", ".kerniq-view", "./.kerniq-view"}:
-        return ensure_view(policy.workspace_root)
+        try:
+            return ensure_view(workspace)
+        except Exception:
+            return workspace.resolve()
     return policy.validate_path(text)

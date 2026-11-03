@@ -133,7 +133,18 @@ class SecurityPolicy:
                     "Path is outside ./workspace",
                 ) from exc
         raw = str(path)
-        if "\x00" in raw or raw.startswith("\\\\") or raw.startswith("//"):
+        if "\x00" in raw:
+            raise SecurityError(
+                ErrorCode.PERMISSION_DENIED,
+                "Path is outside ./workspace",
+            )
+        # Open host: leave the workspace before any relative-path check.
+        # ``/`` and ``C:\`` must count even where Path.is_absolute() is false.
+        if self.host_is_open():
+            from Kerniq.security.pathmask import resolve_unconfined
+
+            return resolve_unconfined(raw, self.workspace_root)
+        if raw.startswith("\\\\") or raw.startswith("//"):
             raise SecurityError(
                 ErrorCode.PERMISSION_DENIED,
                 "Path is outside ./workspace",
@@ -146,7 +157,7 @@ class SecurityPolicy:
             if p.is_absolute():
                 resolved = p.expanduser().resolve()
                 allowed = [Path(item).resolve() for item in attachment_aliases().values()]
-                if self.host_is_open() or any(_alias_hit(resolved, root) for root in allowed):
+                if any(_alias_hit(resolved, root) for root in allowed):
                     return resolved
                 p = resolved
             else:

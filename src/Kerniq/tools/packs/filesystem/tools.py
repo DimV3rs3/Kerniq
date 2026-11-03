@@ -294,7 +294,29 @@ class FileSystemToolBase(Tool):
                 raise FileNotFoundError(f"File not found: {path_str}")
             return target
         raw = str(path_str)
-        if "\x00" in raw or raw.startswith("\\\\") or raw.startswith("//"):
+        if "\x00" in raw:
+            raise PermissionError("Access denied: path is outside ./workspace")
+        if self._host_is_open():
+            from Kerniq.security.pathmask import resolve_unconfined
+            from Kerniq.storage.folder_usage import is_private_path
+
+            target = resolve_unconfined(raw, self.workspace)
+            if is_private_path(target):
+                raise PermissionError("Access denied")
+            writing = self.name in {
+                "write_file", "create_file", "edit_file", "delete_file", "create_directory",
+                "move_file",
+            } if write is None else bool(write)
+            if writing:
+                from Kerniq.security.confinement import os_write_forbidden
+
+                blocked_os = os_write_forbidden(target)
+                if blocked_os:
+                    raise PermissionError(blocked_os)
+            if must_exist and not target.exists():
+                raise FileNotFoundError(f"File not found: {path_str}")
+            return target
+        if raw.startswith("\\\\") or raw.startswith("//"):
             raise PermissionError("Access denied: path is outside ./workspace")
         from Kerniq.security.pathmask import rewrite_model_path
 

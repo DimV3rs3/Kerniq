@@ -254,8 +254,9 @@ class TerminalTools(Tool):
                 error="PERMISSION_DENIED"
             )
 
-        # Host freedom is decided before the symlink walk. While the venv is
-        # still on, a link that leaves the workspace still refuses the shell.
+        # Host freedom is decided before the symlink walk and before the
+        # working-directory check. While the venv is still on, a link that
+        # leaves the workspace still refuses the shell.
         open_host = False
         opener = getattr(self._security_policy, "host_is_open", None)
         if callable(opener):
@@ -277,7 +278,8 @@ class TerminalTools(Tool):
                     error="PERMISSION_DENIED",
                 )
 
-        # Security check for working directory
+        # Working directory. An open host may use ``/`` or another drive.
+        # ``.`` falls back to the workspace if the link view cannot be created.
         try:
             from Kerniq.security.pathmask import terminal_cwd
 
@@ -300,14 +302,16 @@ class TerminalTools(Tool):
         call_id = getattr(context, "last_tool_call_id", "unknown")
         started = time.monotonic()
         # Prefer list form on Windows for simple commands is hard; use shell but isolate.
+        # Venv off, or host freedom (which requires the venv off): the shell gets the host PATH.
+        use_venv = bool(getattr(self._security_policy, "use_venv", True)) and not open_host
         kwargs = dict(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd_abs),
             env=_scrub_env(
                 self._workspace_root,
-                host_freedom=bool(getattr(self._security_policy, "host_freedom", False)),
-                use_venv=bool(getattr(self._security_policy, "use_venv", True)),
+                host_freedom=open_host or bool(getattr(self._security_policy, "host_freedom", False)),
+                use_venv=use_venv,
             ),
         )
         # Ensure the spawned process never creates a visible window or attaches to a console.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from Kerniq.security.command_guard import assess_command
 from Kerniq.security.pathmask import alias_attachments, scrub_for_model
 from Kerniq.security.policy import SecurityPolicy
@@ -68,7 +70,48 @@ def test_server_policy_cannot_enable_host_freedom(tmp_path):
     assert loose.terminal_block_reason("rm -rf /")
 
 
-def test_host_freedom_waits_until_the_venv_is_off(tmp_path):
+def test_open_host_cwd_may_leave_and_dot_stays_the_workspace(tmp_path, monkeypatch):
+    from Kerniq.security.pathmask import is_absolute_text, terminal_cwd
+
+    policy = SecurityPolicy(tmp_path, host_freedom=True)
+    policy.use_venv = False
+    assert policy.terminal_block_reason("systeminfo") is None
+    assert policy.terminal_block_reason("Get-CimInstance -ClassName Win32_OperatingSystem") is None
+    assert policy.terminal_block_reason("python --version") is None
+    assert policy.terminal_block_reason("rm -rf /")
+    assert policy.validate_path("/") == Path("/").resolve()
+    outside = tmp_path.parent / "elsewhere"
+    assert policy.validate_path(str(outside)) == outside.resolve()
+    assert policy.validate_path("notes.txt") == (tmp_path / "notes.txt").resolve()
+    assert terminal_cwd(".", policy) == tmp_path.resolve()
+    assert terminal_cwd("/", policy) == Path("/").resolve()
+    assert terminal_cwd("./workspace", policy) == tmp_path.resolve()
+    assert is_absolute_text("/")
+    assert is_absolute_text(r"C:\Windows")
+    assert is_absolute_text("\\\\server\\share")
+    assert is_absolute_text("Env:") is False
+
+    def boom(*_args, **_kwargs):
+        raise OSError("symlink privilege")
+
+    monkeypatch.setattr("Kerniq.security.roots.ensure_view", boom)
+    closed = SecurityPolicy(tmp_path, host_freedom=False)
+    assert terminal_cwd(".", closed) == tmp_path.resolve()
+    try:
+        terminal_cwd("/", closed)
+        raised = False
+    except Exception:
+        raised = True
+    assert raised
+
+
+def test_venv_off_does_not_enter_the_shell(tmp_path):
+    from Kerniq.tools.packs.terminal.tools import _scrub_env
+
+    env = _scrub_env(tmp_path, host_freedom=True, use_venv=False)
+    assert "VIRTUAL_ENV" not in env
+    assert ".kerniq-venv" not in env.get("PATH", "")
+    assert "KERNIQ_SANDBOX" not in env
     held = SecurityPolicy(tmp_path, host_freedom=True)
     assert held.host_is_open() is False
     assert held.terminal_block_reason("cat /etc/hostname")

@@ -27,7 +27,23 @@ def test_cli_does_not_hardcode_tool_imports():
     assert "list_directory" not in tools_fn
 
 
-def test_identity_is_before_the_operator_prompt():
+def test_multi_agent_prompt_names_the_limit_and_one_call():
+    text = compose_system_prompt(
+        "OPERATOR",
+        lang="en",
+        mode="act",
+        multi_agent=True,
+        agent_slots=6,
+        agent_context=32768,
+    )
+    assert "run_agents" in text
+    assert "Up to 6 agents" in text
+    assert "32768 tokens" in text
+    assert "one call" in text
+    assert "Do not call run_agents once per task." in text
+    plan = compose_system_prompt("OPERATOR", lang="en", mode="plan", multi_agent=True, agent_slots=6, agent_context=32768)
+    assert "not available" in plan
+    assert "32768" not in plan
     text = compose_system_prompt("OPERATOR RULE: prefer tiny diffs.", lang="ru", mode="plan")
     assert text.startswith(KERNIQ_IDENTITY)
     assert text.index(KERNIQ_IDENTITY) < text.index("OPERATOR RULE")

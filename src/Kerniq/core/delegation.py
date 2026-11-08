@@ -44,7 +44,9 @@ def allow_tool(name: str, risk: str, *, mode: str, enabled: bool) -> bool:
     return is_readonly_tool(name, risk)
 
 
-def multi_agent_enabled(state_dir: Any = None) -> bool:
+def multi_agent_settings(state_dir: Any = None) -> dict[str, Any]:
+    """Saved plugin numbers for the system prompt. Missing keys stay at the plugin defaults."""
+    empty = {"enabled": False, "maximum_agents": 2, "worker_context": 0}
     try:
         if state_dir is None:
             from Kerniq.settings.loader import SettingsProvider
@@ -57,9 +59,29 @@ def multi_agent_enabled(state_dir: Any = None) -> bool:
             component_id="multi_agent",
             component_type="plugin",
             title="Multi-agent",
-            fields=[SettingField(key="enabled", label="Enabled", type=SettingType.BOOL, default=False)],
+            fields=[
+                SettingField(key="enabled", label="Enabled", type=SettingType.BOOL, default=False),
+                SettingField(key="maximum_agents", label="Maximum agents", type=SettingType.INT, default=2),
+                SettingField(key="worker_context", label="Agent context", type=SettingType.INT, default=0),
+            ],
         )
         values = ComponentSettingsStore(state_dir).load("plugin", "multi_agent", schema)
-        return bool(values.get("enabled"))
+        try:
+            slots = int(values.get("maximum_agents") or 2)
+        except (TypeError, ValueError):
+            slots = 2
+        try:
+            context = int(values.get("worker_context") or 0)
+        except (TypeError, ValueError):
+            context = 0
+        return {
+            "enabled": bool(values.get("enabled")),
+            "maximum_agents": max(1, slots),
+            "worker_context": max(0, context),
+        }
     except Exception:
-        return False
+        return empty
+
+
+def multi_agent_enabled(state_dir: Any = None) -> bool:
+    return bool(multi_agent_settings(state_dir).get("enabled"))

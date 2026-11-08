@@ -103,9 +103,13 @@ class Orchestrator:
     async def _run_tool_body(self, call, tool, context):
         from ..tools.deadline import tool_timeout_seconds
 
+        arguments = getattr(call, "arguments", None)
+        if getattr(tool, "cfg_timeout_from_settings", False):
+            arguments = None
         seconds = tool_timeout_seconds(
-            getattr(call, "arguments", None),
+            arguments,
             fallback=getattr(tool, "cfg_default_timeout", None),
+            ceiling=getattr(tool, "cfg_timeout_ceiling", None),
         )
         proxy = _ToolCallContext(context, call.id)
         try:

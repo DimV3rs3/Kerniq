@@ -163,6 +163,8 @@ def compose_system_prompt(
     compose_plan: bool = False,
     host_freedom: bool = False,
     multi_agent: bool = False,
+    agent_slots: int = 0,
+    agent_context: int = 0,
 ) -> str:
     """Identity first, then the operator prompt, then operational rules."""
     parts = [KERNIQ_IDENTITY]
@@ -197,12 +199,27 @@ def compose_system_prompt(
                 "Research only. Do not start workers."
             )
         else:
+            try:
+                slots = max(1, int(agent_slots or 1))
+            except (TypeError, ValueError):
+                slots = 1
+            try:
+                context = int(agent_context or 0)
+            except (TypeError, ValueError):
+                context = 0
+            context_line = (
+                f"Each agent context is {context} tokens."
+                if context > 0
+                else "Each agent uses the provider's default context."
+            )
             parts.append(
                 "MULTI-AGENT is on. You do not edit, create, delete, move, or unpack files, and you do not run the shell. "
-                "Those tools are not available. Work starts only when you call run_agents. Nothing runs until that call. "
-                "system_prompt in that call is the system prompt for the workers. You write it. "
-                "Workers do not see this chat, so the prompt and each task's instructions must contain every fact they need. "
-                "Workers do not change the strategy. You do. A worker that says success is not proof. "
+                "Those tools are not available. Nothing starts until you call the tool run_agents. "
+                f"Up to {slots} agents run at the same time. {context_line} "
+                "Put every task in that one call, in the tasks array. Do not call run_agents once per task. "
+                "Tasks that do not list depends_on run together. A task with depends_on waits for those tasks. "
+                "You write system_prompt. Workers do not see this chat, so the prompt and each task must carry every fact they need. "
+                "You keep the strategy. A worker that says success is not proof. "
                 "Do not call run_agents for one small edit, one calculation, or one file."
             )
     return "\n\n".join(part for part in parts if part)
@@ -390,11 +407,11 @@ class Agent:
         compose_plan = bool(getattr(self.orchestrator, "compose_plan", False))
         freedom = bool(getattr(getattr(self.orchestrator, "security_policy", None), "host_freedom", False))
         try:
-            from .delegation import multi_agent_enabled
+            from .delegation import multi_agent_settings
 
-            agents_on = multi_agent_enabled(self.orchestrator._state_dir())
+            agent_facts = multi_agent_settings(self.orchestrator._state_dir())
         except Exception:
-            agents_on = False
+            agent_facts = {"enabled": False, "maximum_agents": 2, "worker_context": 0}
         sys_text = compose_system_prompt(
             sys_text,
             lang=lang,
@@ -402,7 +419,9 @@ class Agent:
             plan_handoff=bool(plan_handoff),
             compose_plan=compose_plan and bool(plan_gate),
             host_freedom=freedom,
-            multi_agent=agents_on,
+            multi_agent=bool(agent_facts.get("enabled")),
+            agent_slots=int(agent_facts.get("maximum_agents") or 0),
+            agent_context=int(agent_facts.get("worker_context") or 0),
         )
 
         if sys_text:

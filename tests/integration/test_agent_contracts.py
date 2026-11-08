@@ -686,8 +686,8 @@ def test_content_loop_stops_after_one_alternative(tmp_path):
     result = _run(
         agent.run("create marker", workspace=str(workspace), checks={"files": ["missing.txt"]})
     )
-    assert agent.last_context.metadata["outcome"] == "content_loop"
-    assert "repeating" in result.lower()
+    assert agent.last_context.metadata["outcome"] == "verification_failed"
+    assert "verification_failed" in result
 
 
 def test_direct_orchestrator_request_shape():

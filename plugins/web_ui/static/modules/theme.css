@@ -14,6 +14,7 @@
     border-bottom: 1px solid var(--line);
   }
   .stab { flex: none; margin: 0; }
+  .nav-split { width: 1px; height: 18px; margin: 7px 4px; align-self: center; }
   .stab[data-tab="reset"] { margin: 0; }
   .stab[data-tab="reset"]::before { display: none; }
   .settings-layout .settings-main { padding: 20px 18px 110px; }
@@ -368,8 +369,8 @@ html[data-phone="1"] .stab-tx {
   clip: rect(0 0 0 0);
 }
 html[data-phone="1"] .stab-ico { display: block; }
+html[data-phone="1"] .nav-split { width: 1px; height: 18px; margin: 0 4px; align-self: center; }
 html[data-phone="1"] .stab[data-tab="reset"] { margin: 0; }
-html[data-phone="1"] .stab[data-tab="reset"]::before { display: none; }
 html[data-phone="1"] .set-cols,
 html[data-phone="1"] .field-grid,
 html[data-phone="1"] .tools-split { grid-template-columns: minmax(0, 1fr) !important; }

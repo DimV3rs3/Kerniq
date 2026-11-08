@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from pathlib import Path
 import tomllib
 from typing import Any, Optional
@@ -100,9 +101,35 @@ class Orchestrator:
             return text or ""
 
     async def _run_tool_body(self, call, tool, context):
+        from ..tools.deadline import tool_timeout_seconds
+
+        seconds = tool_timeout_seconds(
+            getattr(call, "arguments", None),
+            fallback=getattr(tool, "cfg_default_timeout", None),
+        )
         proxy = _ToolCallContext(context, call.id)
-        with use_task(context):
-            return await self._await_or_stop(tool.execute(call.arguments, proxy), context)
+        try:
+            with use_task(context):
+                # A few extra seconds so the tool can report its own timeout
+                # and kill a frozen child before this deadline abandons it.
+                return await self._await_or_stop(
+                    tool.execute(call.arguments, proxy),
+                    context,
+                    timeout=seconds + 5,
+                )
+        except asyncio.TimeoutError:
+            from ..interfaces.tools import ToolResult
+
+            return ToolResult(
+                tool_call_id=str(getattr(call, "id", "") or "unknown"),
+                tool_id=str(getattr(tool, "tool_id", None) or getattr(call, "name", "") or "tool"),
+                status="error",
+                success=False,
+                stop_reason="timeout",
+                output="",
+                human_readable=f"Timed out after {int(seconds)}s.",
+                error="timeout",
+            )
 
     def _record_tool_error(self, context, call, exc: BaseException) -> None:
         text = str(exc)
@@ -400,6 +427,18 @@ class Orchestrator:
         )
         return any(marker in low for marker in markers)
 
+    def _response_reasoning(self, response) -> str:
+        """Thinking text, including a trace that was never copied into content."""
+        chunks = []
+        meta = getattr(response, "metadata", None) or {}
+        if isinstance(meta, dict) and meta.get("reasoning"):
+            chunks.append(str(meta.get("reasoning")))
+        for msg in getattr(response, "messages", None) or []:
+            msg_meta = getattr(msg, "metadata", None) or {}
+            if isinstance(msg_meta, dict) and msg_meta.get("reasoning"):
+                chunks.append(str(msg_meta.get("reasoning")))
+        return "\n".join(chunk for chunk in chunks if chunk)
+
     async def _fail_open_items(self, context: TaskContext) -> int:
         """Platform close-out. Not an update_plan call, so later items are not reopened."""
         raw = (context.metadata or {}).get("plan") or []
@@ -599,15 +638,15 @@ class Orchestrator:
             logger.exception("Cancel check failed")
         return False
 
-    async def _await_or_stop(self, coro, context: TaskContext):
-        """Run `coro` until it finishes or the user hits Stop.
+    async def _await_or_stop(self, coro, context: TaskContext, timeout: Optional[float] = None):
+        """Run `coro` until it finishes, the user hits Stop, or the deadline passes.
 
         Cancel is checked several times a second, not only between iterations,
-        so a blocked model call or tool does not ignore Stop. If the call
-        swallows cancellation (a stuck socket), the run still ends: the UI
-        must not sit on "Stopping…" until the provider timeout.
+        so a blocked model call or tool does not ignore Stop. A tool that
+        never returns is a timeout, not a card that stays on "Waiting for a tool".
         """
         task = asyncio.create_task(coro)
+        started = time.monotonic()
         try:
             while not task.done():
                 if self._stop_requested(context):
@@ -619,6 +658,15 @@ class Orchestrator:
                     if not task.done():
                         logger.warning("Stop: in-flight call did not exit within 1.5s; abandoning it")
                     raise _RunStopped()
+                if timeout is not None and (time.monotonic() - started) >= float(timeout):
+                    task.cancel()
+                    try:
+                        await asyncio.wait_for(task, 2.0)
+                    except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                        pass
+                    if not task.done():
+                        logger.warning("Tool did not exit within 2s of its deadline; abandoning it")
+                    raise asyncio.TimeoutError()
                 await asyncio.sleep(0.2)
             return task.result()
         except asyncio.CancelledError:
@@ -890,7 +938,25 @@ class Orchestrator:
             specs = [spec for spec in specs if _spec_name(spec) in allowed]
         if not (context.metadata or {}).get("vision"):
             specs = [spec for spec in specs if _spec_name(spec) != "view_image"]
+        specs = self._apply_multi_agent(specs, mode)
         return specs
+
+    def _apply_multi_agent(self, specs, mode: str):
+        try:
+            from .delegation import allow_tool, multi_agent_enabled
+
+            if not multi_agent_enabled(self._state_dir()):
+                return specs
+        except Exception:
+            return specs
+        kept = []
+        for spec in specs:
+            name = _spec_name(spec)
+            tool = self.tool_registry.get_tool(name) if self.tool_registry is not None else None
+            risk = str(getattr(tool, "risk_level", "medium") if tool is not None else "medium")
+            if allow_tool(name, risk, mode=mode, enabled=True):
+                kept.append(spec)
+        return kept
 
     async def _exhaust_current_item(self, context: TaskContext) -> str:
         """The same lookup failed often enough. Record it and move on."""
@@ -1002,6 +1068,11 @@ class Orchestrator:
                 or "no model" in text
                 or "no loaded" in text
                 or "expected modelresponse" in text
+                or "fetch failed" in text
+                or "terminated" in text
+                or "cuda" in text
+                or "illegal memory" in text
+                or "engine protocol" in text
             ):
                 return False
             return True
@@ -1017,6 +1088,11 @@ class Orchestrator:
                 from ..models.cancel import StreamCancelled, cancelled_response
 
                 if isinstance(exc, StreamCancelled):
+                    return cancelled_response()
+                # Do not retry after the user stopped. A cancel on a large
+                # prompt can kill the LM Studio engine; another request then
+                # hits a dead process and can cascade.
+                if getattr(self, "cancel_check", None) and self.cancel_check():
                     return cancelled_response()
                 if not self._transient_provider_error(exc) or attempt >= self.provider_retries:
                     raise
@@ -1234,12 +1310,13 @@ class Orchestrator:
                     continue
                 final_msg = response.messages[-1]
                 content = (final_msg.content if final_msg else "") or ""
+                reasoning = self._response_reasoning(response)
                 while context.messages and context.messages[-1].role == MessageRole.ASSISTANT:
                     last = context.messages[-1]
                     if (last.content or "").strip() or last.tool_calls:
                         break
                     context.messages.pop()
-                if not content.strip():
+                if not content.strip() and not reasoning.strip():
                     empty_retries += 1
                     if empty_retries <= self.max_empty_retries:
                         self._nudge_after_empty(context)
@@ -1251,103 +1328,34 @@ class Orchestrator:
                         "Empty assistant content.",
                     )
                 empty_retries = 0
-                skip_gate = bool((context.metadata or {}).get("skip_plan_gate"))
-                declared = self._declares_complete(content)
+                # A finished reply or a thinking trace, with no tool call, ends
+                # the run. Sending that reply back as the next prompt is what
+                # produced empty_response. TASK_COMPLETED still closes a TODO,
+                # including when the flag is only in the reasoning trace.
+                declared = self._declares_complete(content) or self._declares_complete(reasoning)
                 open_now = [
                     item for item in ((context.metadata or {}).get("plan") or [])
                     if isinstance(item, dict) and _plan_status_blocks(item.get("status"))
                 ]
-                # TASK_COMPLETED is the end of the turn. Do not send another
-                # prompt, including the "write a TODO" nudge, and do not send
-                # the model its own reply back. An open TODO is closed here.
-                if declared:
-                    if open_now:
-                        await self._fail_open_items(context)
-                elif self.compose_plan and not skip_gate and self._todo_missing(context):
-                    if plan_continuations < 3:
-                        plan_continuations += 1
-                        self._user_note(
-                            context,
-                            "There is no TODO. Your next call must be update_plan and nothing else. "
-                            "Do not answer, and do not explore the project, until that list exists.",
-                        )
-                        continue
-                    return self._finish(
-                        context,
-                        "Stopped: the model answered without writing a TODO. update_plan has to run first.",
-                        "no_plan",
-                        "No TODO was published.",
-                    )
-                elif open_now and self._should_close_open_plan(content, plan_continuations):
+                if declared and open_now:
                     await self._fail_open_items(context)
-                elif self._continue_open_plan(context, plan_continuations):
-                    plan_continuations += 1
-                    mode = str((context.metadata or {}).get("agent_mode") or "act")
-                    if mode == "plan" and not (context.metadata or {}).get("plan"):
-                        note = (
-                            "Plan mode is not done. The first call is update_plan if a TODO is required. "
-                            "Then keep researching. Do not implement."
-                        )
-                    elif open_now:
-                        note = (
-                            "The TODO is still open. Work strictly in order. "
-                            "Only the first unfinished item is current, and you may change only that one. "
-                            "Mark it done if you finished it. "
-                            "If the same attempt is empty about three times, or you have given up, mark that one item failed. "
-                            "failed does not block the end. frozen does. "
-                            "If the work is actually finished, say so and end with TASK_COMPLETED. "
-                            "Unfinished items will be recorded as failed."
-                        )
-                    else:
-                        note = (
-                            "Write a short TODO with update_plan before you finish. "
-                            "You cannot end this task without one."
-                        )
-                    self._user_note(context, note)
-                    continue
-                if (
-                    self._needs_plan_draft(context)
-                    and plan_draft_nudges < 2
-                    and not (declared and self._todo_missing(context))
-                ):
-                    plan_draft_nudges += 1
-                    self._user_note(
-                        context,
-                        "The research list is closed, but Act cannot see this chat. "
-                        "Your next message must be the audit, with no tool calls. "
-                        "Repeat what you already learned inside this block, even if you wrote it earlier:\n"
-                        "===ACT_DRAFT===\n"
-                        "project:\ntask:\nfindings:\nreasoning:\nfiles:\nrisks:\nsuggested_steps:\n"
-                        "===END_DRAFT===",
-                    )
-                    continue
+                shown = content.strip() or reasoning.strip()
                 if self.verifier:
                     verification = await self.verifier.verify(context.goal, context, context.workspace)
                     context.metadata["verification"] = verification.model_dump()
                     if not verification.passed:
-                        verify_failures += 1
-                        logger.info("Verification failed: %s", verification.message)
-                        if verify_failures > self.max_verification_retries:
-                            return self._finish(
-                                context,
-                                content,
-                                "verification_failed",
-                                verification.message,
-                            )
-                        self._user_note(
+                        return self._finish(
                             context,
-                            "Verification failed: "
-                            + verification.message
-                            + ". Correct the workspace so the original goal is met. "
-                            "Do not replace the goal with a simpler one.",
+                            shown,
+                            "verification_failed",
+                            verification.message,
                         )
-                        continue
                     if is_unverified(verification):
-                        return self._finish(context, content, "unverified", verification.message)
-                    return self._finish(context, content, "verified", verification.message)
+                        return self._finish(context, shown, "unverified", verification.message)
+                    return self._finish(context, shown, "verified", verification.message)
                 return self._finish(
                     context,
-                    content,
+                    shown,
                     "unverified",
                     "No verifier was configured.",
                 )

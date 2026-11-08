@@ -18,6 +18,15 @@ from ..interfaces.settings_schema import SettingsSchema, coerce_value
 from .file import PLUGINS_FILE, TOOLS_FILE, read_state_file, write_state_file
 
 
+def redact_secret_fields(values: Dict[str, Any] | None) -> Dict[str, Any]:
+    """A password is not a setting. It must not be written into plugins.json."""
+    clean = dict(values or {})
+    for key in list(clean):
+        if "password" in str(key).lower():
+            clean[key] = ""
+    return clean
+
+
 class ComponentSettingsStore:
     def __init__(self, state_dir: Path | str):
         from .file import state_root
@@ -54,6 +63,7 @@ class ComponentSettingsStore:
         return dict(data)
 
     def save(self, kind: str, component_id: str, values: Dict[str, Any], schema: Optional[SettingsSchema] = None) -> Dict[str, Any]:
+        values = redact_secret_fields(values)
         if schema:
             clean: Dict[str, Any] = {}
             for field in schema.fields:

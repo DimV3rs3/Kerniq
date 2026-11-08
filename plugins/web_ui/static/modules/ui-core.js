@@ -7,6 +7,8 @@ const UI_I18N = {
     stopping: 'Stopping…', stopped: 'Stopped',
     processing: 'Processing prompt…', thinking: 'Thinking…', generating: 'Generating…',
     waitingForTool: 'Waiting for a tool',
+    timedOut: 'Timed out',
+    toolFailed: 'Failed',
     chatsFull: 'Chat limit reached. Delete a chat before creating a new one.',
     aggHint: 'Merge consecutive collapsible tool calls into one chat block',
     aggLabel: 'Merge tool calls when possible',
@@ -28,7 +30,7 @@ const UI_I18N = {
     baseUrl: 'Base URL', workspace: 'Workspace', undo: 'Undo', redo: 'Redo',
     close: 'Close', refresh: 'Refresh', provider: 'provider', model: 'model',
     notLoaded: 'not loaded', loaded: 'loaded', loading: 'loading…', offline: 'offline',
-    available: 'available', ctx: 'ctx',
+    available: 'available', ctx: 'ctx', compressAt: 'compress at XX%',
     tabAgent: 'Agent', tabApi: 'API & model', tabPrompt: 'System prompt',
     tabChat: 'Chat', tabTools: 'Tools', tabPlugins: 'Plugins', tabReset: 'Reset settings',
     workspace: 'Workspace', browse: 'Browse…', maxIterations: 'Max iterations',
@@ -63,9 +65,20 @@ const UI_I18N = {
     loopRetries: 'Loop retries',
     leaveVenv: 'Leave the virtual environment',
     useVenv: 'Use the virtual environment',
+    useVenvShort: 'Stay in the sandbox',
+    venvOffTitle: 'Turn the virtual environment off?',
+    dontNeedVenv: "I don't need that",
     venvOffBody: 'Shell commands will see programs installed on this computer. Wait 3 seconds. Host freedom stays hidden until you confirm, and it stays off.',
     approveAllTitle: 'Approve every action?',
+    approveConfirm: 'Approve',
     approveAllBody: 'The agent will run tools, including dangerous ones, without asking. Wait 3 seconds. Cancel keeps the previous level.',
+    hostFreedom: 'Host freedom',
+    hostFreedomTitle: 'Host freedom',
+    hostFreedomBody: 'The agent will see real paths and can run privileged commands, including network and system tools. It can read and change files outside ./workspace. Kerniq still blocks the obvious ways to wipe a disk. This is not a sandbox.',
+    agent_chat_full: 'Full width chat',
+    agent_chat_full_tip: 'On: the agent conversation uses the whole window. Off: it sits in a readable column, centred.',
+    wantFreedom: 'I want freedom',
+    wantSafe: 'I want safe',
     attachments: 'Attachments',
     downloads: 'Downloads',
     attachmentsFolder: 'Attachments folder',
@@ -75,6 +88,8 @@ const UI_I18N = {
     folderSpace: 'Folder space',
     folderSpaceHint: 'Each folder has its own limit for space Kerniq adds. Files that were already there are not counted. The default is 4 GB of new space.',
     clearFolder: 'Clear folder',
+    clearConfirm: 'Clear',
+    goBack: 'Go back',
     clearFolderBody: 'This deletes the files Kerniq can see in this folder. Git history and the virtual environment stay. Wait 3 seconds.',
     providerDesc: 'Description',
     packAuto: 'Auto-accept every tool in this pack',
@@ -91,6 +106,10 @@ const UI_I18N = {
     pluginInstall: 'Install',
     pluginCheckUpdates: 'Check updates',
     pluginRestart: 'Restart Kerniq to load it.',
+    pluginReady: 'The plugin was checked and is ready.',
+    settingsSearch: 'Search settings',
+    settingsNoMatch: 'No settings match.',
+    restartAdmin: 'Restart as Administrator',
     pluginKit: 'Included with Kerniq',
     pluginUpdateReady: 'Update available',
     pluginRemove: 'Remove',
@@ -340,6 +359,8 @@ function applyUiLocale(locale) {
     renderProviderFields(collectProviderDraft());
   }
   if (typeof renderPlan === 'function') renderPlan();
+  if (typeof setFooterContext === 'function') setFooterContext(_lastPromptTokens, _modelContextLimit);
+  if (typeof setFooterCompact === 'function') setFooterCompact();
   const mmc = document.getElementById('mm-cancel');
   if (mmc) mmc.textContent = t('cancel');
   const st = document.getElementById('agent-status');
@@ -517,6 +538,10 @@ function inlineMd(src) {
   s = s.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, (m, ticks, body) =>
     keep('<code>' + esc(body.replace(/^ (.*) $/, '$1')) + '</code>'));
   s = s.replace(/\[\[file:([^\]]+)\]\]/g, (m, p) => keep(mdFileRef(p)));
+  s = s.replace(/\[\[setting:([A-Za-z0-9_-]+):([A-Za-z0-9_-]+)(?:\|([^\]]+))?\]\]/g, (m, tab, id, label) =>
+    keep('<button type="button" class="settings-link" data-tab="' + esc(tab) + '" data-focus="' + esc(id) + '">' + esc(label || id) + '</button>'));
+  s = s.replace(/\[([^\]\n]+)\]\(kerniq:\/\/settings\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+)\)/g, (m, text, tab, id) =>
+    keep('<button type="button" class="settings-link" data-tab="' + esc(tab) + '" data-focus="' + esc(id) + '">' + esc(text) + '</button>'));
   s = esc(s);
   // 2. links, images (shown as links), autolinks, bare urls
   s = s.replace(/!?\[([^\]\n]+)\]\(([^)\s]+)(?:\s+&quot;[^)]*&quot;)?\)/g, (m, text, url) => {

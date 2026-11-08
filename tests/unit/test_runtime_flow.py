@@ -109,14 +109,17 @@ def test_route_word_reads_reasoning_and_ignores_an_empty_content():
     assert promote_reasoning(ModelResponse(messages=[short], finish_reason="stop")) is False
 
 
-def test_answer_without_a_todo_is_not_a_finished_task():
+def test_answer_without_a_todo_stops_instead_of_asking_again():
     import asyncio
     from types import SimpleNamespace
 
     from Kerniq.interfaces.models import ModelResponse
 
+    calls = []
+
     class Prov:
         async def generate(self, request):
+            calls.append(request)
             return ModelResponse(
                 messages=[Message(role=MessageRole.ASSISTANT, content="Here is the bug list.")],
                 finish_reason="stop",
@@ -135,10 +138,49 @@ def test_answer_without_a_todo_is_not_a_finished_task():
     ctx.metadata["agent_mode"] = "act"
     ctx.add_message(Message(role=MessageRole.USER, content="прочитай проект и найди баги"))
     result = asyncio.run(orch.run(ctx))
-    assert ctx.metadata.get("outcome") == "no_plan"
-    assert "update_plan" in result
-    assert "Until a TODO exists, call update_plan through the tool interface" in ctx.messages[0].content
-    assert "[Tools this turn:" not in ctx.messages[0].content
+    assert len(calls) == 1
+    assert ctx.metadata.get("outcome") != "no_plan"
+    assert "bug list" in result
+    assert "empty_response" not in result
+
+
+def test_reasoning_task_completed_stops_and_closes_the_todo():
+    import asyncio
+    from types import SimpleNamespace
+
+    from Kerniq.interfaces.models import ModelResponse
+
+    calls = []
+
+    class Prov:
+        async def generate(self, request):
+            calls.append(request)
+            return ModelResponse(
+                messages=[Message(
+                    role=MessageRole.ASSISTANT,
+                    content="",
+                    metadata={"reasoning": "Done.\nTASK_COMPLETED"},
+                )],
+                finish_reason="stop",
+            )
+
+    orch = Orchestrator(
+        Prov(),
+        SimpleNamespace(
+            get_tools_for_model=lambda: [],
+            list_tools=lambda: [],
+        ),
+    )
+    orch.compose_plan = True
+    orch.max_iterations = 4
+    ctx = TaskContext(task_id=uuid4(), session_id=uuid4(), goal="find bugs")
+    ctx.metadata["plan"] = [{"id": "1", "title": "Read the tree", "status": "active"}]
+    ctx.add_message(Message(role=MessageRole.USER, content="прочитай проект"))
+    result = asyncio.run(orch.run(ctx))
+    assert len(calls) == 1
+    assert "TASK_COMPLETED" in result or "Done" in result
+    assert ctx.metadata["plan"][0]["status"] == "failed"
+    assert ctx.metadata.get("outcome") != "empty_response"
 
 
 def test_task_completed_stops_even_without_a_plan():

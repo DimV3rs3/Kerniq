@@ -36,7 +36,9 @@ denied. The shell string is still checked after approval:
 
 Host freedom, described in section 6, is the only desktop switch that relaxes
 path and privilege checks. It is off by default and does not exist in server
-mode.
+mode. It does not turn off the language sandbox: `node`, `npm`, and `dotnet`
+still resolve to the workspace copies, or they fail. They do not run the
+copies installed on the computer.
 
 On Linux the command is still a shell (`bash -c` equivalent via
 `create_subprocess_shell`) because pipelines are part of the coding workflow.
@@ -76,9 +78,13 @@ A symlink inside the workspace that points outside blocks `run_command` until
 it is removed. Filesystem tools already refuse to follow such a link.
 
 What remains: a normal `python script.py` runs as the OS user. The shell is
-not a sandbox. The Python guard blocks `open`, `listdir`, and `subprocess`
-outside the visible folders, but it cannot stop a module that uses raw
-syscalls. Container isolation is still the way to remove that right.
+not a sandbox. The Python guard blocks `open`, `os.open`, `stat`, `listdir`,
+and `subprocess`, including the `posix` / `nt` copies and `pathlib`. It
+refuses UNC paths without asking Windows whether the share exists. It refuses
+`ctypes` loads of kernel32, ntdll, libc, and the other libraries that issue
+those calls directly, and it does not let the script turn `KERNIQ_CONFINE`
+off. A native extension that is already loaded can still issue a raw syscall.
+Container isolation is still the way to remove that right.
 
 ## 4. Secrets and network
 
@@ -136,6 +142,14 @@ unlocks developer tools for one admin browser. It does not turn host freedom
 on, and the model still does not learn the real directory. Freedom still
 refuses disk wipes, formatting, shutdown, and writes to operating-system
 files. It is not an operating-system sandbox.
+
+`state/settings.json` is signed. The signature covers `host_freedom`,
+`allow_elevated`, `use_venv`, the workspace paths, and the auto-approve
+ceiling. The key is `state/.settings.key` (the same key that seals the API
+token). A file the sandbox writes, including `settings.json.backup`, is not
+read. An unsigned `host_freedom` does not turn on. A signature that does not
+match puts those fields back to the safe defaults. Edit the settings in the
+app; a hand edit of those fields is treated as tampering.
 
 ## 7. Updates
 

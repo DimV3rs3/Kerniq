@@ -86,22 +86,29 @@ def apply_runtime(orchestrator, ui) -> None:
     )
 
 
-def clamp_output_tokens(requested, context_limit: int):
-    """Cap a reply at the model window.
+# Empty context used to be omitted. LM Studio then loads the model's
+# advertised maximum (262144) and several slots. That KV cache does not
+# fit, fit aborts, and the first prompt dies with a CUDA error.
+LM_STUDIO_SAFE_CONTEXT = 32768
 
-    Empty or auto (``None``) becomes that window when it is known.
-    A number the user typed is kept, but never above the window.
-    Unknown window: a typed number stays, auto stays unset.
+
+def clamp_output_tokens(requested, context_limit: int):
+    """Cap a reply.
+
+    Empty or auto stays unset: the request omits max_tokens and the model
+    uses its own maximum. A number the user typed is kept, but never above
+    the loaded window. Do not invent an 8192 default — that is not the
+    setting the user chose.
     """
     limit = int(context_limit or 0)
     if requested is None or requested == "":
-        return limit or None
+        return None
     try:
         value = int(requested)
     except (TypeError, ValueError):
-        return limit or None
+        return None
     if value < 1:
-        value = 1
+        return None
     if limit > 0 and value > limit:
         value = limit
     return value
@@ -141,8 +148,8 @@ async def probe_context_limit(provider, model: str) -> int:
     return int(loaded_fallback or catalog_fallback or 0)
 
 
-def _load_accepts_context(provider) -> bool:
-    """True when ``load_model`` can take a context window. Other providers must not see the kwarg."""
+def _load_accepts_kw(provider, name: str) -> bool:
+    """True when ``load_model`` accepts this keyword. Other providers must not see it."""
     import inspect
 
     fn = getattr(provider, "load_model", None)
@@ -153,9 +160,14 @@ def _load_accepts_context(provider) -> bool:
     except (TypeError, ValueError):
         return False
     return any(
-        param.kind is inspect.Parameter.VAR_KEYWORD or param.name == "context_length"
+        param.kind is inspect.Parameter.VAR_KEYWORD or param.name == name
         for param in params.values()
     )
+
+
+def _load_accepts_context(provider) -> bool:
+    """True when ``load_model`` can take a context window. Other providers must not see the kwarg."""
+    return _load_accepts_kw(provider, "context_length")
 
 
 async def use_model_for_mode(provider, api, mode: str, context_length: int | None = None) -> Optional[str]:
@@ -199,7 +211,21 @@ async def use_model_for_mode(provider, api, mode: str, context_length: int | Non
         requested = None
     if requested is not None and requested < 1:
         requested = None
-    if already and not (provider_id == "lm_studio" and requested is not None and _load_accepts_context(provider)):
+    explicit_context = requested is not None
+    temperature = getattr(api, "temperature", None)
+    try:
+        temperature = float(temperature) if temperature is not None else None
+    except (TypeError, ValueError):
+        temperature = None
+    accepts_context = provider_id == "lm_studio" and _load_accepts_context(provider)
+    # Only a model we are about to load gets the safe window. A model the user
+    # already loaded in LM Studio is left at the length that is working.
+    if accepts_context and requested is None and not already:
+        requested = LM_STUDIO_SAFE_CONTEXT
+    # Temperature stays on the chat request. LM Studio's load endpoint rejects
+    # the field, and reloading just to send it replaces a working model.
+    needs_load = accepts_context and explicit_context
+    if already and not needs_load:
         if hasattr(provider, "model"):
             provider.model = target
         logger.info("Model for %s mode is already loaded: %s", mode, target)
@@ -209,7 +235,7 @@ async def use_model_for_mode(provider, api, mode: str, context_length: int | Non
         return None
     try:
         if hasattr(provider, "load_model"):
-            if provider_id == "lm_studio" and _load_accepts_context(provider):
+            if accepts_context:
                 await provider.load_model(target, context_length=requested)
             else:
                 await provider.load_model(target)
@@ -219,11 +245,20 @@ async def use_model_for_mode(provider, api, mode: str, context_length: int | Non
             base = str(getattr(provider, "base_url", "") or getattr(api, "base_url", "") or "http://127.0.0.1:11434").rstrip("/")
             if base.endswith("/v1"):
                 base = base[:-3]
+            body = {"model": target, "keep_alive": "10m"}
+            if requested:
+                body["options"] = {"num_ctx": requested}
             async with httpx.AsyncClient(timeout=30) as client:
-                await client.post(base + "/api/generate", json={"model": target, "keep_alive": "10m"})
+                await client.post(base + "/api/generate", json=body)
         if hasattr(provider, "model"):
             provider.model = target
-        logger.info("Model for %s mode is %s (context=%s)", mode, target, requested or "model max")
+        logger.info(
+            "Model for %s mode is %s (context=%s temperature=%s)",
+            mode,
+            target,
+            requested or "model max",
+            temperature if temperature is not None else "model default",
+        )
         return None
     except Exception as exc:
         logger.exception("model switch failed")
@@ -260,7 +295,7 @@ async def route_mode(provider, task: str, *, compose_plan: bool) -> str:
             temperature=0,
             max_tokens=16,
             streaming=False,
-            extra_params={"enable_thinking": False, "thinking": {"type": "disabled"}, "reasoning_effort": "none"},
+            extra_params={},
         ),
         metadata={"kerniq_internal": "route"},
     )

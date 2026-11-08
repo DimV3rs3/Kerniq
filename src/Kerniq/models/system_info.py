@@ -24,6 +24,8 @@ class SystemInfo:
     python_version: str
     has_gpu_hint: bool
     notes: List[str]
+    vram_used_gb: Optional[float] = None
+    gpu_name: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -81,6 +83,194 @@ def _linux_memory() -> tuple[Optional[float], Optional[float], List[str]]:
     return mem_total, mem_avail, notes
 
 
+def _nvidia_smi_bin() -> Optional[str]:
+    found = shutil.which("nvidia-smi")
+    if found:
+        return found
+    if os.name != "nt":
+        return None
+    for candidate in (
+        r"C:\Windows\System32\nvidia-smi.exe",
+        r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+    ):
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def parse_nvidia_query(text: str) -> tuple[Optional[float], Optional[float], str]:
+    """CSV rows: name, total MiB, used MiB."""
+    total = used = 0
+    names: List[str] = []
+    seen = False
+    for line in (text or "").splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) < 2:
+            continue
+        numbers = []
+        label = ""
+        for part in parts:
+            token = part.split()[0] if part else ""
+            if token.replace(".", "", 1).isdigit():
+                numbers.append(float(token))
+            elif part and not label:
+                label = part
+        if len(numbers) < 1:
+            continue
+        seen = True
+        total += numbers[0]
+        if len(numbers) > 1:
+            used += numbers[1]
+        if label:
+            names.append(label)
+    if not seen:
+        return None, None, ""
+    return round(total / 1024.0, 2), round(used / 1024.0, 2), ", ".join(names)
+
+
+def _nvidia_gpu() -> tuple[Optional[float], Optional[float], str, List[str]]:
+    notes: List[str] = []
+    binary = _nvidia_smi_bin()
+    if not binary:
+        return None, None, "", notes
+    try:
+        out = hidden_run(
+            [binary, "--query-gpu=name,memory.total,memory.used", "--format=csv,noheader,nounits"],
+            timeout=4,
+            text=True,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).stdout
+    except Exception as exc:
+        notes.append(f"nvidia-smi failed: {exc}")
+        return None, None, "", notes
+    total, used, name = parse_nvidia_query(out or "")
+    if total is None:
+        notes.append("nvidia-smi returned no VRAM figure")
+        return None, None, "", notes
+    notes.append(f"VRAM about {total} GB from nvidia-smi" + (f" ({name})" if name else "") + ".")
+    return total, used, name, notes
+
+
+def _drm_sysfs() -> tuple[Optional[float], Optional[float], str, List[str]]:
+    """AMD amdgpu and Intel discrete cards expose VRAM under /sys/class/drm."""
+    notes: List[str] = []
+    root = "/sys/class/drm"
+    if not os.path.isdir(root):
+        return None, None, "", notes
+    total = used = 0
+    found = False
+    names: List[str] = []
+    for card in sorted(os.listdir(root)):
+        if not card.startswith("card") or not card[4:].isdigit():
+            continue
+        device = os.path.join(root, card, "device")
+        paths = [
+            os.path.join(device, "mem_info_vram_total"),
+            os.path.join(device, "tile0", "vram", "physical_vram_size_bytes"),
+            os.path.join(device, "tile1", "vram", "physical_vram_size_bytes"),
+        ]
+        for path in paths:
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    total += int(handle.read().strip() or "0")
+                found = True
+            except (OSError, ValueError):
+                continue
+            used_path = path.replace("mem_info_vram_total", "mem_info_vram_used")
+            if used_path != path and os.path.isfile(used_path):
+                try:
+                    with open(used_path, "r", encoding="utf-8") as handle:
+                        used += int(handle.read().strip() or "0")
+                except (OSError, ValueError):
+                    pass
+            break
+        vendor = os.path.join(device, "vendor")
+        if os.path.isfile(vendor):
+            try:
+                with open(vendor, "r", encoding="utf-8") as handle:
+                    code = handle.read().strip().lower()
+                names.append({"0x1002": "AMD", "0x8086": "Intel", "0x10de": "NVIDIA"}.get(code, code))
+            except OSError:
+                pass
+    if not found or total <= 0:
+        return None, None, "", notes
+    total_gb = round(total / (1024 ** 3), 2)
+    used_gb = round(used / (1024 ** 3), 2) if used else None
+    name = ", ".join(dict.fromkeys(names))
+    notes.append(f"VRAM about {total_gb} GB from the graphics driver" + (f" ({name})" if name else "") + ".")
+    return total_gb, used_gb, name, notes
+
+
+def parse_windows_vram_rows(text: str) -> tuple[Optional[float], str]:
+    """Lines of `name|bytes` from the Windows display-class registry."""
+    total = 0
+    names: List[str] = []
+    for line in (text or "").splitlines():
+        if "|" not in line:
+            continue
+        label, raw = line.split("|", 1)
+        token = raw.strip().split()[0] if raw.strip() else ""
+        if not token.isdigit():
+            continue
+        size = int(token)
+        if size <= 0:
+            continue
+        total += size
+        if label.strip():
+            names.append(label.strip())
+    if total <= 0:
+        return None, ""
+    return round(total / (1024 ** 3), 2), ", ".join(names)
+
+
+def _windows_registry_vram() -> tuple[Optional[float], str, List[str]]:
+    notes: List[str] = []
+    if platform.system() != "Windows":
+        return None, "", notes
+    script = (
+        "Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}' "
+        "-ErrorAction SilentlyContinue | ForEach-Object { "
+        "$p = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue; "
+        "if ($p.qwMemorySize) { Write-Output ($p.DriverDesc + '|' + $p.qwMemorySize) } }"
+    )
+    try:
+        out = hidden_run(
+            ["powershell", "-NoProfile", "-Command", script],
+            timeout=8,
+            text=True,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).stdout
+    except Exception as exc:
+        notes.append(f"Windows GPU memory lookup failed: {exc}")
+        return None, "", notes
+    total, name = parse_windows_vram_rows(out or "")
+    if total is None:
+        return None, "", notes
+    notes.append(f"VRAM about {total} GB from the Windows display driver" + (f" ({name})" if name else "") + ".")
+    return total, name, notes
+
+
+def measure_gpu() -> tuple[Optional[float], Optional[float], str, List[str]]:
+    """NVIDIA first, then AMD/Intel sysfs, then the Windows driver record."""
+    total, used, name, notes = _nvidia_gpu()
+    if total is not None:
+        return total, used, name, notes
+    total, used, name, extra = _drm_sysfs()
+    notes.extend(extra)
+    if total is not None:
+        return total, used, name, notes
+    total, name, extra = _windows_registry_vram()
+    notes.extend(extra)
+    if total is not None:
+        return total, None, name, notes
+    notes.append("No measured VRAM. NVIDIA, AMD, and Intel were checked. Do not assume a model fits.")
+    return None, None, "", notes
+
+
 def _nvidia_vram_gb() -> tuple[Optional[float], List[str]]:
     """Read total GPU memory. This is not a promise that a model fits."""
     notes: List[str] = []
@@ -96,6 +286,9 @@ def _nvidia_vram_gb() -> tuple[Optional[float], List[str]]:
         ).stdout
     except Exception as exc:
         notes.append(f"nvidia-smi failed: {exc}")
+        return None, notes
+    if not out:
+        notes.append("nvidia-smi returned no output")
         return None, notes
     mib = []
     for line in out.splitlines():
@@ -127,19 +320,10 @@ def collect_system_info() -> SystemInfo:
         notes.extend(n)
 
     has_gpu = False
-    vram_gb, vram_notes = _nvidia_vram_gb()
+    vram_gb, vram_used, gpu_name, vram_notes = measure_gpu()
     notes.extend(vram_notes)
-    try:
-        if shutil.which("nvidia-smi"):
-            has_gpu = True
-            notes.append("nvidia-smi present (GPU hint only)")
-        elif os.path.exists("/dev/nvidia0"):
-            has_gpu = True
-            notes.append("GPU device node present; VRAM was not measured")
-    except Exception:
-        pass
-    if vram_gb is None:
-        notes.append("No measured VRAM. Do not assume a model fits in GPU memory.")
+    if vram_gb is not None or gpu_name:
+        has_gpu = True
 
     return SystemInfo(
         os=system,
@@ -152,6 +336,8 @@ def collect_system_info() -> SystemInfo:
         python_version=platform.python_version(),
         has_gpu_hint=has_gpu,
         notes=notes,
+        vram_used_gb=vram_used,
+        gpu_name=gpu_name,
     )
 
 

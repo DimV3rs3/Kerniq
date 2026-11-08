@@ -379,7 +379,8 @@ function askExternalWrite() {
   });
 }
 
-function askCountdown(title, body, seconds) {
+function askCountdown(title, body, seconds, opts) {
+  opts = opts || {};
   return new Promise(resolve => {
     const bg = document.getElementById('guard-modal');
     const ok = document.getElementById('guard-ok');
@@ -389,19 +390,24 @@ function askCountdown(title, body, seconds) {
     if (!bg || !ok || !cancel) { resolve(false); return; }
     if (titleEl) titleEl.textContent = title;
     if (textEl) textEl.textContent = body;
-    cancel.textContent = translate('Cancel');
+    const okLabel = opts.ok || translate('Confirm');
+    cancel.textContent = opts.cancel || translate('Cancel');
+    ok.classList.toggle('danger', !!opts.danger);
+    ok.classList.toggle('save-active', !opts.danger);
     let left = seconds || 3;
     let settled = false;
     let timer = null;
     const paint = () => {
       ok.disabled = left > 0;
-      ok.textContent = left > 0 ? String(left) : translate('Confirm');
+      ok.textContent = left > 0 ? String(left) : okLabel;
     };
     const finish = (yes) => {
       if (settled) return;
       settled = true;
       if (timer) clearInterval(timer);
       bg.classList.remove('on');
+      ok.classList.remove('danger');
+      ok.classList.add('save-active');
       if (!document.querySelector('.modal-bg.on')) document.body.classList.remove('modal-open');
       resolve(!!yes);
     };
@@ -468,7 +474,10 @@ function wirePrivilege() {
       venv.dataset.silent = '1';
       venv.checked = true;
       venv.dataset.silent = '';
-      const ok = await askCountdown(t('useVenv'), t('venvOffBody'), 3);
+      const ok = await askCountdown(t('venvOffTitle'), t('venvOffBody'), 3, {
+        ok: t('dontNeedVenv'),
+        cancel: t('useVenvShort'),
+      });
       if (!ok) return;
       venv.dataset.silent = '1';
       venv.checked = false;
@@ -476,6 +485,16 @@ function wirePrivilege() {
       const host = document.getElementById('s-host-freedom');
       if (host) host.checked = false;
       syncPrivilegeFields();
+      markSettingsDirty();
+    });
+  }
+  const elev = document.getElementById('s-allow-elevated');
+  if (elev && !elev.dataset.elevWired) {
+    elev.dataset.elevWired = '1';
+    elev.addEventListener('change', () => {
+      if (elev.dataset.silent) return;
+      const restartBtn = document.getElementById('btn-restart-elevated');
+      if (restartBtn) restartBtn.hidden = !elev.checked || serverModeOn();
       markSettingsDirty();
     });
   }
@@ -494,7 +513,11 @@ function wirePrivilege() {
       approve.dataset.silent = '1';
       approve.value = back;
       approve.dataset.silent = '';
-      const ok = await askCountdown(t('approveAllTitle'), t('approveAllBody'), 3);
+      const ok = await askCountdown(t('approveAllTitle'), t('approveAllBody'), 3, {
+        ok: t('approveConfirm'),
+        cancel: t('cancel'),
+        danger: true,
+      });
       if (!ok) return;
       approve.dataset.silent = '1';
       approve.value = 'all';
@@ -569,7 +592,11 @@ function paintFolderUsage(data) {
     const button = box.querySelector('.usage-clear');
     button.textContent = t('clearFolder');
     button.onclick = async () => {
-      const ok = await askCountdown(t('clearFolder'), t('clearFolderBody'), 3);
+      const ok = await askCountdown(t('clearFolder'), t('clearFolderBody'), 3, {
+        ok: t('clearConfirm'),
+        cancel: t('goBack'),
+        danger: true,
+      });
       if (!ok) return;
       const result = await api('/api/fs/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root: row.name }) });
       if (result && result.error) toast(String(result.error), true);
@@ -648,6 +675,12 @@ async function loadSettings() {
   if (window.KerniqHostFreedom) {
     KerniqHostFreedom.sync({ server: serverModeOn(), enabled: !serverModeOn() && !!a.host_freedom });
   }
+  const elev = document.getElementById('s-allow-elevated');
+  const elevRow = document.getElementById('allow-elevated-field');
+  if (elev) elev.checked = !!a.allow_elevated;
+  if (elevRow) elevRow.hidden = serverModeOn() || !a.host_freedom;
+  const restartBtn = document.getElementById('btn-restart-elevated');
+  if (restartBtn) restartBtn.hidden = !a.allow_elevated || serverModeOn();
   const leave = document.getElementById('s-leave-venv');
   const leaveRow = document.getElementById('use-venv-field');
   if (leaveRow) leaveRow.hidden = serverModeOn();
@@ -733,7 +766,8 @@ async function loadSettings() {
     ss.checked = sk === 'shift_enter';
   }
   setFooterProvider(apiS.provider || 'lm_studio');
-  draftTools = {}; draftPlugins = {};
+  draftTools = {}; draftPlugins = {}; draftPacks = {};
+  toolBaseline = {}; pluginBaseline = {};
   await Promise.all([
     loadProviderCatalog(apiS.provider || 'lm_studio').catch((e) => toast(String(e), true)),
     loadComponents().catch((e) => toast(String(e), true)),
@@ -994,17 +1028,28 @@ async function loadComponents() {
     console.warn('empty tools', data);
   }
   (data.tools || []).forEach(t => {
-    if (!draftTools[t.id]) draftTools[t.id] = { enabled: t.enabled !== false, values: { ...(t.values || {}) } };
+    if (!draftTools[t.id]) {
+      draftTools[t.id] = { enabled: t.enabled !== false, values: { ...(t.values || {}) } };
+      toolBaseline[t.id] = componentStamp(draftTools[t.id]);
+    }
   });
   (data.plugins || []).forEach(p => {
-    if (!draftPlugins[p.id]) draftPlugins[p.id] = { values: { ...(p.values || {}) } };
+    if (!draftPlugins[p.id]) {
+      draftPlugins[p.id] = { values: { ...(p.values || {}) } };
+      pluginBaseline[p.id] = componentStamp(draftPlugins[p.id]);
+    }
   });
   renderToolsList();
   renderPluginsList();
   renderResetLists();
+  if (typeof mountPluginTabs === 'function') mountPluginTabs();
   // footer from plugin settings
   const ui = (data.plugins || []).find(p => p.id === 'plugin_web_ui');
-  if (!serverModeOn() && ui && ui.values && ui.values.ui_locale != null) applyUiLocale(preferredLocale(ui.values.ui_locale));
+  let storedLocale = '';
+  try { storedLocale = localStorage.getItem('kerniq.ui_locale') || ''; } catch (_) {}
+  if (!storedLocale && !serverModeOn() && ui && ui.values && ui.values.ui_locale != null) {
+    applyUiLocale(preferredLocale(ui.values.ui_locale));
+  }
   if (ui && ui.values && ui.values.show_footer === false) {
     footerEnabled = false;
     document.getElementById('app-footer').classList.add('hidden');
@@ -1015,6 +1060,14 @@ async function loadComponents() {
 let expandedPacks = {};
 let selectedPack = null;
 let draftPacks = {};
+let toolBaseline = {};
+let pluginBaseline = {};
+function componentStamp(row) {
+  if (!row) return '';
+  const body = { enabled: row.enabled !== false, values: row.values || {} };
+  if (row.schema) body.schema = row.schema;
+  return JSON.stringify(body);
+}
 function planComposeAvailable() {
   const tools = componentsCache.tools || [];
   if (!tools.length) return true;
@@ -1293,6 +1346,92 @@ function fieldVisible(field, values, fields) {
   const count = Math.max(1, Math.min(3, Number(raw || 1)));
   return Number(field.slot) <= count;
 }
+function mountPluginTabs() {
+  const nav = document.getElementById('settings-nav');
+  const main = document.querySelector('.settings-main');
+  if (!nav || !main) return;
+  const reset = nav.querySelector('.stab[data-tab="reset"]');
+  const live = new Set();
+  (componentsCache.plugins || []).forEach(p => {
+    if (!p || !p.id || p.id === 'plugin_web_ui') return;
+    live.add(p.id);
+    const tab = 'plug-' + p.id;
+    let stab = nav.querySelector('.stab[data-tab="' + tab + '"]');
+    if (!stab) {
+      stab = document.createElement('div');
+      stab.className = 'stab';
+      stab.dataset.tab = tab;
+      stab.innerHTML = '<i class="stab-ico" data-i="plugins"></i><span class="stab-tx"></span>';
+      if (reset) nav.insertBefore(stab, reset);
+      else nav.appendChild(stab);
+    }
+    const label = stab.querySelector('.stab-tx');
+    if (label) label.textContent = p.name || p.id;
+    let panel = document.getElementById('tab-' + tab);
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.className = 'scard tabp';
+      panel.id = 'tab-' + tab;
+      panel.style.display = 'none';
+      panel.innerHTML = '<button type="button" class="ghost plug-back"></button><h2></h2><div class="ext-host"></div>';
+      const back = panel.querySelector('.plug-back');
+      back.textContent = t('back');
+      back.addEventListener('click', () => openSettingsAt('plugins', null));
+      main.appendChild(panel);
+    }
+    const title = panel.querySelector('h2');
+    if (title) title.textContent = p.name || p.id;
+    const host = panel.querySelector('.ext-host');
+    if (host && host.dataset.stamp !== componentStamp({ values: (draftPlugins[p.id] && draftPlugins[p.id].values) || p.values || {}, schema: p.schema })) {
+      host.dataset.stamp = componentStamp({ values: (draftPlugins[p.id] && draftPlugins[p.id].values) || p.values || {}, schema: p.schema });
+      host.innerHTML = pluginFormHtml(p);
+      bindPluginForm(host, p);
+    } else if (host && !host.childElementCount) {
+      host.innerHTML = pluginFormHtml(p);
+      bindPluginForm(host, p);
+    }
+  });
+  nav.querySelectorAll('.stab[data-tab^="plug-"]').forEach(stab => {
+    const id = stab.dataset.tab.slice(5);
+    if (live.has(id)) return;
+    const tab = stab.dataset.tab;
+    stab.remove();
+    const panel = document.getElementById('tab-' + tab);
+    if (panel) panel.remove();
+  });
+  placePluginNav();
+}
+function placePluginNav() {
+  const nav = document.getElementById('settings-nav');
+  if (!nav) return;
+  const plugins = nav.querySelector('.stab[data-tab="plugins"]');
+  const reset = nav.querySelector('.stab[data-tab="reset"]');
+  if (!plugins || !reset) return;
+  let top = document.getElementById('nav-split-plugins');
+  let bottom = document.getElementById('nav-split-reset');
+  if (!top) {
+    top = document.createElement('div');
+    top.className = 'nav-split';
+    top.id = 'nav-split-plugins';
+    top.setAttribute('aria-hidden', 'true');
+  }
+  if (!bottom) {
+    bottom = document.createElement('div');
+    bottom.className = 'nav-split';
+    bottom.id = 'nav-split-reset';
+    bottom.setAttribute('aria-hidden', 'true');
+  }
+  const rows = [...nav.querySelectorAll('.stab')].filter(stab => {
+    const tab = stab.dataset.tab || '';
+    return tab.indexOf('plug-') === 0 || tab.indexOf('ext-') === 0;
+  });
+  plugins.after(top);
+  let cursor = top;
+  rows.forEach(row => { cursor.after(row); cursor = row; });
+  cursor.after(bottom);
+  bottom.after(reset);
+  top.hidden = rows.length === 0;
+}
 function openPlugin(id) {
   if (id === 'plugin_web_ui') {
     selectedPluginId = null;
@@ -1303,16 +1442,9 @@ function openPlugin(id) {
   }
   selectedPluginId = id;
   renderPluginsList();
-  const p = (componentsCache.plugins || []).find(x => x.id === id);
-  const bg = document.getElementById('plugin-modal');
-  const title = document.getElementById('plugin-modal-title');
-  const body = document.getElementById('plugin-modal-body');
-  if (!p || !bg || !body) return;
-  if (title) title.textContent = p.name || p.id;
-  body.innerHTML = pluginFormHtml(p);
-  bindPluginForm(body, p);
-  bg.classList.add('on');
-  document.body.classList.add('modal-open');
+  mountPluginTabs();
+  closePluginModal();
+  openSettingsAt('plug-' + id, null);
 }
 function closePluginModal() {
   const bg = document.getElementById('plugin-modal');
@@ -1327,11 +1459,26 @@ function refreshOpenPlugin() {
   const bg = document.getElementById('plugin-modal');
   if (selectedPluginId && bg && bg.classList.contains('on')) openPlugin(selectedPluginId);
 }
-function fieldBlock(f, draft) {
+const ENGLISH_ONLY_PLUGINS = { multi_agent: 1, plugin_mail: 1, 'llm-benchmark': 1, 'Kerniq-llm-benchmark': 1 };
+function pluginText(pluginId, text, fieldKey) {
+  const raw = text == null ? '' : String(text);
+  if (ENGLISH_ONLY_PLUGINS[pluginId] && fieldKey !== 'listed' && fieldKey !== 'enabled') return raw;
+  return translate(raw);
+}
+function fieldBlock(f, draft, pluginId) {
   const val = draft.values[f.key] !== undefined ? draft.values[f.key] : f.default;
-  const label = translate(f.label || '');
-  const tip = translate(f.description || '');
+  const label = pluginText(pluginId, f.label || '', f.key);
+  const tip = pluginText(pluginId, f.description || '', f.key);
   const tipHtml = tip ? '<span class="info-tip" tabindex="0" data-tip="' + esc(tip) + '">i</span>' : '';
+  if (f.source === 'providers' || f.source === 'models') {
+    const note = f.source === 'models' ? '<p class="hint" data-model-note></p>' : '';
+    return '<div class="field"><label class="lbl">' + esc(label) + tipHtml + '</label><select class="input-std" data-fk="' + esc(f.key) + '" data-source="' + esc(f.source) + '"></select>' + note + '</div>';
+  }
+  if (f.unit_key) {
+    const unit = draft.values[f.unit_key] || 'minutes';
+    const opts = ['seconds', 'minutes', 'hours'].map(name => '<option value="' + name + '"' + (unit === name ? ' selected' : '') + '>' + name + '</option>').join('');
+    return '<div class="field"><label class="lbl">' + esc(label) + tipHtml + '</label><div class="row"><input class="input-std" type="number" min="1" step="1" data-fk="' + esc(f.key) + '" value="' + esc(val ?? '') + '" style="flex:1"/><select data-fk="' + esc(f.unit_key) + '" style="width:110px">' + opts + '</select></div></div>';
+  }
   if (f.type === 'bool') {
     return '<div class="field field-check"><label class="check-line"><input type="checkbox" class="soft-check" data-fk="' + esc(f.key) + '"' + (val ? ' checked' : '') + '/><span>' + esc(label) + '</span>' + tipHtml + '</label></div>';
   }
@@ -1340,7 +1487,7 @@ function fieldBlock(f, draft) {
     control = '<select data-fk="' + esc(f.key) + '" class="input-std">';
     f.options.forEach(o => {
       const ov = o.value != null ? o.value : o;
-      const ol = translate(o.label != null ? o.label : String(ov));
+      const ol = pluginText(pluginId, o.label != null ? o.label : String(ov), f.key);
       control += '<option value="' + esc(ov) + '"' + (String(val) === String(ov) ? ' selected' : '') + '>' + esc(ol) + '</option>';
     });
     control += '</select>';
@@ -1349,19 +1496,22 @@ function fieldBlock(f, draft) {
   } else if (f.type === 'path') {
     control = '<div class="path-pick"><input class="input-std" data-fk="' + esc(f.key) + '" value="' + esc(val ?? '') + '"/><button type="button" class="ghost" data-pick="' + esc(f.key) + '">' + esc(translate('Browse…')) + '</button></div>';
   } else {
-    control = '<input class="input-std" type="' + (f.type === 'int' || f.type === 'float' ? 'number' : 'text') + '"' + numAttrs(f) + ' data-fk="' + esc(f.key) + '" value="' + esc(val ?? '') + '"/>';
+    const secret = /password/i.test(f.key || '');
+    control = '<input class="input-std" type="' + (secret ? 'password' : (f.type === 'int' || f.type === 'float' ? 'number' : 'text')) + '"' + (secret ? ' autocomplete="off"' : numAttrs(f)) + ' data-fk="' + esc(f.key) + '" value="' + esc(val ?? '') + '"/>';
   }
   return '<div class="field"><label class="lbl">' + esc(label) + tipHtml + '</label>' + control + '</div>';
 }
 function pluginFormHtml(p) {
   const draft = draftPlugins[p.id] || { values: Object.assign({}, p.values || {}) };
-  const fields = ((p.schema && p.schema.fields) || []).filter(f => fieldVisible(f, draft.values, p.schema && p.schema.fields));
+  const allFields = (p.schema && p.schema.fields) || [];
+  const unitKeys = new Set(allFields.filter(f => f.unit_key).map(f => f.unit_key));
+  const fields = allFields.filter(f => fieldVisible(f, draft.values, allFields) && !unitKeys.has(f.key));
   let html = '';
   const actions = p.actions || [];
   if (actions.length) {
     html += '<div class="plugin-actions">';
     actions.forEach(action => {
-      html += '<button type="button" class="save-active" data-action="' + esc(action.id) + '">' + esc(translate(action.label || action.id)) + '</button>';
+      html += '<button type="button" class="save-active" data-action="' + esc(action.id) + '">' + esc(pluginText(p.id, action.label || action.id, '')) + '</button>';
     });
     html += '</div>';
   }
@@ -1380,12 +1530,12 @@ function pluginFormHtml(p) {
     html += '<div class="set-group' + (wide ? ' span-2' : '') + '">';
     if (group.key !== 'general') {
       const title = group.key.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
-      html += '<h3>' + esc(translate(title)) + '</h3>';
+      html += '<h3>' + esc(pluginText(p.id, title, '')) + '</h3>';
     }
     if (shorts.length > 1) html += '<div class="field-grid">';
-    shorts.forEach(f => { html += fieldBlock(f, draft); });
+    shorts.forEach(f => { html += fieldBlock(f, draft, p.id); });
     if (shorts.length > 1) html += '</div>';
-    texts.forEach(f => { html += fieldBlock(f, draft); });
+    texts.forEach(f => { html += fieldBlock(f, draft, p.id); });
     html += '</div>';
   });
   if (groups.length) html += '</div>';
@@ -1407,6 +1557,10 @@ function bindPluginForm(panel, p) {
       else if (inp.type === 'number') v = Number(inp.value);
       else v = inp.value;
       draftPlugins[id].values[inp.dataset.fk] = v;
+      if (inp.dataset.fk === 'model_strategy') {
+        syncAgentStrategy(panel);
+        fillKerniqModels(panel, id);
+      }
       if (inp.dataset.fk === 'enabled') renderToolsList();
       if (inp.dataset.fk === 'slot_count') redraw();
       else {
@@ -1431,7 +1585,117 @@ function bindPluginForm(panel, p) {
   panel.querySelectorAll('[data-action]').forEach(btn => {
     btn.addEventListener('click', () => runPluginAction(id, btn.dataset.action, btn));
   });
+  panel.querySelectorAll('select[data-fk]').forEach(inp => {
+    if (inp.dataset.source) return;
+    const cur = draftPlugins[id].values[inp.dataset.fk];
+    const match = [...inp.options].some(o => o.value === String(cur ?? ''));
+    if (!match && inp.options.length) draftPlugins[id].values[inp.dataset.fk] = inp.value;
+  });
   syncCompactLimit(panel);
+  syncAgentStrategy(panel);
+  fillKerniqPickers(panel, id);
+}
+function syncAgentStrategy(panel) {
+  const strategy = panel.querySelector('[data-fk="model_strategy"]');
+  if (!strategy) return;
+  const swap = strategy.value === 'swap';
+  ['background_provider', 'background_model'].forEach(key => {
+    const input = panel.querySelector('[data-fk="' + key + '"]');
+    const field = input && input.closest('.field');
+    if (field) field.hidden = !swap;
+  });
+}
+async function fillKerniqPickers(panel, pluginId) {
+  const providerSel = panel.querySelector('[data-source="providers"]');
+  const modelSel = panel.querySelector('[data-source="models"]');
+  if (!providerSel && !modelSel) return;
+  const draft = draftPlugins[pluginId];
+  if (typeof providerCatalog === 'undefined' || !providerCatalog.length) {
+    try { await loadProviderCatalog((settings && settings.api && settings.api.provider) || 'lm_studio'); } catch (_) {}
+  }
+  if (providerSel) {
+    const current = (draft && draft.values && draft.values.background_provider) || providerSel.value || '';
+    const agent = (settings && settings.api && settings.api.provider) || '';
+    providerSel.innerHTML = '';
+    const same = document.createElement('option');
+    same.value = '';
+    same.textContent = agent ? ('Same as Agent (' + agent + ')') : 'Same as Agent';
+    providerSel.appendChild(same);
+    (providerCatalog || []).forEach(row => {
+      const option = document.createElement('option');
+      option.value = row.id;
+      option.textContent = row.label || row.id;
+      providerSel.appendChild(option);
+    });
+    providerSel.value = [...providerSel.options].some(option => option.value === current) ? current : '';
+    if (draft) draft.values.background_provider = providerSel.value;
+    if (!providerSel.dataset.wired) {
+      providerSel.dataset.wired = '1';
+      providerSel.addEventListener('change', () => fillKerniqModels(panel, pluginId));
+    }
+  }
+  await fillKerniqModels(panel, pluginId);
+}
+async function fillKerniqModels(panel, pluginId) {
+  const modelSel = panel.querySelector('[data-source="models"]');
+  if (!modelSel) return;
+  const draft = draftPlugins[pluginId];
+  const providerSel = panel.querySelector('[data-source="providers"]');
+  const agentProvider = (settings && settings.api && settings.api.provider) || '';
+  const provider = (providerSel && providerSel.value) || agentProvider;
+  const note = panel.querySelector('[data-model-note]');
+  const spec = (providerCatalog || []).find(row => row.id === provider);
+  const body = { provider: provider };
+  if (provider && provider === agentProvider && settings && settings.api) {
+    if (settings.api.base_url) body.base_url = settings.api.base_url;
+    if (settings.api.api_token) body.api_token = settings.api.api_token;
+  } else if (spec && spec.default_base_url) {
+    body.base_url = spec.default_base_url;
+  }
+  let data = { models: [], reachable: false, error: 'This provider did not answer.' };
+  try {
+    const response = await fetch('/api/models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
+    });
+    data = JSON.parse(await response.text());
+  } catch (_) {
+    data = { models: [], reachable: false, error: 'timed out' };
+  }
+  const current = (draft && draft.values && draft.values.background_model) || '';
+  modelSel.innerHTML = '';
+  const same = document.createElement('option');
+  same.value = '';
+  const agentModel = (settings && settings.api && settings.api.model) || '';
+  same.textContent = agentModel ? ('Same as Agent (' + agentModel + ')') : 'Same as Agent';
+  modelSel.appendChild(same);
+  if (!data || data.reachable === false || data.error) {
+    if (note) note.textContent = 'This provider did not answer. Open the Agent tab and set it up there.';
+  } else if (note) {
+    note.textContent = '';
+  }
+  (data.models || []).forEach(row => {
+    const id = row.id || row.name;
+    if (!id) return;
+    const option = document.createElement('option');
+    option.value = id;
+    option.textContent = id;
+    modelSel.appendChild(option);
+  });
+  if (current && ![...modelSel.options].some(option => option.value === current)) {
+    const extra = document.createElement('option');
+    extra.value = current;
+    extra.textContent = current;
+    modelSel.appendChild(extra);
+  }
+  modelSel.value = [...modelSel.options].some(option => option.value === current) ? current : '';
+  if (draft) draft.values.background_model = modelSel.value;
+  const strategy = panel.querySelector('[data-fk="model_strategy"]');
+  if (note && !note.textContent && strategy && strategy.value === 'swap' && !modelSel.value) {
+    note.textContent = "Pick the agents' model.";
+  }
 }
 function liveKerniqSettings() {
   const snap = {
@@ -1541,6 +1805,14 @@ async function watchBenchmark() {
   };
   tick();
 }
+async function pollPluginJob(jobId) {
+  for (let i = 0; i < 180; i++) {
+    const job = await api('/api/plugins/job?id=' + encodeURIComponent(jobId));
+    if (!job || job.error || (job.status && job.status !== 'running')) return job;
+    await new Promise(resolve => setTimeout(resolve, 400));
+  }
+  return { error: 'Timed out' };
+}
 async function runPluginAction(pluginId, actionId, button) {
   if (button) button.disabled = true;
   const draft = draftPlugins[pluginId];
@@ -1555,6 +1827,7 @@ async function runPluginAction(pluginId, actionId, button) {
     body: JSON.stringify({
       plugin_id: pluginId,
       action_id: actionId,
+      values: draft ? draft.values : {},
       client_settings: settings ? liveKerniqSettings() : null,
     }),
   });
@@ -1563,10 +1836,53 @@ async function runPluginAction(pluginId, actionId, button) {
     if (button) button.disabled = false;
     return;
   }
-  try { sessionStorage.setItem('kerniq_benchmark_job', started.job_id); } catch (_) {}
-  toast(translate('Benchmark started'));
-  watchBenchmark();
+  if (pluginId === 'llm-benchmark') {
+    try { sessionStorage.setItem('kerniq_benchmark_job', started.job_id); } catch (_) {}
+    toast(translate('Benchmark started'));
+    watchBenchmark();
+    if (button) button.disabled = false;
+    return;
+  }
+  const job = await pollPluginJob(started.job_id);
   if (button) button.disabled = false;
+  if (!job || job.error || job.status === 'failed') {
+    toast((job && (job.error || (job.result && job.result.error))) || t('error'), true);
+    return;
+  }
+  const result = job.result || {};
+  const text = result.summary || result.message || t('done');
+  toast(text);
+  if (draft && result.values && typeof result.values === 'object') {
+    Object.keys(result.values).forEach(key => {
+      draft.values[key] = result.values[key];
+    });
+  }
+  if (result.reload) {
+    delete draftPlugins[pluginId];
+    const panel = document.getElementById('tab-plug-' + pluginId);
+    const openHost = panel && panel.querySelector('.ext-host');
+    if (openHost) delete openHost.dataset.stamp;
+    await loadComponents();
+    return;
+  }
+  const host = button && button.closest ? button.closest('#plugin-modal-body, .ext-host, .scard') : null;
+  if (host && draft && result.values) {
+    Object.keys(result.values).forEach(key => {
+      const input = host.querySelector('[data-fk="' + key + '"]');
+      if (!input) return;
+      if (input.type === 'checkbox') input.checked = !!result.values[key];
+      else input.value = result.values[key] == null ? '' : result.values[key];
+    });
+  }
+  if (host) {
+    let box = host.querySelector('.plugin-action-result');
+    if (!box) {
+      box = document.createElement('pre');
+      box.className = 'plugin-action-result';
+      host.appendChild(box);
+    }
+    box.textContent = text;
+  }
 }
 function renderPluginDetail(id) { openPlugin(id); }
 function syncCompactLimit(panel) {
@@ -1645,6 +1961,7 @@ async function saveAllSettings() {
     undo_history_size: Number(document.getElementById('s-undo-size').value) || 100,
     loop_retries: Number(document.getElementById('s-loop-retries')?.value) || 4,
     host_freedom: window.KerniqHostFreedom ? KerniqHostFreedom.checked() : false,
+    allow_elevated: !!document.getElementById('s-allow-elevated')?.checked,
     use_venv: serverModeOn() ? true : document.getElementById('s-leave-venv')?.checked !== false,
   };
   undoLimit = agent.undo_history_size;
@@ -1707,22 +2024,36 @@ async function saveAllSettings() {
   } else {
     await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent, api: apiBody, prompt, chat }) });
   }
+  const langNow = (document.getElementById('ui-lang') && document.getElementById('ui-lang').value) || preferredLocale('');
+  try { localStorage.setItem('kerniq.ui_locale', langNow); } catch (_) {}
+  const uiDraft = draftPlugins['plugin_web_ui'] || (draftPlugins['plugin_web_ui'] = { values: {} });
+  uiDraft.values = Object.assign({}, uiDraft.values, { ui_locale: langNow });
+  const jobs = [];
   for (const t of (componentsCache.tools || [])) {
     const d = draftTools[t.id];
     if (!d) continue;
-    await api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'tool', id: t.id, values: d.values, enabled: d.enabled }) });
+    const stamp = componentStamp(d);
+    if (toolBaseline[t.id] === stamp) continue;
+    jobs.push(api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'tool', id: t.id, values: d.values, enabled: d.enabled }) }).then(result => {
+      if (!result || !result.error) toolBaseline[t.id] = stamp;
+    }));
   }
   for (const pack of (componentsCache.packs || [])) {
     const intent = draftPacks[pack.id];
     if (!intent || typeof intent.forceEnabled !== 'boolean') continue;
-    await api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'pack', id: pack.id, values: {}, enabled: intent.forceEnabled }) });
+    jobs.push(api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'pack', id: pack.id, values: {}, enabled: intent.forceEnabled }) }));
   }
   for (const p of (componentsCache.plugins || [])) {
     const d = draftPlugins[p.id];
     if (!d) continue;
-    await api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'plugin', id: p.id, values: d.values }) });
+    const stamp = componentStamp(d);
+    if (pluginBaseline[p.id] === stamp) continue;
+    jobs.push(api('/api/component/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'plugin', id: p.id, values: d.values }) }).then(result => {
+      if (!result || !result.error) pluginBaseline[p.id] = stamp;
+    }));
   }
-  await saveFolderLimits();
+  jobs.push(saveFolderLimits());
+  await Promise.all(jobs);
   paintWorkspaceLabel(serverModeOn() ? '' : agent.workspace);
   applyServerChrome();
   settings = settings || {};
@@ -1733,8 +2064,8 @@ async function saveAllSettings() {
   streamingEnabled = chat.streaming !== false;
   resetTps(!streamingEnabled);
   syncSettingLocks();
-  const uiDraft = draftPlugins['plugin_web_ui'];
-  if (uiDraft && uiDraft.values && uiDraft.values.show_footer === false) {
+  const footerDraft = draftPlugins['plugin_web_ui'];
+  if (footerDraft && footerDraft.values && footerDraft.values.show_footer === false) {
     document.getElementById('app-footer').classList.add('hidden');
   } else {
     document.getElementById('app-footer').classList.remove('hidden');
@@ -1845,7 +2176,11 @@ async function openSettingsAt(tab, focusId) {
   }
   const stab = document.querySelector('.stab[data-tab="' + tab + '"]');
   if (stab) stab.click();
-  if (focusId) window.setTimeout(() => flashSetting(document.getElementById(focusId)), 40);
+  if (focusId) window.setTimeout(() => {
+    const panel = document.getElementById('tab-' + tab);
+    const el = document.getElementById(focusId) || (panel && panel.querySelector('[data-fk="' + focusId + '"]'));
+    flashSetting(el || panel);
+  }, 40);
 }
 async function openContextSettings() {
   await openSettingsAt('plugins', null);
@@ -1859,7 +2194,7 @@ async function openContextSettings() {
   selectedPluginId = plug.id;
   renderPluginsList();
   openPlugin(plug.id);
-  setTimeout(() => flashSetting(document.querySelector('#plugin-modal [data-fk="trigger_percent"]')), 40);
+  setTimeout(() => flashSetting(document.querySelector('#tab-plug-' + plug.id + ' [data-fk="trigger_percent"]')), 80);
 }
 
 /* nav */
@@ -1892,7 +2227,8 @@ document.getElementById('nav-settings').onclick = () => {
 };
 document.getElementById('footer-provider').onclick = () => { openSettingsAt('api', 's-provider'); };
 document.getElementById('footer-model').onclick = () => { openSettingsAt('api', 's-model'); };
-document.getElementById('footer-ctx').onclick = () => { openContextSettings(); };
+document.getElementById('footer-ctx').onclick = () => { openSettingsAt('api', 's-api-context'); };
+document.getElementById('footer-compact').onclick = () => { openContextSettings(); };
 document.getElementById('top-workspace').onclick = () => { openSettingsAt('agent', 's-workspace'); };
 document.getElementById('btn-toggle-explorer').onclick = () => { if (!layoutBusy) setExplorerCollapsed(!explorerCollapsed); };
 document.getElementById('btn-toggle-chat').onclick = () => setChatCollapsed(!chatCollapsed);
@@ -1911,10 +2247,15 @@ function pluginResult(result) {
     toast((result && (result.error || result.message)) || t('error'), true);
     return;
   }
-  toast(result.message || t('done'));
+  toast(result.message || t('pluginReady'));
   if (result.restart) toast(t('pluginRestart'));
-  loadComponents().catch(() => {});
+  loadComponents().then(() => { if (typeof mountPluginTabs === 'function') mountPluginTabs(); }).catch(() => {});
 }
+document.getElementById('plugin-repo')?.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter') return;
+  ev.preventDefault();
+  document.getElementById('plugin-search')?.click();
+});
 document.getElementById('plugin-search')?.addEventListener('click', async () => {
   const q = document.getElementById('plugin-repo');
   const hits = document.getElementById('plugin-search-hits');
@@ -1974,16 +2315,104 @@ document.getElementById('plugin-updates')?.addEventListener('click', async () =>
     box.appendChild(line);
   });
 });
-document.getElementById('plugin-modal-body')?.addEventListener('click', async (ev) => {
+document.addEventListener('click', async (ev) => {
+  const link = ev.target.closest && ev.target.closest('.settings-link');
+  if (link) {
+    ev.preventDefault();
+    openSettingsAt(link.dataset.tab, link.dataset.focus);
+    return;
+  }
   const btn = ev.target.closest && ev.target.closest('[data-plugin-remove]');
   if (!btn) return;
   const result = await api('/api/plugins/remove', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: btn.getAttribute('data-plugin-remove') }),
   });
-  if (result && result.ok) closePluginModal();
+  if (result && result.ok) {
+    closePluginModal();
+    openSettingsAt('plugins', null);
+  }
   pluginResult(result);
 });
+function settingsHaystack() {
+  const items = [];
+  document.querySelectorAll('#settings-nav .stab').forEach(stab => {
+    const tab = stab.dataset.tab;
+    if (!tab) return;
+    const tabLabel = ((stab.querySelector('.stab-tx') || stab).textContent || '').trim();
+    const panel = document.getElementById('tab-' + tab);
+    if (!panel) {
+      items.push({ tab: tab, id: '', label: tabLabel, where: tabLabel });
+      return;
+    }
+    let found = false;
+    panel.querySelectorAll('.field, .field-check').forEach(field => {
+      const labelEl = field.querySelector('.lbl, .check-line span');
+      const label = ((labelEl && labelEl.textContent) || '').replace(/\s+/g, ' ').trim();
+      const input = field.querySelector('input, select, textarea');
+      const id = (input && (input.id || input.getAttribute('data-fk'))) || '';
+      if (!label && !id) return;
+      found = true;
+      items.push({ tab: tab, id: id, label: label || id, where: tabLabel });
+    });
+    if (!found) items.push({ tab: tab, id: '', label: tabLabel, where: tabLabel });
+  });
+  return items;
+}
+function paintSettingsHits(hits) {
+  const box = document.getElementById('settings-hits');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!hits.length) {
+    box.hidden = false;
+    box.textContent = t('settingsNoMatch');
+    return;
+  }
+  box.hidden = false;
+  hits.forEach(hit => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    const name = document.createElement('span');
+    name.textContent = hit.label;
+    const where = document.createElement('small');
+    where.textContent = hit.where;
+    b.appendChild(name);
+    b.appendChild(where);
+    b.addEventListener('click', () => {
+      box.hidden = true;
+      openSettingsAt(hit.tab, hit.id || null);
+    });
+    box.appendChild(b);
+  });
+}
+function runSettingsSearch(jump) {
+  const input = document.getElementById('settings-search');
+  const box = document.getElementById('settings-hits');
+  if (!input || !box) return;
+  const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) { box.hidden = true; box.innerHTML = ''; return; }
+  const hits = settingsHaystack().filter(item => {
+    const hay = (item.label + ' ' + item.where + ' ' + item.id).toLowerCase();
+    return words.every(word => hay.indexOf(word) >= 0);
+  }).slice(0, 12);
+  if (jump && hits.length) {
+    box.hidden = true;
+    openSettingsAt(hits[0].tab, hits[0].id || null);
+    return;
+  }
+  paintSettingsHits(hits);
+}
+const settingsSearch = document.getElementById('settings-search');
+if (settingsSearch) {
+  settingsSearch.addEventListener('input', () => runSettingsSearch(false));
+  settingsSearch.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); runSettingsSearch(true); }
+    if (ev.key === 'Escape') {
+      const box = document.getElementById('settings-hits');
+      if (box) box.hidden = true;
+    }
+  });
+}
 document.getElementById('settings-nav')?.addEventListener('click', (ev) => {
   const s = ev.target.closest && ev.target.closest('.stab');
   if (!s || !s.dataset.tab) return;
@@ -2024,7 +2453,7 @@ async function resumeServerChat() {
     currentRunId = snap.run_id;
     updateActionBtn();
     setStatus(statusLabel('processing'), true);
-    await pollRun(snap.run_id, snap.cursor || 0);
+    await pollRun(snap.run_id, snap.cursor || 0, 45);
     finalizeLiveMessages();
     running = false;
     autoFooterModel = '';

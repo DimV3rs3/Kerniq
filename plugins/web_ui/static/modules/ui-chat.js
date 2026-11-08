@@ -128,6 +128,13 @@ function toolIcon(name) {
   if (t && t.ui_icon && t.ui_icon !== '⚙' && t.ui_icon !== 'tool') return t.ui_icon;
   return HAMMER_SVG;
 }
+function toolCardState(m) {
+  if (!m || m.status === 'pending') return t('waitingForTool');
+  const reason = String(m.stop_reason || '').toLowerCase();
+  if (reason === 'timeout' || reason.indexOf('timeout') >= 0 || reason.indexOf('timed out') >= 0) return t('timedOut');
+  if (m.success === false || m.status === 'error') return t('toolFailed');
+  return t('done');
+}
 function toolStatePhrase(name, count) {
   const tool = (componentsCache.tools || []).find(x => x.name === name || x.id === name);
   let phrase = String((tool && tool.display_phrase) || '').trim();
@@ -275,34 +282,63 @@ function appendBotTools(d, m, done) {
   row.appendChild(makeCopyButton(() => m.content || ''));
   d.appendChild(row);
 }
+function attachmentNames(list) {
+  return (Array.isArray(list) ? list : []).map(item => {
+    const raw = typeof item === 'string' ? item : (item && (item.name || item.path) || '');
+    return String(raw).split(/[\\/]/).filter(Boolean).pop() || '';
+  }).filter(Boolean);
+}
+function moreFilesLabel(n) {
+  return translate('{n} more files...').split('{n}').join(String(n));
+}
 function buildUserMessage(d, m) {
   d.className = 'msg user';
+  const names = attachmentNames(m.attachments);
+  if (names.length) {
+    const box = document.createElement('div');
+    box.className = 'user-files';
+    names.slice(0, 3).forEach(name => {
+      const row = document.createElement('div');
+      row.className = 'user-file';
+      row.textContent = name;
+      box.appendChild(row);
+    });
+    if (names.length > 3) {
+      const more = document.createElement('div');
+      more.className = 'user-file more';
+      more.textContent = moreFilesLabel(names.length - 3);
+      box.appendChild(more);
+    }
+    d.appendChild(box);
+  }
   const text = m.content || '';
-  const bubble = document.createElement('div');
-  bubble.className = 'user-bubble';
-  const body = document.createElement('div');
-  body.className = 'user-body';
-  body.textContent = text;
-  bubble.appendChild(body);
-  if (m._expanded) d.classList.add('expanded');
-  const more = document.createElement('button');
-  more.type = 'button';
-  more.className = 'expand-btn';
-  more.textContent = translate(m._expanded ? 'Show less' : 'Show more');
-  more.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    m._expanded = !m._expanded;
-    d.classList.toggle('expanded', !!m._expanded);
+  if (String(text).trim()) {
+    const bubble = document.createElement('div');
+    bubble.className = 'user-bubble';
+    const body = document.createElement('div');
+    body.className = 'user-body';
+    body.textContent = text;
+    bubble.appendChild(body);
+    if (m._expanded) d.classList.add('expanded');
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'expand-btn';
     more.textContent = translate(m._expanded ? 'Show less' : 'Show more');
-    updateScrollBtn();
-  });
-  bubble.appendChild(more);
-  d.appendChild(bubble);
+    more.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      m._expanded = !m._expanded;
+      d.classList.toggle('expanded', !!m._expanded);
+      more.textContent = translate(m._expanded ? 'Show less' : 'Show more');
+      updateScrollBtn();
+    });
+    bubble.appendChild(more);
+    d.appendChild(bubble);
+    d.dataset.clamp = '1';
+  }
   const row = document.createElement('div');
   row.className = 'msg-tools';
-  row.appendChild(makeCopyButton(() => text));
+  row.appendChild(makeCopyButton(() => text || names.join('\n')));
   d.appendChild(row);
-  d.dataset.clamp = '1';
 }
 // with auto-expand on, a finished block folds itself unless the user touched it
 function foldFinishedThink(m) {
@@ -426,15 +462,15 @@ function renderMessagesNow() {
       const failed = m.errors || 0;
       d.className = 'msg tool ' + (failed ? 'err' : 'ok');
       d.innerHTML = '<span class="tool-ico">' + HAMMER_SVG + '</span><span class="tool-name">' + esc(m.name) + '</span>'
-        + '<span class="tool-state">' + esc(toolStatePhrase(m.name, m.count)) + '</span>'
-        + (failed ? '<span class="muted">(' + failed + ' ' + esc(translate('failed')) + ')</span>' : '');
+        + '<span class="tool-state">' + esc(failed ? t('toolFailed') : t('done')) + '</span>'
+        + '<span class="muted">' + esc(toolStatePhrase(m.name, m.count)) + '</span>';
     } else if (m.kind === 'tool') {
       const ok = m.success !== false && m.status !== 'error';
       const pending = m.status === 'pending';
       d.className = 'msg tool' + (pending ? ' pending' : (ok ? ' ok' : ' err'));
       const debug = !!(settings && settings.chat && settings.chat.developer_mode);
       let body = '<span class="tool-ico">' + HAMMER_SVG + '</span><span class="tool-name">' + esc(m.name) + '</span>'
-        + '<span class="tool-state">' + (pending ? esc(t('waitingForTool')) : (ok ? esc(toolStatePhrase(m.name, 1)) : 'error')) + '</span>';
+        + '<span class="tool-state">' + esc(toolCardState(m)) + '</span>';
       if (!pending && m.stop_reason && m.stop_reason !== 'completed') body += '<span class="muted">(' + esc(m.stop_reason) + ')</span>';
       if (debug && m.args && !pending) body += '<span class="tool-detail">' + esc(typeof m.args === 'string' ? m.args : JSON.stringify(m.args)) + '</span>';
       if (!pending && m.summary) body += '<span class="tool-detail">' + esc(m.summary) + '</span>';
@@ -673,7 +709,7 @@ actionBtn.onclick = async () => {
   }
   if (sendLock) return;
   const text = promptEl.value;
-  if (!hasMeaningfulText(text)) return;
+  if (!hasMeaningfulText(text) && !chatAttachments.length) return;
   sendLock = true;
   sendAbort = false;
   running = true;
@@ -716,8 +752,20 @@ actionBtn.onclick = async () => {
       if (notes.length) taskToSend = text.trim() + '\n\n' + notes.join('\n\n');
     }
     c.messages.push({ role: 'user', content: text.trim(), attachments: chatAttachments.slice() });
-    if (c.title === 'New chat' || c.title === 'Chat') {
-      c.title = chatTitleFromPrompt(text);
+    const wantsTitle = c.title === 'New chat' || c.title === 'Chat';
+    if (wantsTitle) {
+      const named = attachmentNames(chatAttachments);
+      c.title = hasMeaningfulText(text) ? chatTitleFromPrompt(text) : (named[0] || 'New chat');
+    }
+    chatAttachments = [];
+    renderAttachChips();
+    promptEl.value = ''; autoGrow(); updateActionBtn();
+    saveChats(); renderChatList(); renderMessages();
+    setStatus(statusLabel('processing'), true);
+    await runAgent(taskToSend);
+    // Ask for a title only after the run. A parallel title request shares the
+    // single LM Studio slot and kills the CUDA engine during prefill.
+    if (wantsTitle) {
       api('/api/chat/title', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -726,12 +774,6 @@ actionBtn.onclick = async () => {
         if (r && r.title) { c.title = r.title; saveChats(); renderChatList(); refreshChatHeading(); }
       }).catch(() => {});
     }
-    chatAttachments = [];
-    renderAttachChips();
-    promptEl.value = ''; autoGrow(); updateActionBtn();
-    saveChats(); renderChatList(); renderMessages();
-    setStatus(statusLabel('processing'), true);
-    await runAgent(taskToSend);
   } catch (err) {
     console.error('send failed', err);
     autoFooterModel = '';
@@ -763,7 +805,15 @@ async function runAgent(task) {
       if (!m || m.kind === 'status' || m.kind === 'notice' || m.kind === 'divider') continue;
       if (m.kind === 'think_live' || m.kind === 'think_collapsed') continue;
       if (m.kind === 'tool' || m.kind === 'tool_agg' || m.kind === 'file_op') continue;
-      if (m.role === 'user' && m.content) hist.push({ role: 'user', content: String(m.content) });
+      if (m.role === 'user' && (m.content || (m.attachments && m.attachments.length))) {
+        let content = String(m.content || '').trim();
+        const paths = (m.attachments || []).map(a => (a && a.path) || a).filter(Boolean);
+        if (paths.length) {
+          const note = 'Attached files:\n' + paths.join('\n');
+          content = content ? content + '\n\n' + note : note;
+        }
+        if (content) hist.push({ role: 'user', content });
+      }
       if (m.role === 'assistant' && m.content) hist.push({ role: 'assistant', content: String(m.content) });
     }
     if (hist.length && hist[hist.length - 1].role === 'user') hist.pop();
@@ -825,18 +875,19 @@ async function runAgent(task) {
   updateActionBtn();
   try { await refreshModelFooter(); } catch (_) {}
 }
-async function pollRun(runId, startCursor) {
+async function pollRun(runId, startCursor, idleCapSec) {
   let done = false;
   let idleTicks = 0;
   let networkFails = 0;
   let cursor = Number(startCursor || 0);
-  // Match agent timeout (seconds) — long prompt prefill must not kill the UI
+  // Match agent timeout (seconds) — long prompt prefill must not kill the UI.
+  // A refresh passes a short cap: a live run heartbeats every 15s, a dead one does not.
   const timeoutSec = Math.max(
     120,
     Number((settings && settings.agent && settings.agent.timeout_seconds) || 600)
   );
-  // idle ticks of 350ms; allow full timeout + 2 min slack with no events
-  const maxIdleTicks = Math.ceil((timeoutSec + 120) / 0.35);
+  const cap = idleCapSec ? Number(idleCapSec) : (timeoutSec + 120);
+  const maxIdleTicks = Math.ceil(cap / 0.35);
   while (!done) {
     await new Promise(r => setTimeout(r, 350));
     let ev;
@@ -938,6 +989,12 @@ function finalizeLiveMessages() {
     if (m.kind === 'think_live') {
       m.kind = 'think_collapsed';
       foldFinishedThink(m);
+    }
+    if (m.kind === 'tool' && m.status === 'pending') {
+      m.status = 'error';
+      m.success = false;
+      m.stop_reason = 'timeout';
+      m.summary = m.summary || t('timedOut');
     }
   }
   saveChats();
@@ -1114,6 +1171,16 @@ function handleEvent(e) {
       generatingTokens = false;
       setFooterActivity('work');
       setStatus(t('waitingForTool'), true);
+    } else if (st === 'tool_settled') {
+      setFooterActivity('work');
+      const fake = { status: 'success', stop_reason: e.stop_reason || e.text || '', success: true };
+      const reason = String(e.stop_reason || e.text || '').toLowerCase();
+      if (reason === 'timeout' || reason.indexOf('timeout') >= 0 || reason.indexOf('timed out') >= 0 || reason === 'error' || reason === 'cancelled') {
+        fake.status = 'error';
+        fake.success = false;
+        fake.stop_reason = reason;
+      }
+      setStatus(toolCardState(fake), false);
     } else {
       setStatus(e.text || statusLabel(st), true);
     }
@@ -1249,6 +1316,8 @@ function handleEvent(e) {
     } else {
       c.messages.push(incoming);
     }
+    if (incoming.status === 'pending') setStatus(t('waitingForTool'), true);
+    else setStatus(toolCardState(incoming.status === 'pending' ? incoming : Object.assign({ success: incoming.success !== false }, incoming)), false);
     if (e.status === 'error' || e.success === false) {
       const brief = translate(e.summary || e.name || 'Error');
       const detail = developerOn()

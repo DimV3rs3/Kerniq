@@ -97,6 +97,14 @@ def assess_command(command: str, *, allow_network: bool = False, host_freedom: b
             False,
             "python -S is denied; it would skip the sandbox guard",
         )
+    try:
+        from Kerniq.sandbox.runtimes import language_block_reason
+
+        blocked = language_block_reason(cmd)
+    except Exception:
+        blocked = ""
+    if blocked:
+        return CommandVerdict(False, blocked)
     if _OBFUSCATION.search(cmd):
         return CommandVerdict(False, "Obfuscated command construction is denied")
     if host_freedom:

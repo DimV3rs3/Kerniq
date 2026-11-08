@@ -67,6 +67,20 @@ def _scrub_env(workspace: Path, *, host_freedom: bool = False, use_venv: bool = 
     return env
 
 
+def _hidden_spawn() -> dict:
+    """Flags for a short helper process. A console window must not appear."""
+    import sys
+
+    if sys.platform != "win32":
+        return {}
+    try:
+        from Kerniq.sandbox.proc import hidden_kwargs
+
+        return hidden_kwargs()
+    except Exception:
+        return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+
+
 def kill_tree_command(pid: int) -> list[str] | None:
     """Windows needs taskkill /T. POSIX kills the process group instead."""
     import sys
@@ -94,7 +108,7 @@ def _kill_tree(process) -> None:
         command = kill_tree_command(pid)
         if command:
             try:
-                subprocess.run(command, capture_output=True, timeout=8, check=False)
+                subprocess.run(command, capture_output=True, timeout=8, check=False, **_hidden_spawn())
                 return
             except Exception:
                 pass
@@ -111,15 +125,21 @@ def _kill_tree(process) -> None:
 
 
 async def _stop_process(process, comm) -> None:
-    """Kill the child tree and let communicate() reap it. Do not wait() beside communicate()."""
+    """Kill the child tree. communicate() is never awaited without a deadline.
+
+    A shell that ignores the first kill used to sit on ``await comm`` forever,
+    so the tool card stayed on "Waiting for a tool".
+    """
     _kill_tree(process)
     if comm is not None and not comm.done():
         try:
             await asyncio.wait_for(comm, 2)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             comm.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await comm
+            try:
+                await asyncio.wait_for(comm, 1.5)
+            except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+                pass
         except Exception:
             pass
     elif getattr(process, "returncode", None) is None:
@@ -176,6 +196,7 @@ class TerminalTools(Tool):
             "only links: ./workspace, ./attachments, and ./downloads. "
             "It does not copy those folders. "
             "python and pip in this shell are the workspace sandbox .kerniq-venv. "
+            "node, npm, and dotnet are the workspace language sandbox, not the copies installed on this computer. "
             "Do not use absolute paths, UNC paths, '..', sudo, or commands that inspect the host. "
             "On Windows this is PowerShell (not cmd). On Linux/macOS this is bash/sh."
         )
@@ -239,7 +260,10 @@ class TerminalTools(Tool):
     async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
         command = arguments.get("command")
         cwd_rel = arguments.get("cwd", ".")
-        timeout = arguments.get("timeout", 30)
+        from Kerniq.tools.deadline import tool_timeout_seconds
+
+        configured = getattr(self, "cfg_default_timeout", 30)
+        timeout = tool_timeout_seconds(arguments, fallback=configured)
 
         # Security check for command content (paths, obfuscation, blacklist).
         # This runs even if an approval provider already said yes.
@@ -255,8 +279,7 @@ class TerminalTools(Tool):
             )
 
         # Host freedom is decided before the symlink walk and before the
-        # working-directory check. While the venv is still on, a link that
-        # leaves the workspace still refuses the shell.
+        # working-directory check. An open host may leave the workspace.
         open_host = False
         opener = getattr(self._security_policy, "host_is_open", None)
         if callable(opener):
@@ -302,7 +325,7 @@ class TerminalTools(Tool):
         call_id = getattr(context, "last_tool_call_id", "unknown")
         started = time.monotonic()
         # Prefer list form on Windows for simple commands is hard; use shell but isolate.
-        # Venv off, or host freedom (which requires the venv off): the shell gets the host PATH.
+        # Venv off, or host freedom: the shell gets the host PATH.
         use_venv = bool(getattr(self._security_policy, "use_venv", True)) and not open_host
         kwargs = dict(
             stdout=asyncio.subprocess.PIPE,
@@ -318,8 +341,15 @@ class TerminalTools(Tool):
         if sys.platform == "win32":
             kwargs["stdin"] = asyncio.subprocess.DEVNULL
             flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            # Additionally hide any possible console window that might be opened by PowerShell.
-            kwargs["creationflags"] = flags | 0x00000010  # DETACHED_PROCESS
+            # 0x10 is CREATE_NEW_CONSOLE. It forces a window and cancels CREATE_NO_WINDOW.
+            kwargs["creationflags"] = flags
+            try:
+                info = subprocess.STARTUPINFO()
+                info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                info.wShowWindow = 0
+                kwargs["startupinfo"] = info
+            except Exception:
+                pass
         else:
             kwargs["start_new_session"] = True
         try:

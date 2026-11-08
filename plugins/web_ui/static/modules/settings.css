@@ -24,9 +24,10 @@
   transition: background .15s, color .15s;
 }
 .stab:hover { background: var(--bg-2); color: var(--fg-2); }
-.stab.active { background: var(--acc-soft); color: var(--fg); box-shadow: inset 3px 0 0 var(--acc); }
-.stab[data-tab="reset"] { margin-top: 12px; position: relative; }
-.stab[data-tab="reset"]::before { content: ""; position: absolute; left: 8px; right: 8px; top: -7px; height: 1px; background: var(--line); }
+.stab.active { background: var(--accent-soft, var(--acc-soft)); color: var(--fg); box-shadow: inset 3px 0 0 var(--accent, var(--acc)); }
+.nav-split { height: 1px; margin: 10px 8px; background: var(--line); flex: none; pointer-events: none; }
+.stab[data-tab="reset"] { margin-top: 0; }
+.stab[data-tab="reset"]::before { content: none; }
 
 .settings-layout .settings-main {
   flex: 1;
@@ -254,6 +255,71 @@ select.fit, #s-auto-approve, #s-chat-lang, #s-provider { width: auto; min-width:
 .plugin-catalog { margin: 0 0 16px; }
 .plugin-catalog .path-pick { display: flex; flex-wrap: wrap; gap: 8px; }
 .plugin-catalog .path-pick .input-std { flex: 1 1 180px; min-width: 0; }
+#plugin-search { width: 34px; min-width: 34px; padding: 0; }
+#plugin-search svg { display: block; }
+.settings-find { position: relative; margin: 0 2px 12px; }
+.settings-find input {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px 0 30px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-m);
+  background: var(--bg-0);
+  color: var(--fg);
+}
+.settings-find .find-ico {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.settings-hits {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-m);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-pop);
+}
+.settings-hits button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  font-weight: 500;
+  white-space: normal;
+}
+.settings-hits button small { color: var(--muted); font-weight: 400; }
+.settings-hits button:hover { background: var(--accent-soft, var(--acc-soft)); }
+.settings-link {
+  display: inline;
+  min-height: 0;
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--accent, var(--acc));
+  font: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.settings-link:hover { background: transparent; border: 0; filter: brightness(1.1); }
 .plugin-hits { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .plugin-hit { justify-content: flex-start; text-align: left; white-space: normal; }
 
@@ -355,7 +421,7 @@ body.run-locked #view-settings .stab { pointer-events: auto; opacity: 1; }
 .seg { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--line-strong); border-radius: var(--r-m); background: var(--bg-0); }
 .seg button { min-height: 28px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-weight: 500; }
 .seg button:hover:not(:disabled):not(.on) { background: var(--bg-2); color: var(--fg-2); border: 0; }
-.seg button.on { background: var(--acc-soft); color: var(--acc); }
+.seg button.on { background: var(--accent-soft, var(--acc-soft)); color: var(--accent, var(--acc)); }
 
 
 .usage-card { margin-top: 16px; }
@@ -369,7 +435,7 @@ body.run-locked #view-settings .stab { pointer-events: auto; opacity: 1; }
 .usage-stack, .usage-line { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: var(--bg-2); }
 .usage-stack i, .usage-line i { display: block; height: 100%; min-width: 0; flex: none; padding: 0; border: 0; }
 .usage-line { margin: 6px 0; }
-.usage-line i.workspace, .usage-stack i.workspace { background: #6fa8e8; }
+.usage-line i.workspace, .usage-stack i.workspace { background: var(--accent, var(--acc)); }
 .usage-line i.attachments, .usage-stack i.attachments { background: #e5c97a; }
 .usage-line i.downloads, .usage-stack i.downloads { background: #7dcea0; }
 .usage-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }

@@ -13,9 +13,8 @@
 <link rel="stylesheet" href="/static/modules/chat.css"/>
 <link rel="stylesheet" href="/static/modules/settings.css"/>
 <link rel="stylesheet" href="/static/modules/overlays.css"/>
-<link rel="stylesheet" href="/static/modules/layout-agent.css"/>
 <link rel="stylesheet" href="/static/modules/theme.css"/>
-<link rel="stylesheet" href="/static/modules/host-freedom.css"/>
+<link rel="stylesheet" href="/static/modules/layout-agent.css"/>
 </head><body>
 <div class="topbar">
   <div class="top-left">
@@ -140,6 +139,11 @@
 <div id="view-settings">
   <div class="settings-layout">
     <nav id="settings-nav">
+      <div class="settings-find">
+        <svg class="find-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="search" id="settings-search" data-i18n-placeholder="settingsSearch" placeholder="Search settings" autocomplete="off"/>
+        <div id="settings-hits" class="settings-hits" hidden></div>
+      </div>
       <div class="stab active" data-tab="agent"><i class="stab-ico" data-i="agent"></i><span class="stab-tx">Agent</span></div>
       <div class="stab" data-tab="api"><i class="stab-ico" data-i="api"></i><span class="stab-tx">API & model</span></div>
       <div class="stab" data-tab="prompt"><i class="stab-ico" data-i="prompt"></i><span class="stab-tx">System prompt</span></div>
@@ -147,6 +151,8 @@
       <div class="stab" data-tab="interface"><i class="stab-ico" data-i="interface"></i><span class="stab-tx">Interface</span></div>
       <div class="stab" data-tab="tools"><i class="stab-ico" data-i="tools"></i><span class="stab-tx">Tools</span></div>
       <div class="stab" data-tab="plugins"><i class="stab-ico" data-i="plugins"></i><span class="stab-tx">Plugins</span></div>
+      <div class="nav-split" id="nav-split-plugins" hidden></div>
+      <div class="nav-split" id="nav-split-reset"></div>
       <div class="stab" data-tab="reset"><i class="stab-ico" data-i="reset"></i><span class="stab-tx">Reset settings</span></div>
     </nav>
     <div class="settings-main">
@@ -202,6 +208,14 @@
             <span data-i18n="hostFreedom">Allow host paths and privileged commands</span>
             <span class="info-tip" tabindex="0" data-tip="Off by default. Shown only after developer mode is on and the virtual environment is off. Server mode never offers this.">i</span>
           </label>
+        </div>
+        <div class="field field-check" id="allow-elevated-field" hidden>
+          <label class="check-line">
+            <input type="checkbox" id="s-allow-elevated" class="soft-check"/>
+            <span data-i18n="allowElevated">Allow elevated (admin) actions</span>
+            <span class="info-tip" tabindex="0" data-tip="Windows: restart the UI as Administrator so tools can run elevated. Each tool still needs your confirmation unless auto-approve is high.">i</span>
+          </label>
+          <button type="button" id="btn-restart-elevated" class="ghost" hidden style="margin-top:6px" data-i18n="restartAdmin">Restart as Administrator</button>
         </div>
         <div class="field field-check" id="use-venv-field" hidden>
           <label class="check-line">
@@ -277,8 +291,8 @@
         <div class="field"><label class="lbl"><span data-i18n="maxTokens">Max tokens</span><span class="info-tip" tabindex="0" data-tip="Max tokens to generate. Empty = model maximum.">i</span></label>
           <input type="number" id="s-api-max-tokens" min="1" max="1000000" step="1" placeholder="auto (model max)"/>
         </div>
-        <div class="field"><label class="lbl"><span data-i18n="contextLength">Context length</span><span class="info-tip" tabindex="0" data-tip="Tokens to load a local model with. Empty uses the model's maximum. A model that is already loaded at a different length is reloaded.">i</span></label>
-          <input type="number" id="s-api-context" min="256" max="2000000" step="1" placeholder="model maximum"/>
+        <div class="field"><label class="lbl"><span data-i18n="contextLength">Context length</span><span class="info-tip" tabindex="0" data-tip="Tokens to load a local model with. Empty loads 32768. The model card maximum (128k–256k) plus several slots does not fit a normal GPU and the engine dies on the first prompt. Type a number to use that window. A model already loaded in LM Studio is left as it is.">i</span></label>
+          <input type="number" id="s-api-context" min="256" max="2000000" step="1" placeholder="32768"/>
         </div>
         </div>
       </div>
@@ -467,6 +481,13 @@
               <button type="button" role="radio" data-v="agent" data-keep-unlocked data-i18n="layoutAgentOpt">Agent only</button>
             </div>
           </div>
+          <div class="field field-check" id="agent-chat-width-field">
+            <label class="check-line">
+              <input type="checkbox" id="s-agent-chat-full" class="soft-check" data-keep-unlocked/>
+              <span data-i18n="agent_chat_full">Full width chat</span>
+              <span class="info-tip" tabindex="0" data-i18n-tip="agent_chat_full_tip" data-tip="On: the agent conversation uses the whole window. Off: it sits in a readable column, centred.">i</span>
+            </label>
+          </div>
         </div>
         <div class="set-group">
           <h3 data-i18n="groupMotion">Motion</h3>
@@ -568,7 +589,9 @@ Its options show up here.</div></div>
         <div class="plugin-catalog">
           <div class="path-pick">
             <input class="input-std" id="plugin-repo" data-i18n-placeholder="pluginRepoPh" placeholder="owner/repo or words to search" autocomplete="off"/>
-            <button type="button" id="plugin-search" data-i18n="pluginSearch">Search</button>
+            <button type="button" id="plugin-search" data-i18n-title="pluginSearch" title="Search" aria-label="Search">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.5-3.5"/></svg>
+            </button>
             <button type="button" id="plugin-install" data-i18n="pluginInstall">Install</button>
             <button type="button" class="ghost" id="plugin-updates" data-i18n="pluginCheckUpdates">Check updates</button>
           </div>
@@ -616,6 +639,7 @@ Its options show up here.</div></div>
   <button type="button" class="footer-hit" id="footer-provider">provider: —</button>
   <button type="button" class="footer-hit" id="footer-model">model: —</button>
   <button type="button" class="footer-hit" id="footer-ctx">ctx: —</button>
+  <button type="button" class="footer-hit" id="footer-compact">compress at 75%</button>
   <span id="footer-tps" style="display:none">0.0 tok/s</span>
 </div>
 <div class="modal-bg" id="model-modal">
@@ -702,18 +726,6 @@ Its options show up here.</div></div>
     <div class="btn-row">
       <button type="button" id="guard-cancel" class="cancel-active">Cancel</button>
       <button type="button" id="guard-ok" class="save-active" disabled>3</button>
-    </div>
-  </div>
-</div>
-<div class="hf-modal" id="host-freedom-modal">
-  <div class="hf-card" role="dialog" aria-modal="true" aria-labelledby="hf-title">
-    <h3 id="hf-title">Allow the agent out of its folder?</h3>
-    <p class="hf-warn">This is off by default, and it does not exist in server mode.</p>
-    <p>The agent will be able to see real paths and run privileged commands, including sudo, network tools, and system tools. It can read and change files outside ./workspace, install software, and disrupt this computer.</p>
-    <p>Kerniq still blocks the obvious ways to wipe a disk, delete the operating system, or shut the machine down. That is not a sandbox. A script the agent writes can still do damage.</p>
-    <div class="hf-actions">
-      <button type="button" class="ghost" id="hf-cancel">Cancel</button>
-      <button type="button" id="hf-confirm" disabled>Confirm <span id="hf-count">5</span></button>
     </div>
   </div>
 </div>

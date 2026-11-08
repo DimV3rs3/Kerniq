@@ -29,6 +29,7 @@ KIT_IDS = frozenset({
     "plugin_web_ui",
     "plugin_context_compact",
     "plugin_git_session",
+    "plugin_lang_sandbox",
 })
 _GITHUB_API = "https://api.github.com"
 _DANGEROUS = [
@@ -227,6 +228,161 @@ def _place(source: Path, dest: Path, *, force: bool) -> dict[str, Any] | None:
     return None
 
 
+def _probe_plugin(dest: Path) -> str:
+    """Import the plugin class. Empty means it constructed. Does not call initialize."""
+    import importlib.util
+    import sys
+
+    main_py = dest / "main.py"
+    if not main_py.is_file():
+        return "Plugin has no main.py."
+    name = "kerniq_plugin_probe_" + dest.name
+    sys.modules.pop(name, None)
+    spec = importlib.util.spec_from_file_location(name, main_py)
+    if spec is None or spec.loader is None:
+        return "Plugin could not be loaded."
+    module = importlib.util.module_from_spec(spec)
+    try:
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        cls = getattr(module, "PluginImpl", None)
+        if cls is None:
+            return "Plugin has no PluginImpl."
+        cls()
+    except SyntaxError as exc:
+        return f"Syntax error in {exc.filename or main_py.name}: {exc.msg}"
+    except Exception as exc:
+        return f"{type(exc).__name__}: {exc}"
+    finally:
+        sys.modules.pop(name, None)
+    return ""
+
+
+def adopt_plugin_archives(plugins_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Install plugin zip files that were dropped into the plugins folder.
+
+    A zip that is not a plugin is left untouched. A zip that is a plugin is
+    installed into its own folder and the zip is deleted.
+    """
+    root = plugins_root(plugins_dir)
+    if not root.is_dir():
+        return []
+    results: list[dict[str, Any]] = []
+    for archive in sorted(root.iterdir()):
+        if not archive.is_file() or archive.suffix.lower() != ".zip":
+            continue
+        if archive.name.startswith("."):
+            continue
+        try:
+            planted = _plugin_roots_in_zip(archive)
+        except (OSError, zipfile.BadZipFile, ValueError) as exc:
+            results.append({"archive": archive.name, "ok": False, "kept": True, "error": str(exc)})
+            continue
+        if not planted:
+            results.append({"archive": archive.name, "ok": False, "kept": True, "reason": "not a plugin"})
+            continue
+        tmp = root / f".{archive.stem}.extract"
+        if tmp.exists():
+            shutil.rmtree(tmp, ignore_errors=True)
+        installed: list[str] = []
+        failed = ""
+        try:
+            tmp.mkdir()
+            with zipfile.ZipFile(archive) as zf:
+                for index, prefix in enumerate(planted):
+                    folder = tmp / f"part_{index}"
+                    folder.mkdir()
+                    _extract_prefix(zf, prefix, folder)
+            for child in sorted(tmp.glob("part_*")):
+                report = inspect_plugin(child)
+                if not report.get("standalone"):
+                    continue
+                placed = install_tree(
+                    child,
+                    force=True,
+                    plugins_dir=root,
+                    origin={"kind": "archive", "file": archive.name},
+                )
+                if not placed.get("ok"):
+                    failed = str(placed.get("error") or "install failed")
+                    break
+                installed.append(str(placed.get("plugin_id") or ""))
+        except (OSError, zipfile.BadZipFile, ValueError) as exc:
+            failed = str(exc)
+        finally:
+            if tmp.exists():
+                shutil.rmtree(tmp, ignore_errors=True)
+        if failed or not installed:
+            results.append({
+                "archive": archive.name,
+                "ok": False,
+                "kept": True,
+                "error": failed or "not a plugin",
+            })
+            continue
+        try:
+            archive.unlink()
+        except OSError as exc:
+            results.append({"archive": archive.name, "ok": False, "kept": True, "error": str(exc), "installed": installed})
+            continue
+        results.append({"archive": archive.name, "ok": True, "kept": False, "installed": installed})
+    return results
+
+
+def _plugin_roots_in_zip(archive: Path) -> list[str]:
+    with zipfile.ZipFile(archive) as zf:
+        names = [_zip_name(info.filename) for info in zf.infolist() if not info.is_dir()]
+        if any(not name for name in names):
+            raise ValueError("unsafe path in archive")
+        roots: list[str] = []
+        for name in names:
+            if not name.endswith("manifest.toml"):
+                continue
+            prefix = name[: -len("manifest.toml")].strip("/")
+            try:
+                raw = zf.read(name)
+                data = tomllib.loads(raw.decode("utf-8"))
+            except Exception:
+                continue
+            block = data.get("plugin") if isinstance(data.get("plugin"), dict) else data
+            plugin_id = str((block or {}).get("plugin_id") or "").strip()
+            if not plugin_id or plugin_id in KIT_IDS:
+                continue
+            if prefix not in roots:
+                roots.append(prefix)
+        return roots
+
+
+def _zip_name(name: str) -> str:
+    text = str(name or "").replace("\\", "/")
+    if text.startswith("/") or re.match(r"^[A-Za-z]:", text):
+        return ""
+    parts = [part for part in text.split("/") if part and part != "."]
+    if ".." in parts:
+        return ""
+    return "/".join(parts)
+
+
+def _extract_prefix(archive: zipfile.ZipFile, prefix: str, dest: Path) -> None:
+    prefix = prefix.strip("/")
+    for info in archive.infolist():
+        name = _zip_name(info.filename)
+        if not name or info.is_dir():
+            continue
+        if prefix:
+            if name != prefix and not name.startswith(prefix + "/"):
+                continue
+            relative = name[len(prefix):].lstrip("/")
+        else:
+            relative = name
+        if not relative:
+            continue
+        target = dest.joinpath(*relative.split("/"))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open(info) as source, open(target, "wb") as handle:
+            shutil.copyfileobj(source, handle)
+
+
 def install_tree(
     source: str | Path,
     *,
@@ -252,18 +408,27 @@ def install_tree(
     recorded["version"] = report["version"]
     recorded["plugin_id"] = report["plugin_id"]
     write_origin(dest, recorded)
+    probe = _probe_plugin(dest)
     note = ""
     if scan["findings"]:
         note = " Security check noted: " + "; ".join(scan["findings"][:4]) + "."
+    if probe:
+        note = f" It did not load: {probe}.{note}"
     return {
         "ok": True,
-        "restart": True,
+        "restart": False,
+        "ready": not probe,
+        "status": "available" if not probe else "error",
         "plugin_id": report["plugin_id"],
         "version": report["version"],
         "path": str(dest),
         "check": report,
         "scan": scan,
-        "message": f"Installed {report['name']} {report['version']} into {dest}. Restart Kerniq to load it.{note}",
+        "message": (
+            f"Installed {report['name']} {report['version']}. It is ready.{note}"
+            if not probe
+            else f"Installed {report['name']} {report['version']}, but it needs a fix.{note}"
+        ),
     }
 
 
@@ -355,7 +520,7 @@ def remove_plugin(name: str, *, confirm: bool, plugins_dir: Path | None = None) 
     if not confirm:
         return {"ok": False, "error": "Confirmation is required."}
     shutil.rmtree(folder)
-    return {"ok": True, "removed": report.get("plugin_id") or folder.name, "message": f"Removed {folder.name}. Restart Kerniq."}
+    return {"ok": True, "removed": report.get("plugin_id") or folder.name, "restart": False, "message": f"Removed {folder.name}."}
 
 
 def _remote_version(origin: dict[str, Any]) -> str:

@@ -79,3 +79,72 @@ def test_install_root_keeps_attachments_when_the_workspace_moves(tmp_path, monke
     assert (view / "downloads").resolve() == custom.resolve()
     assert not (workspace / "attachments").exists()
     assert not (workspace / ".downloads").exists()
+
+
+def test_outside_attachments_can_be_read_and_deleted_but_not_edited(tmp_path, monkeypatch):
+    install = tmp_path / "Kerniq"
+    install.mkdir()
+    workspace = tmp_path / "snap"
+    workspace.mkdir()
+    monkeypatch.setenv("KERNIQ_ROOT", str(install))
+    monkeypatch.setattr(
+        "Kerniq.security.roots._peek_folder_settings",
+        lambda: ("./attachments", "./downloads"),
+    )
+    note = install / "attachments" / "note.txt"
+    note.parent.mkdir(parents=True)
+    note.write_text("keep", encoding="utf-8")
+    tools = {t.name: t for t in FileSystemTools(str(workspace)).get_tools()}
+
+    async def run():
+        read = await tools["read_file"].execute({"path": "./attachments/note.txt"}, None)
+        assert read.status == "success"
+        assert "keep" in (read.human_readable or "")
+        edited = await tools["write_file"].execute(
+            {"path": "./attachments/note.txt", "content": "no"}, None
+        )
+        assert edited.status == "error"
+        assert note.read_text(encoding="utf-8") == "keep"
+        copied = await tools["copy_file"].execute(
+            {"src": "./attachments/note.txt", "dst": "note.txt"}, None
+        )
+        assert copied.status == "success", copied.human_readable
+        assert (workspace / "note.txt").read_text(encoding="utf-8") == "keep"
+        deleted = await tools["delete_file"].execute({"path": "attachments/note.txt"}, None)
+        assert deleted.status == "success", deleted.human_readable
+        assert not note.exists()
+        escaped = await tools["write_file"].execute(
+            {"path": "workspace/../../escape_attempt.txt", "content": "ESCAPE"}, None
+        )
+        assert escaped.status == "error"
+        assert not (workspace.parent / "escape_attempt.txt").exists()
+        assert not (install.parent / "escape_attempt.txt").exists()
+
+    asyncio.run(run())
+
+
+def test_unzip_from_downloads_lands_in_the_workspace(tmp_path, monkeypatch):
+    import zipfile
+
+    install = tmp_path / "Kerniq"
+    install.mkdir()
+    workspace = tmp_path / "snap"
+    workspace.mkdir()
+    monkeypatch.setenv("KERNIQ_ROOT", str(install))
+    monkeypatch.setattr(
+        "Kerniq.security.roots._peek_folder_settings",
+        lambda: ("./attachments", "./downloads"),
+    )
+    archive = install / "downloads" / "bundle.zip"
+    archive.parent.mkdir(parents=True)
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("inside.txt", "from-zip")
+    tools = {t.name: t for t in FileSystemTools(str(workspace)).get_tools()}
+
+    async def run():
+        result = await tools["unzip"].execute({"archive": "./downloads/bundle.zip"}, None)
+        assert result.status == "success", result.human_readable
+        assert (workspace / "bundle" / "inside.txt").read_text(encoding="utf-8") == "from-zip"
+        assert not (archive.parent / "bundle").exists()
+
+    asyncio.run(run())

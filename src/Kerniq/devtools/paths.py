@@ -13,22 +13,93 @@ def _has_plugins_tree(root: Path) -> bool:
     return p.is_dir() and any(p.iterdir()) if p.exists() else False
 
 
-def find_project_root(start: Optional[Path] = None) -> Optional[Path]:
-    """Walk up from start (or cwd) looking for a Kerniq project root."""
-    cur = (start or Path.cwd()).resolve()
-    for _ in range(12):
+def _is_project_root(cur: Path) -> bool:
+    try:
         if (cur / "pyproject.toml").is_file() and _has_plugins_tree(cur):
-            return cur
+            return True
         if (cur / "config" / "default.toml").is_file() and _has_plugins_tree(cur):
-            return cur
-        if cur.parent == cur:
-            break
+            return True
+    except OSError:
+        return False
+    return False
+
+
+def _walk_for_root(start: Path) -> Optional[Path]:
+    try:
+        cur = Path(start).expanduser().resolve()
+    except OSError:
+        return None
+    if cur.is_file():
         cur = cur.parent
-    env = os.environ.get("KERNIQ_ROOT") or os.environ.get("KERNIQ_HOME")
+    for _ in range(16):
+        if _is_project_root(cur):
+            return cur
+        parent = cur.parent
+        if parent == cur:
+            break
+        cur = parent
+    return None
+
+
+def _install_seeds() -> List[Path]:
+    """Places this running Kerniq can be found, ignoring the shell cwd."""
+    seeds: List[Path] = [Path(__file__).resolve()]
+    argv0 = sys.argv[0] if sys.argv else ""
+    if argv0 and argv0 not in {"-c", "-m"}:
+        try:
+            script = Path(argv0).expanduser()
+            if script.exists():
+                seeds.append(script)
+        except OSError:
+            pass
+    for entry in sys.path[:24]:
+        if not entry or entry == ".":
+            continue
+        try:
+            seeds.append(Path(entry).expanduser())
+        except Exception:
+            continue
+    return seeds
+
+
+def find_project_root(start: Optional[Path] = None) -> Optional[Path]:
+    """Locate the Kerniq install, not the folder the shell happened to be in.
+
+    Launching from ``C:\\Windows\\System32`` must still resolve to the
+    directory that contains this package. A shell that is already inside an
+    install (or ``scripts/``) keeps that install. ``KERNIQ_ROOT`` /
+    ``KERNIQ_HOME`` override only when the cwd is not itself an install.
+    """
+    if start is not None:
+        found = _walk_for_root(Path(start))
+        if found is not None:
+            return found
+
+    found = _walk_for_root(Path.cwd())
+    if found is not None:
+        return found
+
+    env = (os.environ.get("KERNIQ_ROOT") or os.environ.get("KERNIQ_HOME") or "").strip()
     if env:
-        root = Path(env).expanduser().resolve()
-        if root.is_dir():
-            return root
+        try:
+            root = Path(env).expanduser().resolve()
+        except OSError:
+            root = None
+        if root is not None and root.is_dir():
+            return _walk_for_root(root) or root
+
+    seen: set[str] = set()
+    for seed in _install_seeds():
+        try:
+            key = str(seed.resolve())
+        except OSError:
+            key = str(seed)
+        if key in seen:
+            continue
+        seen.add(key)
+        found = _walk_for_root(seed)
+        if found is not None:
+            return found
     return None
 
 
@@ -58,11 +129,11 @@ def anchored_dir(path: object) -> Path:
 
 
 def pin_process_root() -> Optional[Path]:
-    """Make the project directory the process cwd when this process is inside it.
+    """Move this process into the Kerniq install and export ``KERNIQ_ROOT``.
 
-    Launchers live in ``scripts/``. A relative ``./state``, ``./sessions``,
-    or ``./workspace`` must not be created beside that script. A process
-    started outside the project is left where it is.
+    ``./state``, ``./sessions``, and ``./workspace`` belong to that install.
+    They must not be created beside ``scripts/`` or in the shell's cwd
+    (``C:\\Windows\\System32`` included).
     """
     root = find_project_root()
     if root is None:

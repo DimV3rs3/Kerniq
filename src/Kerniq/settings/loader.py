@@ -35,6 +35,7 @@ class SettingsProvider:
             data.setdefault("models", {})
             data["models"]["default_provider"] = env_provider
         self._config = PlatformConfig(**data)
+        _anchor_install_paths(self._config)
         return self._config
 
     @property
@@ -44,3 +45,13 @@ class SettingsProvider:
     def reload(self) -> PlatformConfig:
         self._config = None
         return self.load()
+
+
+def _anchor_install_paths(config: PlatformConfig) -> None:
+    """Make install-relative paths absolute before anyone joins them to cwd."""
+    from Kerniq.devtools.paths import anchored_dir
+
+    config.storage.state_dir = anchored_dir(config.storage.state_dir)
+    config.storage.sessions_dir = anchored_dir(config.storage.sessions_dir)
+    config.application.workspace_root = anchored_dir(config.application.workspace_root)
+    config.logging.log_file = anchored_dir(config.logging.log_file)

@@ -73,6 +73,12 @@ class PluginManager:
         if not plugins_dir.exists():
             logger.warning("Plugins directory %s does not exist.", plugins_dir)
             return
+        try:
+            from .distribution import adopt_plugin_archives
+
+            adopt_plugin_archives(plugins_dir)
+        except Exception:
+            logger.info("plugin archives were not adopted", exc_info=False)
         skipped = set(skip_ids or [])
         for item in sorted(plugins_dir.iterdir()):
             if item.is_dir() and (item / "manifest.toml").exists():

@@ -201,6 +201,59 @@ class FileSystemToolBase(Tool):
             return None
         return _join(folder, rest)
 
+    def _resolve_closed(self, path_str: str) -> pathlib.Path:
+        """Map a model path onto workspace, attachments, or downloads. ``..`` cannot leave them."""
+        from Kerniq.security.pathmask import is_absolute_text, rewrite_model_path
+        from Kerniq.security.roots import resolve_virtual
+
+        raw = str(path_str)
+        if "\x00" in raw or raw.startswith("\\\\") or raw.startswith("//"):
+            raise PermissionError("Access denied: path is outside ./workspace")
+        rewritten = rewrite_model_path(raw)
+        if is_absolute_text(rewritten):
+            try:
+                return pathlib.Path(rewritten).expanduser().resolve()
+            except OSError:
+                return pathlib.Path(rewritten).expanduser().absolute()
+        try:
+            target = resolve_virtual(rewritten, self.workspace)
+        except PermissionError as exc:
+            raise PermissionError("Access denied: path is outside ./workspace") from exc
+        if target is None:
+            raise PermissionError("Access denied: path is outside ./workspace")
+        return target
+
+    def _bucket_of(self, target: pathlib.Path) -> str:
+        """``workspace``, ``attachments``, ``downloads``, or empty.
+
+        Attachments that live inside the workspace stay ``workspace``, so a
+        write there is still an edit of the project. A folder Kerniq keeps
+        next to the install is its own root.
+        """
+        from Kerniq.security.roots import desktop_roots
+
+        roots = desktop_roots(self.workspace)
+        try:
+            resolved = target.resolve()
+        except OSError:
+            resolved = target
+        try:
+            resolved.relative_to(roots.workspace.resolve())
+            return "workspace"
+        except (ValueError, OSError):
+            pass
+        for name in ("attachments", "downloads"):
+            try:
+                resolved.relative_to(getattr(roots, name).resolve())
+                return name
+            except (ValueError, OSError):
+                continue
+        return ""
+
+    _DATA_EDIT = frozenset({
+        "write_file", "create_file", "edit_file", "create_directory", "move_file", "zip",
+    })
+
     def _shown_path(self, path: pathlib.Path) -> str | None:
         if self._host_freedom():
             try:
@@ -316,48 +369,33 @@ class FileSystemToolBase(Tool):
             if must_exist and not target.exists():
                 raise FileNotFoundError(f"File not found: {path_str}")
             return target
-        if raw.startswith("\\\\") or raw.startswith("//"):
-            raise PermissionError("Access denied: path is outside ./workspace")
-        from Kerniq.security.pathmask import rewrite_model_path
-
-        raw = rewrite_model_path(raw)
-        base = self.workspace
-        writing = self.name in {
-            "write_file", "create_file", "edit_file", "delete_file", "create_directory",
-        } if write is None else bool(write)
-        moved = self._moved_bucket(raw)
-        if moved is not None:
-            target = moved
-            from Kerniq.storage.folder_usage import is_private_path
-
-            if is_private_path(target):
-                raise PermissionError("Access denied")
-            if writing:
-                from Kerniq.server.homes import write_blocked_reason
-
-                blocked = write_blocked_reason()
-                if blocked:
-                    raise PermissionError(blocked)
-            if must_exist and not target.exists():
-                raise FileNotFoundError(f"File not found: {path_str}")
-            return target
-        candidate = pathlib.Path(raw)
-        # An absolute path must not replace the workspace via Path.__truediv__.
-        if candidate.is_absolute():
-            target = candidate.resolve()
-        else:
-            target = (base / candidate).resolve()
+        target = self._resolve_closed(raw)
         from Kerniq.storage.folder_usage import is_private_path
 
         if is_private_path(target):
             raise PermissionError("Access denied")
-        if self._host_is_open():
-            if writing:
-                from Kerniq.security.confinement import os_write_forbidden
-
-                blocked_os = os_write_forbidden(target)
-                if blocked_os:
-                    raise PermissionError(blocked_os)
+        writing = self.name in {
+            "write_file", "create_file", "edit_file", "delete_file", "create_directory",
+            "move_file", "zip",
+        } if write is None else bool(write)
+        bucket = self._bucket_of(target)
+        if bucket in {"attachments", "downloads"}:
+            editing = write is True or self.name in self._DATA_EDIT
+            if editing and self.name != "delete_file":
+                raise PermissionError(
+                    "Files in ./attachments and ./downloads can be read or deleted, not edited. "
+                    "Use copy_file to copy into ./workspace first."
+                )
+            if must_exist and not target.exists():
+                raise FileNotFoundError(f"File not found: {path_str}")
+            return target
+        if bucket != "workspace":
+            root, read_only = self._match_external(target)
+            if root is None or not target.is_relative_to(self.workspace):
+                if root is None:
+                    raise PermissionError("Access denied: path is outside ./workspace")
+            if writing and read_only:
+                raise PermissionError("External attachments are read-only.")
             if must_exist and not target.exists():
                 raise FileNotFoundError(f"File not found: {path_str}")
             return target
@@ -367,18 +405,14 @@ class FileSystemToolBase(Tool):
             blocked = write_blocked_reason()
             if blocked:
                 raise PermissionError(blocked)
-        root, read_only = self._match_external(target)
-        if root is not None:
-            if writing and read_only:
-                raise PermissionError("External attachments are read-only.")
-            if must_exist and not target.exists():
-                raise FileNotFoundError(f"File not found: {path_str}")
-            return target
-        if not target.is_relative_to(base):
-            raise PermissionError("Access denied: path is outside ./workspace")
-        blocked = strict_allows(target.relative_to(base).as_posix(), current_task())
-        if blocked:
-            raise PermissionError(blocked)
+        try:
+            rel = target.resolve().relative_to(self.workspace.resolve()).as_posix()
+        except (OSError, ValueError):
+            rel = target.relative_to(self.workspace).as_posix()
+        if rel not in ("", "."):
+            blocked = strict_allows(rel, current_task())
+            if blocked:
+                raise PermissionError(blocked)
         if must_exist and not target.exists():
             raise FileNotFoundError(f"File not found: {path_str}")
         return target
@@ -883,7 +917,7 @@ class DeleteFileTool(FileSystemToolBase):
 
     @property
     def description(self) -> str:
-        return "Deletes a file or empty directory relative to the workspace. Use recursive=true for non-empty dirs."
+        return "Deletes a file or empty directory in ./workspace, ./attachments, or ./downloads. Use recursive=true for non-empty dirs."
 
     @property
     def input_schema(self) -> Dict[str, Any]:
@@ -1394,7 +1428,8 @@ class UnzipTool(FileSystemToolBase):
     @property
     def description(self) -> str:
         return (
-            "Extract a .zip archive into the workspace (optional destination folder). "
+            "Extract a .zip archive. An archive in ./attachments or ./downloads "
+            "is extracted into ./workspace, not next to the archive. "
             "Blocks path traversal. Does not use the terminal."
         )
 
@@ -1407,7 +1442,7 @@ class UnzipTool(FileSystemToolBase):
                 "path": {"type": "string", "description": "Alias for archive"},
                 "destination": {
                     "type": "string",
-                    "description": "Folder to extract into (default: archive stem next to zip)",
+                    "description": "Folder inside ./workspace. Default: archive stem in ./workspace when the zip is in attachments or downloads, otherwise next to the zip.",
                 },
             },
             "required": [],
@@ -1420,23 +1455,26 @@ class UnzipTool(FileSystemToolBase):
             arch_rel = arguments.get("archive") or arguments.get("path")
             if not arch_rel:
                 return self._create_error_result(call_id, "Provide archive path", "UNZIP_ARGS")
-            src = self._safe_path(arch_rel, must_exist=True)
+            src = self._safe_path(arch_rel, must_exist=True, write=False)
             if src.suffix.lower() != ".zip":
                 return self._create_error_result(call_id, "Not a .zip file", "UNZIP_TYPE")
             dest_rel = arguments.get("destination")
             if dest_rel:
                 dest = self._safe_path(dest_rel, write=True)
+            elif self._bucket_of(src) in {"attachments", "downloads"}:
+                dest = self._safe_path(src.stem or "archive", write=True)
             else:
                 dest = src.with_suffix("")
             dest.mkdir(parents=True, exist_ok=True)
             extracted = []
+            workspace_root = self.workspace.resolve()
             with zipfile.ZipFile(src, "r") as zf:
                 for info in zf.infolist():
-                    name = info.filename.replace("\\\\", "/").lstrip("/")
-                    if ".." in name.split("/"):
+                    name = info.filename.replace("\\", "/").lstrip("/")
+                    if not name or ".." in name.split("/"):
                         continue
                     target = (dest / name).resolve()
-                    if not target.is_relative_to(self.workspace.resolve()):
+                    if not target.is_relative_to(workspace_root):
                         continue
                     if info.is_dir():
                         target.mkdir(parents=True, exist_ok=True)
@@ -1444,13 +1482,17 @@ class UnzipTool(FileSystemToolBase):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     with zf.open(info) as src_f, open(target, "wb") as out_f:
                         out_f.write(src_f.read())
-                    extracted.append(target.relative_to(self.workspace).as_posix())
+                    extracted.append(target.relative_to(workspace_root).as_posix())
+            try:
+                shown = dest.resolve().relative_to(workspace_root).as_posix()
+            except ValueError:
+                shown = self._shown_path(dest) or str(dest)
             return ToolResult(
                 tool_call_id=call_id,
                 tool_id=self.tool_id,
                 status="success",
-                output={"destination": str(dest.relative_to(self.workspace)), "files": len(extracted)},
-                human_readable=f"Extracted {len(extracted)} file(s) to {dest.relative_to(self.workspace)}",
+                output={"destination": shown, "files": len(extracted)},
+                human_readable=f"Extracted {len(extracted)} file(s) to {shown}",
             )
         except Exception as e:
             return self._create_error_result(call_id, str(e), "UNZIP_ERROR")
@@ -1469,7 +1511,7 @@ class MoveFileTool(FileSystemToolBase):
     def description(self) -> str:
         return (
             "Move or rename a file or directory inside the workspace. "
-            "Both paths are checked against the workspace root."
+            "It cannot edit a file in ./attachments or ./downloads. copy_file those into ./workspace first."
         )
 
     @property
@@ -1514,6 +1556,75 @@ class MoveFileTool(FileSystemToolBase):
             return self._create_error_result(call_id, str(e), "FS_ERROR")
 
 
+class CopyFileTool(FileSystemToolBase):
+    @property
+    def tool_id(self) -> str:
+        return "fs_copy_file"
+
+    @property
+    def name(self) -> str:
+        return "copy_file"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Copy a file or directory into ./workspace. "
+            "Files in ./attachments and ./downloads can be read and deleted, but not edited. "
+            "Copy them here first, then edit the copy. The destination must be inside ./workspace."
+        )
+
+    @property
+    def input_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "src": {"type": "string", "description": "File or directory to copy. May be in ./attachments or ./downloads."},
+                "dst": {"type": "string", "description": "Destination inside ./workspace."},
+            },
+            "required": ["src", "dst"],
+        }
+
+    async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
+        call_id = arguments.get("tool_call_id", "unknown")
+        try:
+            src = self._safe_path(arguments["src"], must_exist=True, write=False)
+            dst = self._safe_path(arguments["dst"], write=True)
+            if dst == src:
+                raise PermissionError("Source and destination are the same")
+            if src.is_dir():
+                try:
+                    if dst.is_relative_to(src):
+                        raise PermissionError("Cannot copy a directory into itself")
+                except (OSError, ValueError):
+                    pass
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if src.is_dir():
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+            else:
+                if dst.exists() and dst.is_dir():
+                    dst = dst / src.name
+                shutil.copy2(src, dst)
+
+            def _label(path: pathlib.Path) -> str:
+                shown = self._shown_path(path)
+                if shown:
+                    return shown
+                try:
+                    return path.resolve().relative_to(self.workspace.resolve()).as_posix()
+                except (OSError, ValueError):
+                    return path.name
+
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="success",
+                output={"src": _label(src), "dst": _label(dst)},
+                human_readable=f"Copied {arguments['src']} -> {arguments['dst']}",
+            )
+        except Exception as e:
+            return self._create_error_result(call_id, str(e), "FS_ERROR")
+
+
 class FileSystemTools:
     def __init__(self, workspace: str, policy: Any = None):
         self.workspace = pathlib.Path(workspace).resolve()
@@ -1532,6 +1643,7 @@ class FileSystemTools:
             ZipTool(self.workspace),
             UnzipTool(self.workspace),
             MoveFileTool(self.workspace),
+            CopyFileTool(self.workspace),
         ]
         for tool in self._tools:
             tool._security_policy = policy

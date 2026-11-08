@@ -121,6 +121,11 @@ class Tool(ABC):
         return bool(self.__dict__.get("_agent_visible", True))
 
     @property
+    def user_hidden(self) -> bool:
+        """True when the model may call the tool and the user must not see it."""
+        return bool(self.__dict__.get("_user_hidden", False))
+
+    @property
     def category(self) -> str:
         """Logical group for UI: filesystem | terminal | web | fetch | other."""
         return "other"

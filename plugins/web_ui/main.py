@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import contextlib
 import json
 import logging
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -59,7 +61,7 @@ def _ui_pid_path(context: Any) -> Optional[Path]:
     state = getattr(getattr(cfg, "storage", None), "state_dir", None)
     if not state:
         return None
-    return Path(state) / "ui.pid"
+    return _install_dir(state) / "ui.pid"
 
 
 def _write_ui_pid(context: Any) -> None:
@@ -95,6 +97,63 @@ _BLOCKED_ATTACH = {
     "exe", "dll", "bin", "iso", "dmg", "msi",
     "zip", "7z", "rar", "gz", "tar", "bz2", "xz",
 }
+
+
+
+def _install_dir(path: object) -> Path:
+    """State and sessions live in the install, never in the shell's cwd."""
+    from Kerniq.devtools.paths import anchored_dir
+
+    return anchored_dir(path)
+
+
+def _quiet_spawn() -> dict:
+    try:
+        from Kerniq.sandbox.proc import hidden_kwargs
+
+        return hidden_kwargs()
+    except Exception:
+        return {}
+
+
+def _fix_acl(path: Path) -> None:
+    """On Windows, grant the current user modify rights on a dir/file.
+
+    State and session files created while the UI ran elevated keep an
+    admin-only ACL. A normal launch then gets PermissionError on every write.
+    """
+    if sys.platform != "win32":
+        return
+    user = os.environ.get("USERNAME") or os.environ.get("USER") or ""
+    if not user or not path.exists():
+        return
+    try:
+        subprocess.run(
+            ["icacls", str(path), "/grant", f"{user}:(OI)(CI)M", "/T", "/C", "/Q"],
+            check=False,
+            capture_output=True,
+            timeout=15,
+            **_quiet_spawn(),
+        )
+    except Exception:
+        pass
+
+
+def _ensure_state_writable(context: Any) -> None:
+    cfg = getattr(context, "config", None)
+    storage = getattr(cfg, "storage", None)
+    if storage is None:
+        return
+    for attr in ("state_dir", "sessions_dir"):
+        raw = getattr(storage, attr, None)
+        if raw:
+            try:
+                d = _install_dir(raw)
+                d.mkdir(parents=True, exist_ok=True)
+                _fix_acl(d)
+            except Exception:
+                logger.info("could not prepare %s", attr, exc_info=False)
+
 
 
 def _is_junk_model(model: Dict[str, Any]) -> bool:
@@ -158,7 +217,7 @@ async def _title_from_loaded_model(provider, model_id: str, text: str) -> tuple:
                 temperature=0.2,
                 max_tokens=16,
                 streaming=False,
-                extra_params={"enable_thinking": False, "thinking": {"type": "disabled"}},
+                extra_params={},
             ),
             metadata={"kerniq_internal": "title", "model": model_id},
         )
@@ -637,15 +696,19 @@ def _granted(path: str) -> bool:
 
 def _json(handler: BaseHTTPRequestHandler, code: int, payload: Any) -> None:
     body = json.dumps(payload, default=str, ensure_ascii=False).encode("utf-8")
-    handler.send_response(code)
-    handler.send_header("Content-Type", "application/json; charset=utf-8")
-    handler.send_header("Content-Length", str(len(body)))
-    if getattr(handler, "_kerniq_set_cookie", False) and getattr(handler, "_kerniq_user", ""):
-        from Kerniq.server.identity import cookie_header
+    try:
+        handler.send_response(code)
+        handler.send_header("Content-Type", "application/json; charset=utf-8")
+        handler.send_header("Content-Length", str(len(body)))
+        if getattr(handler, "_kerniq_set_cookie", False) and getattr(handler, "_kerniq_user", ""):
+            from Kerniq.server.identity import cookie_header
 
-        handler.send_header("Set-Cookie", cookie_header(handler._kerniq_user))
-    handler.end_headers()
-    handler.wfile.write(body)
+            handler.send_header("Set-Cookie", cookie_header(handler._kerniq_user))
+        handler.end_headers()
+        handler.wfile.write(body)
+    except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+        # Client closed the tab or refreshed while we were writing. Not an error.
+        return
 
 
 def _read_json(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
@@ -662,10 +725,10 @@ def _state_dir() -> Path:
     storage = getattr(cfg, "storage", None)
     state = getattr(storage, "state_dir", None)
     if state:
-        return Path(state)
+        return _install_dir(state)
     from Kerniq.settings.loader import SettingsProvider
 
-    return Path(SettingsProvider().config.storage.state_dir)
+    return _install_dir(SettingsProvider().config.storage.state_dir)
 
 
 def _sessions_dir() -> Path:
@@ -673,10 +736,10 @@ def _sessions_dir() -> Path:
     storage = getattr(cfg, "storage", None)
     raw = getattr(storage, "sessions_dir", None)
     if raw:
-        return Path(raw)
+        return _install_dir(raw)
     from Kerniq.settings.loader import SettingsProvider
 
-    return Path(SettingsProvider().config.storage.sessions_dir)
+    return _install_dir(SettingsProvider().config.storage.sessions_dir)
 
 
 def _chat_ids(chats) -> set:
@@ -871,7 +934,7 @@ def _safe(ws: Path, rel: str) -> Path:
         from Kerniq.server.homes import logical_path
 
         return logical_path(rel or ".", ws)
-    from Kerniq.security.roots import model_roots, resolve_virtual
+    from Kerniq.security.roots import desktop_roots, resolve_virtual
     from Kerniq.storage.folder_usage import is_private_path
 
     rel = _norm_rel(rel)
@@ -881,7 +944,7 @@ def _safe(ws: Path, rel: str) -> Path:
         raise PermissionError("path outside workspace") from exc
     if target is None or is_private_path(target):
         raise PermissionError("path outside workspace")
-    allowed = model_roots(ws).as_list()
+    allowed = desktop_roots(ws).as_list()
     try:
         resolved = target.resolve()
     except OSError:
@@ -893,6 +956,21 @@ def _safe(ws: Path, rel: str) -> Path:
         except (ValueError, OSError):
             continue
     raise PermissionError("path outside workspace")
+
+
+def _require_workspace_edit(ws: Path, path: Path) -> None:
+    """Read and delete are allowed in attachments and downloads. Edits are not."""
+    if STATE.server_mode:
+        return
+    from Kerniq.security.roots import desktop_roots
+
+    try:
+        path.resolve().relative_to(desktop_roots(ws).workspace.resolve())
+    except (ValueError, OSError) as exc:
+        raise PermissionError(
+            "Files in attachments and downloads can be read or deleted, not edited. "
+            "Copy them into the workspace first."
+        ) from exc
 
 
 class UIHandler(BaseHTTPRequestHandler):
@@ -1060,6 +1138,8 @@ class UIHandler(BaseHTTPRequestHandler):
             return _json(self, 200, self._save_component_settings(data))
         if path == "/api/settings/reset":
             return _json(self, 200, self._reset_settings(data))
+        if path == "/api/restart-elevated":
+            return _json(self, 200, self._restart_elevated())
         if path == "/api/ui/languages/import":
             from Kerniq.settings.loader import SettingsProvider
             try:
@@ -1211,7 +1291,7 @@ class UIHandler(BaseHTTPRequestHandler):
 
         if STATE.context and STATE.context.tool_registry:
             for t in STATE.context.tool_registry.list_tools():
-                if getattr(t, "agent_visible", True) is False:
+                if getattr(t, "agent_visible", True) is False or getattr(t, "user_hidden", False):
                     continue
                 if not _plugin_allows(state_dir, t):
                     continue
@@ -1440,7 +1520,7 @@ class UIHandler(BaseHTTPRequestHandler):
                         return hit["data"]
             started = time.monotonic()
             entries = []
-            prefix_root = "" if root_name == "workspace" else root_name
+            prefix_root = ""
 
             def walk(dir_path: Path, prefix: str, depth: int) -> None:
                 if depth > 32:
@@ -1451,7 +1531,7 @@ class UIHandler(BaseHTTPRequestHandler):
                     return
                 for p in kids:
                     name = p.name
-                    if name in {".kerniq-view", ".kerniq-venv"}:
+                    if name in {".kerniq-view", ".kerniq-venv", ".kerniq-runtimes"}:
                         continue
                     if root_name == "workspace" and depth == 0 and name in {"attachments", ".downloads"}:
                         continue
@@ -1522,6 +1602,7 @@ class UIHandler(BaseHTTPRequestHandler):
         try:
             rel = data.get("path") or ""
             path = _safe(_workspace(), rel)
+            _require_workspace_edit(_workspace(), path)
             content = data.get("content") or ""
             if STATE.server_mode:
                 from Kerniq.server.homes import admit_bytes
@@ -1557,6 +1638,7 @@ class UIHandler(BaseHTTPRequestHandler):
             if not rel or ".." in rel.split("/"):
                 return {"error": "invalid path"}
             path = _safe(_workspace(), rel)
+            _require_workspace_edit(_workspace(), path)
             if path.exists():
                 return {"error": "already exists"}
             if kind == "dir":
@@ -1577,6 +1659,7 @@ class UIHandler(BaseHTTPRequestHandler):
                 return {"error": "invalid name"}
             ws = _workspace()
             src = _safe(ws, rel)
+            _require_workspace_edit(ws, src)
             dest = src.parent / new_name
             dest = _safe(ws, str(dest.relative_to(ws)))
             if dest.exists():
@@ -1624,6 +1707,12 @@ class UIHandler(BaseHTTPRequestHandler):
         rows = []
         if not root.is_dir():
             return rows
+        try:
+            from Kerniq.plugins.distribution import adopt_plugin_archives
+
+            adopt_plugin_archives(root)
+        except Exception:
+            logger.info("plugin archives were not adopted", exc_info=False)
         for folder in sorted(p for p in root.iterdir() if p.is_dir() and (p / "manifest.toml").exists()):
             mid = folder.name
             mname = folder.name
@@ -1774,6 +1863,8 @@ class UIHandler(BaseHTTPRequestHandler):
             store = self._component_store()
             enabled_map = dict(ToolSettingsStore(state_dir).load().enabled_tools or {})
             for tool in instances:
+                if getattr(tool, "user_hidden", False):
+                    continue
                 try:
                     schema = tool.settings_schema()
                     from Kerniq.tools.runtime_settings import ensure_common_fields
@@ -1946,7 +2037,32 @@ class UIHandler(BaseHTTPRequestHandler):
         values = store.reset(kind, cid, schema)
         return {"ok": True, "values": values}
 
-
+    def _restart_elevated(self) -> Dict[str, Any]:
+        """Relaunch the Web UI elevated on Windows. No-op elsewhere."""
+        import sys
+        if sys.platform != "win32":
+            return {"ok": False, "error": "Elevation restart is only available on Windows."}
+        try:
+            import ctypes
+            if ctypes.windll.shell32.IsUserAnAdmin():
+                return {"ok": True, "already": True}
+            # Relaunch this process with runas. The current process exits after.
+            params = " ".join(sys.argv)
+            rc = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", sys.executable, params, None, 1
+            )
+            if rc <= 32:
+                return {"ok": False, "error": f"ShellExecute failed ({rc})"}
+            # Give the new process a moment, then stop this one.
+            import threading
+            def _exit():
+                import time
+                time.sleep(0.8)
+                raise SystemExit(0)
+            threading.Thread(target=_exit, daemon=True).start()
+            return {"ok": True, "restarting": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def _search_files(self, q: str) -> Dict[str, Any]:
         q = (q or "").strip().lower()
@@ -2337,9 +2453,24 @@ class UIHandler(BaseHTTPRequestHandler):
                     logger.info("ui chats unreadable before save", exc_info=True)
             path.parent.mkdir(parents=True, exist_ok=True)
             payload = json.dumps({"chats": chats}, ensure_ascii=False)
-            tmp = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
-            tmp.write_text(payload, encoding="utf-8")
-            os.replace(tmp, path)
+            def _write() -> None:
+                tmp = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+                try:
+                    tmp.write_text(payload, encoding="utf-8")
+                    os.replace(tmp, path)
+                except OSError:
+                    with contextlib.suppress(Exception):
+                        tmp.unlink()
+                    raise
+            try:
+                _write()
+            except PermissionError:
+                _fix_acl(path.parent)
+                try:
+                    _write()
+                except PermissionError:
+                    logger.exception("ui chats save denied")
+                    return {"error": "chats were not saved", "storage_warning": "Permission denied on state folder."}
         removed = _chat_ids(previous) - _chat_ids(chats)
         _forget_chat_memory(removed, user_id)
         _prune_sessions(_chat_ids(chats))
@@ -2391,6 +2522,10 @@ class UIHandler(BaseHTTPRequestHandler):
         """
         text = str((data or {}).get("text") or "").strip()
         fallback = _heuristic_title(text)
+        with STATE.runs_lock:
+            busy = any(not r.get("done") for r in STATE.runs.values())
+        if busy:
+            return {"title": fallback, "source": "heuristic", "skipped": "run in progress"}
         try:
             return asyncio.run(self._chat_title_async(text, fallback))
         except Exception as exc:
@@ -2478,8 +2613,17 @@ class UIHandler(BaseHTTPRequestHandler):
                 requested = int(requested) if requested else None
             except (TypeError, ValueError):
                 requested = None
-            res = asyncio.run(p.load_model(model, context_length=requested))
-            return {"ok": True, "result": res, "plan": plan.to_dict(), "context_length": requested}
+            if requested is None:
+                from Kerniq.core.runtime_flow import LM_STUDIO_SAFE_CONTEXT
+                requested = LM_STUDIO_SAFE_CONTEXT
+            kwargs = {"context_length": requested}
+            res = asyncio.run(p.load_model(model, **kwargs))
+            return {
+                "ok": True,
+                "result": res,
+                "plan": plan.to_dict(),
+                "context_length": requested,
+            }
         except Exception as e:
             return {"error": str(e)}
 
@@ -2546,6 +2690,7 @@ class UIHandler(BaseHTTPRequestHandler):
                 context = {
                     "workspace": str(_workspace()),
                     "client_settings": (data or {}).get("client_settings") if isinstance((data or {}).get("client_settings"), dict) else None,
+                    "values": (data or {}).get("values") if isinstance((data or {}).get("values"), dict) else None,
                 }
                 result = asyncio.run(inst.run_action(action_id, context))
                 job["result"] = result
@@ -2780,6 +2925,21 @@ class UIHandler(BaseHTTPRequestHandler):
             return {"error": str(exc), "messages": [], "active": False, "cursor": 0}
         broker = STATE.approvals
         snap["pending_approvals"] = broker.list_pending() if broker is not None else []
+        run_id = str(snap.get("run_id") or "")
+        if run_id:
+            with STATE.runs_lock:
+                live = STATE.runs.get(run_id)
+            if live is not None and live.get("done"):
+                snap["active"] = False
+                snap["done"] = True
+                if live.get("error"):
+                    snap["error"] = live.get("error")
+            elif live is None and snap.get("active"):
+                # Disk still says running, but this process has no such run.
+                # Refreshing the page must not lock the composer on a dead run.
+                snap["active"] = False
+                snap["done"] = True
+                snap.setdefault("error", "The run is no longer on the server.")
         return snap
 
     def _events(self, run_id: str, cursor: str = "0") -> Dict[str, Any]:
@@ -3366,8 +3526,15 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             pass
         for msg in resp.messages:
             if msg.tool_calls:
-                _emit(run_id, {"type": "status", "status": "tool", "text": "Calling tool…"})
+                visible_calls = []
                 for tc in msg.tool_calls:
+                    tool_obj = reg.get_tool(tc.name) if hasattr(reg, "get_tool") else None
+                    if getattr(tool_obj, "user_hidden", False):
+                        continue
+                    visible_calls.append(tc)
+                if visible_calls:
+                    _emit(run_id, {"type": "status", "status": "tool", "text": "Calling tool…"})
+                for tc in visible_calls:
                     _emit(
                         run_id,
                         {
@@ -3406,15 +3573,18 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     for tool in reg.list_tools():
         orig_exec = tool.execute
         tname = tool.name
+        configured = getattr(tool, "cfg_default_timeout", None)
 
-        async def wrapped(arguments, context, _orig=orig_exec, _name=tname):
+        async def wrapped(arguments, context, _orig=orig_exec, _name=tname, _configured=configured, _hidden=bool(getattr(tool, "user_hidden", False))):
+            from Kerniq.interfaces.tools import ToolResult
+            from Kerniq.tools.deadline import tool_timeout_seconds
+
             if _is_cancelled():
                 try:
                     context.cancelled = True
                 except Exception:
                     pass
-                from Kerniq.interfaces.tools import ToolResult
-                return ToolResult(
+                cancelled = ToolResult(
                     tool_call_id=getattr(context, "last_tool_call_id", "unknown"),
                     tool_id=_name,
                     status="error",
@@ -3424,9 +3594,26 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                     human_readable="Stopped by user.",
                     error="cancelled",
                 )
-            _emit(run_id, {"type": "status", "status": "waiting_tool", "text": "Waiting for a tool"})
+                if not _hidden:
+                    _emit(
+                        run_id,
+                        {
+                            "type": "tool",
+                            "name": _name,
+                            "call_id": str(getattr(context, "last_tool_call_id", "") or ""),
+                            "status": "error",
+                            "success": False,
+                            "stop_reason": "cancelled",
+                            "summary": "Stopped by user.",
+                            "args": arguments,
+                        },
+                    )
+                return cancelled
+            seconds = tool_timeout_seconds(arguments, fallback=_configured)
+            if not _hidden:
+                _emit(run_id, {"type": "status", "status": "waiting_tool", "text": "Waiting for a tool"})
             before = None
-            path = arguments.get("path")
+            path = arguments.get("path") if isinstance(arguments, dict) else None
             if _name in ("write_file", "create_file", "edit_file", "delete_file") and path:
                 try:
                     fp = _safe(ws, path)
@@ -3434,25 +3621,132 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                         before = fp.read_text(encoding="utf-8", errors="replace")
                 except Exception:
                     pass
-            result = await _orig(arguments, context)
-            status = "success" if getattr(result, "success", result.status == "success") else "error"
-            _emit(
-                run_id,
-                {
-                    "type": "tool",
-                    "name": _name,
-                    "call_id": str(getattr(context, "last_tool_call_id", "") or ""),
-                    "status": status,
-                    "success": status == "success",
-                    "stop_reason": getattr(result, "stop_reason", status),
-                    "summary": (
-                        ((getattr(result, "human_readable", None) or result.error or "")[:400])
-                        if (getattr(result, "success", True) is False or getattr(result, "status", "") == "error")
-                        else ""
-                    ),
-                    "args": arguments,
-                },
-            )
+
+            def _settled(result, forced=None):
+                if _hidden:
+                    return
+                status = forced or ("success" if getattr(result, "success", getattr(result, "status", "") == "success") else "error")
+                stop = str(getattr(result, "stop_reason", "") or status)
+                failed = status != "success" or getattr(result, "success", True) is False
+                _emit(
+                    run_id,
+                    {
+                        "type": "tool",
+                        "name": _name,
+                        "call_id": str(getattr(context, "last_tool_call_id", "") or ""),
+                        "status": "error" if failed else "success",
+                        "success": not failed,
+                        "stop_reason": stop,
+                        "summary": (
+                            ((getattr(result, "human_readable", None) or getattr(result, "error", None) or "")[:400])
+                            if failed
+                            else ""
+                        ),
+                        "args": arguments,
+                    },
+                )
+                _emit(
+                    run_id,
+                    {
+                        "type": "status",
+                        "status": "tool_settled",
+                        "stop_reason": stop,
+                        "text": stop,
+                    },
+                )
+
+            call_id = str(getattr(context, "last_tool_call_id", "") or "unknown")
+
+            def _gave_up(stopped: bool) -> ToolResult:
+                return ToolResult(
+                    tool_call_id=call_id,
+                    tool_id=_name,
+                    status="error",
+                    success=False,
+                    stop_reason="cancelled" if stopped else "timeout",
+                    output="",
+                    human_readable="Stopped by user." if stopped else f"Timed out after {int(seconds)}s.",
+                    error="cancelled" if stopped else "timeout",
+                )
+
+            def _failed(exc: BaseException) -> ToolResult:
+                return ToolResult(
+                    tool_call_id=call_id,
+                    tool_id=_name,
+                    status="error",
+                    success=False,
+                    stop_reason="error",
+                    output="",
+                    human_readable=str(exc) or "The tool failed.",
+                    error=str(exc) or "error",
+                )
+
+            # wait_for never returns if the tool swallows cancellation and then
+            # blocks. Poll, then abandon. The card still leaves "waiting".
+            inner = asyncio.create_task(_orig(arguments, context))
+            started_at = time.monotonic()
+            limit = float(seconds) + 2.0
+            pulse = started_at
+            outcome = None
+            try:
+                while not inner.done():
+                    if _is_cancelled():
+                        try:
+                            context.cancelled = True
+                        except Exception:
+                            pass
+                        outcome = "cancel"
+                        break
+                    left = limit - (time.monotonic() - started_at)
+                    if left <= 0:
+                        outcome = "timeout"
+                        break
+                    now = time.monotonic()
+                    if now - pulse >= 10 and not _hidden:
+                        pulse = now
+                        _emit(run_id, {"type": "status", "status": "waiting_tool", "text": "Waiting for a tool"})
+                    try:
+                        await asyncio.wait_for(asyncio.shield(inner), min(0.25, left))
+                    except asyncio.TimeoutError:
+                        continue
+            except asyncio.CancelledError:
+                outcome = "cancel" if _is_cancelled() else "timeout"
+            if outcome:
+                if not inner.done():
+                    inner.cancel()
+                    try:
+                        await asyncio.wait_for(asyncio.shield(inner), 2.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+                        pass
+                if inner.done() and not inner.cancelled():
+                    try:
+                        result = inner.result()
+                    except Exception as exc:
+                        result = _failed(exc)
+                        _settled(result, "error")
+                        return result
+                else:
+                    stopped = outcome == "cancel" and _is_cancelled()
+                    result = _gave_up(stopped)
+                    _settled(result, "error")
+                    if stopped:
+                        raise asyncio.CancelledError()
+                    return result
+            try:
+                result = inner.result()
+            except asyncio.CancelledError:
+                stopped = _is_cancelled()
+                result = _gave_up(stopped)
+                _settled(result, "error")
+                if stopped:
+                    raise
+                return result
+            except Exception as exc:
+                result = _failed(exc)
+                _settled(result, "error")
+                return result
+            status = "success" if getattr(result, "success", getattr(result, "status", "") == "success") else "error"
+            _settled(result, status)
             if path and status == "success":
                 if _name == "delete_file":
                     _emit(run_id, {"type": "file_op", "op": "delete", "path": path})
@@ -3526,7 +3820,10 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         "When referring to project files, write links as [[file:relative/path]] "
         "(workspace-relative). The UI will open them in the editor. "
         "An @path token in the user message is a workspace file mention. Read that relative path. "
-        "Do not invent paths."
+        "Do not invent paths. "
+        "./attachments and ./downloads are allowed. You may read and delete files there. "
+        "You cannot edit, move, or create files there. copy_file them into ./workspace, then edit the copy. "
+        "unzip of an archive in ./attachments or ./downloads extracts into ./workspace."
     )
     if system:
         system = system.rstrip() + "\n\n" + file_link_hint
@@ -4128,6 +4425,7 @@ class PluginImpl(Plugin):
                 logger.error("Failed to bind Web UI on %s:%s — %s", host, port, e)
                 return
             STATE.server = httpd
+            _ensure_state_writable(context)
             _write_ui_pid(context)
             from Kerniq.server.firewall import announce_listen, try_open_port
 
@@ -4160,3 +4458,13 @@ class PluginImpl(Plugin):
         if STATE.server:
             STATE.server.shutdown()
             STATE.server = None
+
+def _is_windows_elevated() -> bool:
+    import sys
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False

@@ -162,6 +162,7 @@ def compose_system_prompt(
     plan_handoff: bool = False,
     compose_plan: bool = False,
     host_freedom: bool = False,
+    multi_agent: bool = False,
 ) -> str:
     """Identity first, then the operator prompt, then operational rules."""
     parts = [KERNIQ_IDENTITY]
@@ -189,6 +190,21 @@ def compose_system_prompt(
         parts.append(PLAN_HANDOFF_TEXT if plan_handoff else PLAN_HUMAN_TEXT)
     else:
         parts.append(ACT_MODE_TEXT if compose_plan else ACT_MODE_FREE)
+    if multi_agent:
+        if mode == "plan":
+            parts.append(
+                "MULTI-AGENT is on, but this is Plan mode. run_agents is not available. "
+                "Research only. Do not start workers."
+            )
+        else:
+            parts.append(
+                "MULTI-AGENT is on. You do not edit, create, delete, move, or unpack files, and you do not run the shell. "
+                "Those tools are not available. Work starts only when you call run_agents. Nothing runs until that call. "
+                "system_prompt in that call is the system prompt for the workers. You write it. "
+                "Workers do not see this chat, so the prompt and each task's instructions must contain every fact they need. "
+                "Workers do not change the strategy. You do. A worker that says success is not proof. "
+                "Do not call run_agents for one small edit, one calculation, or one file."
+            )
     return "\n\n".join(part for part in parts if part)
 
 
@@ -373,6 +389,12 @@ class Agent:
         lang = response_language if response_language is not None else self.response_language
         compose_plan = bool(getattr(self.orchestrator, "compose_plan", False))
         freedom = bool(getattr(getattr(self.orchestrator, "security_policy", None), "host_freedom", False))
+        try:
+            from .delegation import multi_agent_enabled
+
+            agents_on = multi_agent_enabled(self.orchestrator._state_dir())
+        except Exception:
+            agents_on = False
         sys_text = compose_system_prompt(
             sys_text,
             lang=lang,
@@ -380,6 +402,7 @@ class Agent:
             plan_handoff=bool(plan_handoff),
             compose_plan=compose_plan and bool(plan_gate),
             host_freedom=freedom,
+            multi_agent=agents_on,
         )
 
         if sys_text:

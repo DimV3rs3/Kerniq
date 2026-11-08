@@ -83,7 +83,7 @@ html, body {
 
 button, input, select, textarea { font: inherit; color: inherit; }
 
-::selection { background: rgba(91, 157, 255, .35); }
+::selection { background: var(--accent-soft, var(--acc-soft)); }
 
 :focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
 input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
@@ -127,13 +127,13 @@ button.ghost {
 button.ghost:hover:not(:disabled) { background: var(--bg-2); color: var(--fg); }
 
 button.save-active {
-  background: var(--acc);
+  background: var(--accent, var(--acc));
   border-color: transparent;
-  color: var(--acc-ink);
+  color: var(--accent-ink, var(--acc-ink));
   font-weight: 650;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 8px 18px var(--acc-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 8px 18px var(--focus-soft, var(--acc-soft));
 }
-button.save-active:hover:not(:disabled) { filter: brightness(1.08); background: var(--acc); border-color: transparent; }
+button.save-active:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent, var(--acc)); border-color: transparent; }
 
 button.cancel-active,
 button.text {
@@ -147,7 +147,7 @@ button.cancel-active:hover:not(:disabled),
 button.text:hover:not(:disabled) {
   background: transparent;
   border-color: transparent;
-  color: var(--acc);
+  color: var(--accent, var(--acc));
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -264,10 +264,10 @@ input[type=checkbox]::after {
   transition: transform .2s var(--ease), background .2s;
 }
 input[type=checkbox]:hover { background: var(--faint); box-shadow: none; }
-input[type=checkbox]:checked { background: var(--acc); }
+input[type=checkbox]:checked { background: var(--accent, var(--acc)); }
 input[type=checkbox]:checked::after { transform: translateX(12px); background: var(--knob); }
 input[type=checkbox]:focus { box-shadow: none; }
-input[type=checkbox]:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+input[type=checkbox]:focus-visible { outline: 2px solid var(--accent, var(--acc)); outline-offset: 2px; }
 
 /* radios */
 input[type=radio] {
@@ -284,11 +284,11 @@ input[type=radio] {
 }
 input[type=radio]:hover { border-color: var(--muted); box-shadow: none; }
 input[type=radio]:checked {
-  border-color: var(--acc);
-  background: radial-gradient(circle, var(--acc) 0 4px, transparent 5px);
+  border-color: var(--accent, var(--acc));
+  background: radial-gradient(circle, var(--accent, var(--acc)) 0 4px, transparent 5px);
 }
 input[type=radio]:focus { box-shadow: none; }
-input[type=radio]:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+input[type=radio]:focus-visible { outline: 2px solid var(--accent, var(--acc)); outline-offset: 2px; }
 
 /* ---- top bar ------------------------------------------------------------ */
 
@@ -321,8 +321,22 @@ input[type=radio]:focus-visible { outline: 2px solid var(--acc); outline-offset:
   line-height: 1;
   transition: color .6s var(--ease, ease), background .6s var(--ease, ease), border-color .6s var(--ease, ease);
 }
-html[data-tone="agent"] { --focus: var(--plan); --focus-soft: var(--plan-soft); }
-html[data-tone="editor"] { --focus: var(--acc); --focus-soft: var(--acc-soft); }
+html[data-tone="agent"] {
+  --focus: var(--plan);
+  --focus-soft: var(--plan-soft);
+  --accent: var(--plan);
+  --accent-ink: var(--plan-ink);
+  --accent-soft: var(--plan-soft);
+  --accent-line: rgba(226, 177, 90, .55);
+}
+html[data-tone="editor"] {
+  --focus: var(--acc);
+  --focus-soft: var(--acc-soft);
+  --accent: var(--acc);
+  --accent-ink: var(--acc-ink);
+  --accent-soft: var(--acc-soft);
+  --accent-line: var(--acc-line);
+}
 html[data-motion="off"] .mode-pill { transition: none; }
 .mode-pill:hover:not(:disabled) { filter: brightness(1.12); }
 .mode-pill:active:not(:disabled) { filter: brightness(1.22); }
@@ -355,7 +369,7 @@ html[data-motion="off"] .mode-pill { transition: none; }
   width: 22px;
   height: 22px;
   flex: none;
-  background: var(--acc);
+  background: var(--accent, var(--acc));
   -webkit-mask: url("/static/brand/kerniq-white-out.svg") center / contain no-repeat;
   mask: url("/static/brand/kerniq-white-out.svg") center / contain no-repeat;
 }
@@ -405,8 +419,8 @@ body.settings-mode .panel-toggles { display: none !important; }
   color: var(--muted);
 }
 .icon-btn:hover:not(:disabled) { background: var(--bg-2); color: var(--fg); border: 0; }
-.icon-btn.on { color: var(--acc); }
-.icon-btn.on:hover:not(:disabled) { color: var(--acc); }
+.icon-btn.on { color: var(--accent, var(--acc)); }
+.icon-btn.on:hover:not(:disabled) { color: var(--accent, var(--acc)); }
 .icon-btn svg { display: block; }
 
 /* settings button: JS swaps its text (⚙ / ✕), we draw the icon instead */

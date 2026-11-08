@@ -796,6 +796,8 @@ async def async_main(argv: Optional[list] = None) -> int:
             ws = Path(config.application.workspace_root)
             reg, _ = _build_registry(config, ws, tool_store)
             for t in reg.list_tools():
+                if getattr(t, "user_hidden", False):
+                    continue
                 phrase = getattr(t, "display_phrase", "") or "calls"
                 print(f"  {t.name:22} {phrase}")
             return 0

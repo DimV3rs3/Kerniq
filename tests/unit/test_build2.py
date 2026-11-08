@@ -2,11 +2,43 @@
 
 from pathlib import Path
 
+import pytest
+
 from Kerniq.core.runtime_flow import clamp_output_tokens
 from Kerniq.devtools.paths import anchored_dir, pin_process_root
 from Kerniq.server.debug import arm, request_unlocked, token_matches
 from Kerniq.server.homes import user_home
 from Kerniq.tools.packs.web.tools import _safe_download_name, downloads_dir
+
+
+def test_settings_paths_stay_on_the_install_when_cwd_is_elsewhere(tmp_path, monkeypatch):
+    pytest.importorskip("tomllib")
+    install = Path(__file__).resolve().parents[2]
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("KERNIQ_ROOT", raising=False)
+    monkeypatch.delenv("KERNIQ_HOME", raising=False)
+    from Kerniq.settings.loader import SettingsProvider
+
+    cfg = SettingsProvider().config
+    assert cfg.storage.state_dir == (install / "state").resolve()
+    assert cfg.storage.sessions_dir == (install / "sessions").resolve()
+    assert cfg.application.workspace_root == (install / "workspace").resolve()
+    assert cfg.logging.log_file == (install / "logs" / "platform.jsonl").resolve()
+
+
+def test_launch_outside_the_install_still_uses_it(tmp_path, monkeypatch):
+    install = Path(__file__).resolve().parents[2]
+    monkeypatch.chdir(tmp_path)
+    # setenv records the previous value. pin_process_root overwrites it.
+    # delenv on a missing variable does not, so the install path would leak.
+    monkeypatch.setenv("KERNIQ_ROOT", "")
+    monkeypatch.delenv("KERNIQ_HOME", raising=False)
+    root = pin_process_root()
+    assert root == install
+    assert Path.cwd().resolve() == install
+    state = anchored_dir("./state")
+    assert state == (install / "state").resolve()
+    assert state.is_absolute()
 
 
 def test_pin_from_scripts_uses_the_project(tmp_path, monkeypatch):
@@ -25,8 +57,8 @@ def test_pin_from_scripts_uses_the_project(tmp_path, monkeypatch):
     assert anchored_dir("./state") == (project / "state").resolve()
 
 
-def test_clamp_keeps_a_typed_cap_and_auto_uses_the_window():
-    assert clamp_output_tokens(None, 8192) == 8192
+def test_clamp_keeps_a_typed_cap_and_leaves_auto_unset():
+    assert clamp_output_tokens(None, 8192) is None
     assert clamp_output_tokens(1000, 8192) == 1000
     assert clamp_output_tokens(90000, 8192) == 8192
     assert clamp_output_tokens(None, 0) is None

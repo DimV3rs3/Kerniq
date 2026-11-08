@@ -1,10 +1,10 @@
 /* ---- explorer ----------------------------------------------------------- */
 
 .root-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
-.root-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.root-pane .tree { max-height: 0; overflow: hidden; padding: 0 6px; transition: max-height .28s ease; }
-.root-pane.open { flex: 1; min-width: 0; }
-.root-pane.open .tree { max-height: 70vh; overflow-x: hidden; overflow-y: auto; padding: 8px 6px; }
+.root-pane { display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0; min-width: 0; }
+.root-pane .tree { display: none; }
+.root-pane.open { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.root-pane.open .tree { display: block; flex: 1 1 auto; min-height: 0; max-height: none; overflow-x: hidden; overflow-y: auto; padding: 8px 6px; }
 .root-tab {
   display: block; width: 100%; text-align: left;
   border: 0; border-bottom: 1px solid var(--line);
@@ -50,10 +50,14 @@
 .fi[data-ext="css"], .fi[data-ext="scss"] { color: #9d8be0; }
 .fi[data-ext="sh"], .fi[data-ext="ps1"], .fi[data-ext="bat"] { color: var(--ok); }
 .tree .fname {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: block;
 }
+.tree-indent { flex: 0 0 auto; }
+.tree, .root-pane, .root-stack { overflow-x: hidden; }
 

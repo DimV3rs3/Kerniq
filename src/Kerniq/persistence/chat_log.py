@@ -269,6 +269,35 @@ class ChatLog:
             if run_id:
                 paths.append(self._run_path(run_id))
             for path in paths:
-                tmp = path.with_suffix(".tmp")
-                tmp.write_text(blob, encoding="utf-8")
+                self._atomic_write(path, blob)
+
+    def _atomic_write(self, path: Path, blob: str) -> None:
+        """Write JSON. On Windows a locked or foreign-owned target makes
+        Path.replace raise PermissionError; fall back to an in-place write."""
+        tmp = path.with_suffix(".tmp")
+        try:
+            tmp.write_text(blob, encoding="utf-8")
+        except OSError:
+            # Could not even create the temp file. Try the target directly.
+            path.write_text(blob, encoding="utf-8")
+            return
+        # Prefer atomic replace. Retry briefly for transient Windows locks.
+        for attempt in range(3):
+            try:
                 tmp.replace(path)
+                return
+            except PermissionError:
+                if attempt < 2:
+                    time.sleep(0.05 * (attempt + 1))
+                    continue
+                break
+            except OSError:
+                break
+        # Fallback: overwrite the target in place, then drop the temp.
+        try:
+            path.write_text(blob, encoding="utf-8")
+        finally:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass

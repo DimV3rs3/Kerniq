@@ -7,7 +7,7 @@ async function saveInterface(patch) {
   settings = settings || {};
   settings.interface = Object.assign({
     layout: 'editor', motion: 'on', blur: true, highlight: true, auto_think: false,
-    show_notifications: true, auto_dismiss_notifications: true,
+    show_notifications: true, auto_dismiss_notifications: true, agent_chat_full: false,
     theme: document.documentElement.dataset.themeChoice || 'dark',
   }, settings.interface || {}, patch || {});
   if (serverModeOn()) {
@@ -93,6 +93,12 @@ function applyInterface(row) {
     b.classList.toggle('on', on);
     b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
+  applyAgentChatFull(data.agent_chat_full === true);
+}
+function applyAgentChatFull(full) {
+  document.documentElement.dataset.chatFull = full ? '1' : '0';
+  const box = document.getElementById('s-agent-chat-full');
+  if (box) box.checked = !!full;
 }
 async function setWebUiValue(key, value) {
   const draft = draftPlugins['plugin_web_ui'] || (draftPlugins['plugin_web_ui'] = { values: {} });
@@ -478,11 +484,35 @@ watchBenchmark();
   const title = document.getElementById('ext-sheet-title');
   const nav = document.getElementById('settings-nav');
   const main = document.querySelector('.settings-main');
+  function isBenchmarkExt(ext) {
+    const id = String((ext && (ext.plugin_id || ext.id)) || '');
+    return id === 'llm-benchmark' || id === 'benchmark';
+  }
   function openSheet(ext) {
     if (!sheet || !body) return;
     if (title) title.textContent = ext.label || 'Extension';
-    const stateText = (document.getElementById('bench-note-text') || {}).textContent || '';
     body.innerHTML = '';
+    if (!isBenchmarkExt(ext)) {
+      const note = document.createElement('p');
+      note.className = 'ext-metric';
+      note.textContent = ext.label || '';
+      const actions = document.createElement('div');
+      actions.className = 'ext-actions';
+      const settingsBtn = document.createElement('button');
+      settingsBtn.type = 'button';
+      settingsBtn.className = 'save-active';
+      settingsBtn.textContent = translate('Open settings');
+      settingsBtn.addEventListener('click', () => {
+        sheet.hidden = true;
+        if (typeof openPlugin === 'function') openPlugin(ext.plugin_id);
+      });
+      actions.appendChild(settingsBtn);
+      body.appendChild(note);
+      body.appendChild(actions);
+      sheet.hidden = false;
+      return;
+    }
+    const stateText = (document.getElementById('bench-note-text') || {}).textContent || '';
     const status = document.createElement('p');
     status.className = 'ext-metric';
     status.textContent = stateText || translate('No benchmark is running.');
@@ -500,9 +530,7 @@ watchBenchmark();
     settingsBtn.textContent = translate('Open settings');
     settingsBtn.addEventListener('click', () => {
       sheet.hidden = true;
-      const stab = document.querySelector('.stab[data-tab="ext-' + ext.id + '"]');
-      document.getElementById('nav-settings')?.click();
-      if (stab) stab.click();
+      if (typeof openPlugin === 'function') openPlugin(ext.plugin_id);
     });
     actions.appendChild(run);
     actions.appendChild(settingsBtn);
@@ -527,6 +555,8 @@ watchBenchmark();
         if (btn) { btn.hidden = false; btn.title = ext.label || 'Benchmark'; btn._ext = ext; }
       }
       if (ext.slot !== 'settings' || !nav || !main) return;
+      const known = (componentsCache.plugins || []).some(p => p && p.id === ext.plugin_id);
+      if (known) return;
       const stab = document.createElement('div');
       stab.className = 'stab';
       stab.dataset.tab = 'ext-' + ext.id;
@@ -551,10 +581,14 @@ watchBenchmark();
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'ghost';
-      open.textContent = translate('Open benchmark window');
-      open.addEventListener('click', () => openSheet(ext));
+      open.textContent = isBenchmarkExt(ext) ? translate('Open benchmark window') : translate('Open settings');
+      open.addEventListener('click', () => {
+        if (isBenchmarkExt(ext)) openSheet(ext);
+        else if (typeof openPlugin === 'function') openPlugin(ext.plugin_id);
+      });
       panel.appendChild(open);
     });
+    if (typeof placePluginNav === 'function') placePluginNav();
   })().catch(() => {});
 })();
 (function setupInterfacePrefs() {
@@ -1089,7 +1123,7 @@ async function loadLangPacks() {
   );
   let stored = '';
   try { stored = localStorage.getItem('kerniq.ui_locale') || ''; } catch (_) {}
-  applyUiLocale(preferredLocale(fromPlugin || stored));
+  applyUiLocale(preferredLocale(stored || fromPlugin));
   if (typeof refreshInterfaceControls === 'function') refreshInterfaceControls();
 }
 function openLangModal() {
@@ -1184,3 +1218,32 @@ document.addEventListener('DOMContentLoaded', () => {
   const stop = document.getElementById('btn-stop-ui');
   if (stop) stop.onclick = () => shutdownUi();
 });
+
+// Agent chat: full window or a readable column
+(function () {
+  const box = document.getElementById('s-agent-chat-full');
+  if (!box || box.dataset.wired) return;
+  box.dataset.wired = '1';
+  box.addEventListener('change', () => {
+    if (typeof applyAgentChatFull === 'function') applyAgentChatFull(box.checked);
+    if (typeof saveInterface === 'function') saveInterface({ agent_chat_full: box.checked });
+  });
+})();
+
+// Elevated restart (Windows). Shown only when allow_elevated is on.
+(function () {
+  const btn = document.getElementById('btn-restart-elevated');
+  if (!btn || btn.dataset.wired) return;
+  btn.dataset.wired = '1';
+  btn.addEventListener('click', async () => {
+    try {
+      const r = await fetch('/api/restart-elevated', { method: 'POST' });
+      if (!r.ok) {
+        const t = await r.text();
+        if (typeof toast === 'function') toast(t || 'Restart failed', 'err');
+      }
+    } catch (e) {
+      if (typeof toast === 'function') toast(String(e), 'err');
+    }
+  });
+})();

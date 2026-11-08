@@ -113,11 +113,13 @@ def test_venv_off_does_not_enter_the_shell(tmp_path):
     assert ".kerniq-venv" not in env.get("PATH", "")
     assert "KERNIQ_SANDBOX" not in env
     held = SecurityPolicy(tmp_path, host_freedom=True)
-    assert held.host_is_open() is False
-    assert held.terminal_block_reason("cat /etc/hostname")
-    held.use_venv = False
+    assert held.host_is_open() is True
     assert held.terminal_block_reason("cat /etc/hostname") is None
     assert held.terminal_block_reason("rm -rf /")
+    closed = SecurityPolicy(tmp_path, host_freedom=False)
+    closed.use_venv = False
+    assert closed.host_is_open() is False
+    assert closed.terminal_block_reason("cat /etc/hostname")
 
 
 def test_command_output_hides_the_real_directory(tmp_path):
@@ -160,13 +162,7 @@ def test_host_freedom_file_tools_keep_the_os_closed(tmp_path):
     outside = tmp_path / "notes.txt"
     outside.write_text("hello", encoding="utf-8")
     locked = {tool.name: tool for tool in FileSystemTools(str(workspace)).get_tools()}
-    held_policy = SecurityPolicy(workspace, host_freedom=True)
-    held = {
-        tool.name: tool
-        for tool in FileSystemTools(str(workspace), policy=held_policy).get_tools()
-    }
     open_policy = SecurityPolicy(workspace, host_freedom=True)
-    open_policy.use_venv = False
     free = {
         tool.name: tool
         for tool in FileSystemTools(str(workspace), policy=open_policy).get_tools()
@@ -178,8 +174,6 @@ def test_host_freedom_file_tools_keep_the_os_closed(tmp_path):
     denied = asyncio.run(read(locked["read_file"], str(outside)))
     assert denied.success is False
     assert str(outside) not in (denied.human_readable or "")
-    still = asyncio.run(read(held["read_file"], str(outside)))
-    assert still.success is False
     opened = asyncio.run(read(free["read_file"], str(outside)))
     assert opened.success is True
     assert "hello" in (opened.human_readable or "")

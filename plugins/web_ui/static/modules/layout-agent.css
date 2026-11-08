@@ -73,14 +73,35 @@ html[data-layout="agent"] #chat-panel.collapsed {
 html[data-layout="agent"] #chat-panel > h3,
 html[data-layout="agent"] #chat-panel > .msgs-wrap,
 html[data-layout="agent"] #chat-panel > .status-bar,
-html[data-layout="agent"] #chat-panel > .composer,
 html[data-layout="agent"] #chat-panel > #attach-chips { width: auto; min-width: 0; max-width: none; }
+html[data-layout="agent"] #chat-panel > .composer {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--agent-chat-max, none);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
 /* keep the conversation in a readable column */
 html[data-layout="agent"] {
   --col-pad: 22px;
 }
 html[data-layout="agent"] #chat-panel > h3 { padding: 0 var(--col-pad); background: transparent; }
 html[data-layout="agent"] .msgs { padding: calc(18px + var(--plan-h, 0px)) var(--col-pad) 22px; gap: 14px; }
+html[data-layout="agent"] .msgs,
+html[data-layout="agent"] .composer,
+html[data-layout="agent"] .status-bar,
+html[data-layout="agent"] #attach-chips,
+html[data-layout="agent"] #chat-panel > h3 {
+  max-width: var(--agent-chat-max, none);
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+html[data-layout="agent"] .composer-box { width: 100%; box-sizing: border-box; }
+html[data-layout="agent"]:not([data-chat-full="1"]) { --agent-chat-max: 840px; }
+html[data-layout="agent"][data-chat-full="1"] { --agent-chat-max: none; }
 html[data-layout="agent"] .status-bar { padding: 0 var(--col-pad); }
 html[data-layout="agent"] #attach-chips { padding: 0 var(--col-pad) 6px; }
 html[data-layout="agent"] .composer { padding: 0 var(--col-pad) 18px; }

@@ -75,10 +75,27 @@ class SessionManager:
         payload = self._payload(**kwargs)
         path = self.storage._get_path(self._key(kwargs["session_id"]))
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            StorageValue(data=payload).model_dump_json(),
-            encoding="utf-8",
-        )
+        blob = StorageValue(data=payload).model_dump_json()
+        try:
+            path.write_text(blob, encoding="utf-8")
+        except PermissionError:
+            # sessions may have been created elevated; try to open them up
+            try:
+                import os, subprocess, sys
+                if sys.platform == "win32":
+                    user = os.environ.get("USERNAME") or ""
+                    if user:
+                        subprocess.run(
+                            ["icacls", str(path.parent), "/grant", f"{user}:(OI)(CI)M", "/T", "/C", "/Q"],
+                            check=False, capture_output=True, timeout=10,
+                        )
+            except Exception:
+                pass
+            try:
+                path.write_text(blob, encoding="utf-8")
+            except Exception:
+                import logging
+                logging.getLogger("Kerniq.persistence").exception("session save denied")
 
     async def get_session(self, session_id: Any) -> Optional[dict]:
         value = await self.storage.get(self._key(session_id))

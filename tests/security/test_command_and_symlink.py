@@ -83,17 +83,17 @@ def test_open_host_skips_the_symlink_gate(tmp_path):
     workspace = tmp_path / "ws"
     workspace.mkdir()
     (workspace / "out").symlink_to(tmp_path / "secret")
+    closed = SecurityPolicy(workspace, host_freedom=False)
     held = SecurityPolicy(workspace, host_freedom=True)
-    tool = TerminalTools(workspace, held)
+    tool = TerminalTools(workspace, closed)
 
-    async def run():
-        return await tool.execute({"command": "pwd", "timeout": 5}, None)
+    async def run(policy):
+        return await TerminalTools(workspace, policy).execute({"command": "pwd", "timeout": 5}, None)
 
-    denied = asyncio.run(run())
+    denied = asyncio.run(run(closed))
     assert denied.success is False
     assert "symlink" in (denied.human_readable or "").lower()
-    held.use_venv = False
-    opened = asyncio.run(run())
+    opened = asyncio.run(run(held))
     assert opened.success is True
     assert "symlink" not in (opened.human_readable or "").lower()
 

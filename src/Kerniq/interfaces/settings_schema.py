@@ -31,6 +31,8 @@ class SettingField(BaseModel):
     options: Optional[List[Dict[str, str]]] = None  # [{value, label}]
     group: str = "general"
     slot: Optional[int] = None  # hide when a sibling slot_count field is lower
+    source: Optional[str] = None  # providers | models, filled from the Agent tab
+    unit_key: Optional[str] = None  # sibling select: seconds, minutes, hours
     # Used only by `install.sh --server`. Absent means the desktop default stays.
     server_default: Any = None
 
@@ -38,6 +40,10 @@ class SettingField(BaseModel):
         data = self.model_dump(mode="json")
         if data.get("slot") is None:
             data.pop("slot", None)
+        if not data.get("source"):
+            data.pop("source", None)
+        if not data.get("unit_key"):
+            data.pop("unit_key", None)
         data.pop("server_default", None)
         return data
 

@@ -80,6 +80,8 @@ class AgentRuntimeSettings(BaseModel):
     loop_retries: int = 4
     # Desktop only. Server mode ignores this. Default off.
     host_freedom: bool = False
+    # When host freedom is on, allow tools to run elevated (Windows: restart UI as admin).
+    allow_elevated: bool = False
     # Desktop only. True keeps the private venv on PATH. False uses the host PATH.
     use_venv: bool = True
 
@@ -149,6 +151,8 @@ class InterfaceSettings(BaseModel):
     """Look of the local UI. Stored in the project, not in the browser."""
 
     layout: str = "editor"  # editor | agent
+    # Agent chat column. None or 0 = full window width. Positive = max width in px, centered.
+    agent_chat_width: Optional[int] = None
     motion: str = "on"  # on | off | auto
     blur: bool = True
     highlight: bool = True

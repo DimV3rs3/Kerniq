@@ -310,6 +310,12 @@ def apply_sandbox_env(
     else:
         out.pop("KERNIQ_CONFINE", None)
         out.pop("KERNIQ_VISIBLE", None)
+    try:
+        from Kerniq.sandbox.runtimes import apply_language_env
+
+        out = apply_language_env(out, Path(workspace))
+    except Exception:
+        logger.warning("Language sandbox was not applied", exc_info=False)
     return out
 
 

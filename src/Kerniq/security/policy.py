@@ -66,6 +66,8 @@ _INTRINSIC_RISK = {
     "edit_file": RiskLevel.MEDIUM,
     "move_file": RiskLevel.MEDIUM,
     "fs_move_file": RiskLevel.MEDIUM,
+    "copy_file": RiskLevel.MEDIUM,
+    "fs_copy_file": RiskLevel.MEDIUM,
     "unzip": RiskLevel.MEDIUM,
     "create_directory": RiskLevel.MEDIUM,
 }
@@ -111,14 +113,12 @@ class SecurityPolicy:
         self.auto_approve_up_to = parsed
 
     def host_is_open(self) -> bool:
-        """Leave the workspace only when host freedom is on and the venv is off.
+        """Host freedom is the desktop switch for leaving the workspace.
 
-        Host freedom alone reveals absolute paths. The path checks stay until
-        ``use_venv`` is false. Missing ``use_venv`` stays closed.
+        The virtual environment may stay on. Server mode never sets the flag.
+        Destructive commands and operating-system files stay denied.
         """
-        if not self.host_freedom:
-            return False
-        return not bool(getattr(self, "use_venv", True))
+        return bool(self.host_freedom)
 
     def validate_path(self, path: str) -> Path:
         from Kerniq.server.homes import jail_root, logical_path

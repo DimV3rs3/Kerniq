@@ -38,11 +38,44 @@ logger = logging.getLogger(__name__)
 # Back-to-back UI polls (loaded + catalog) must not hit /api/v1/models twice.
 _LIST_CACHE: Dict[str, Any] = {"key": None, "at": 0.0, "data": None}
 _LIST_TTL = 2.0
+# Auth failures from a bad or stolen token. After this many, stop calling for a minute.
+_AUTH_WINDOW = 60.0
+_AUTH_LIMIT = 8
+_AUTH_FAILS: Dict[str, float] = {"start": 0.0, "count": 0.0}
 
 
 def _invalidate_model_cache() -> None:
     _LIST_CACHE["at"] = 0.0
     _LIST_CACHE["data"] = None
+
+
+def lm_auth_limited() -> bool:
+    """True when LM Studio has rejected the token too many times this minute."""
+    now = time.monotonic()
+    start = float(_AUTH_FAILS.get("start") or 0)
+    count = int(_AUTH_FAILS.get("count") or 0)
+    if now - start > _AUTH_WINDOW:
+        return False
+    return count >= _AUTH_LIMIT
+
+
+async def _audit_lm_response(response: Any) -> None:
+    """Log an auth refusal. The token itself is never written."""
+    status = int(getattr(response, "status_code", 0) or 0)
+    if status not in (401, 403):
+        return
+    request = getattr(response, "request", None)
+    url = str(getattr(request, "url", "") or "") if request is not None else ""
+    logger.warning(
+        "LM Studio rejected the API token (%s) for %s",
+        status,
+        url.split("?", 1)[0] or "local server",
+    )
+    now = time.monotonic()
+    if now - float(_AUTH_FAILS.get("start") or 0) > _AUTH_WINDOW:
+        _AUTH_FAILS["start"] = now
+        _AUTH_FAILS["count"] = 0
+    _AUTH_FAILS["count"] = float(_AUTH_FAILS.get("count") or 0) + 1
 
 
 def _normalize_host(base_url: str) -> str:
@@ -271,6 +304,12 @@ class LMStudioProvider(ModelProvider):
         t = float(timeout if timeout is not None else self.timeout)
         if t <= 0:
             t = 600.0
+        if lm_auth_limited():
+            raise ProviderError(
+                ErrorCode.PROVIDER_REQUEST_FAILED,
+                "LM Studio rejected the API token too many times. "
+                "Wait a minute, then check the token in API & model.",
+            )
         http_timeout = httpx.Timeout(
             connect=30.0,
             read=t,
@@ -281,6 +320,7 @@ class LMStudioProvider(ModelProvider):
             timeout=http_timeout,
             trust_env=not _is_local_host(self.host),
             follow_redirects=True,
+            event_hooks={"response": [_audit_lm_response]},
         )
 
     async def _get_json(self, path: str, timeout: float = 15.0) -> Tuple[Any, str]:
@@ -606,7 +646,20 @@ class LMStudioProvider(ModelProvider):
                 return True
         return False
 
-    async def load_model(self, model_key: str, context_length: Optional[int] = None) -> Dict[str, Any]:
+    async def load_model(
+        self,
+        model_key: str,
+        context_length: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Load one catalog model.
+
+        Temperature is not a field of ``POST /api/v1/models/load``. Current
+        LM Studio answers 400 ``unrecognized_keys`` and the retry then loads
+        the model again with no context, which replaces a working instance
+        with the model's full window. Chat requests already send temperature.
+        """
+        del temperature
         requested = None
         if context_length is not None:
             try:
@@ -626,7 +679,7 @@ class LMStudioProvider(ModelProvider):
                     "context_length": loaded_now,
                 }
             logger.info(
-                "reloading %s: loaded context %s, requested %s",
+                "reloading %s: loaded context %s requested %s",
                 model_key,
                 loaded_now,
                 requested,
@@ -635,19 +688,24 @@ class LMStudioProvider(ModelProvider):
         payload: Dict[str, Any] = {"model": model_key}
         if requested is not None:
             payload["context_length"] = requested
+        body = await self._post_load(payload)
+        if isinstance(body, dict):
+            body.setdefault("context_length", requested)
+        return body
+
+    async def _post_load(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """POST /api/v1/models/load. One request. A 400 is not retried."""
         url = self._url("/api/v1/models/load")
         async with self._client(timeout=600) as client:
-            r = await client.post(url, json=payload, headers=self._headers())
-            if r.status_code >= 400:
+            response = await client.post(url, json=payload, headers=self._headers())
+            if response.status_code >= 400:
                 raise ProviderError(
                     ErrorCode.PROVIDER_REQUEST_FAILED,
-                    f"Load failed: {r.status_code} {r.text[:400]}",
+                    f"Load failed: {response.status_code} {response.text[:400]}",
                 )
             _invalidate_model_cache()
-            body = r.json() if r.content else {}
-            if isinstance(body, dict):
-                body.setdefault("context_length", requested)
-            return body
+            body = response.json() if response.content else {}
+            return body if isinstance(body, dict) else {}
 
     async def _loaded_context_length(self, model_key: str) -> Optional[int]:
         from Kerniq.models.identity import instance_model_key, same_model
@@ -876,11 +934,13 @@ class LMStudioProvider(ModelProvider):
         if request.options and request.options.max_tokens is not None:
             payload["max_tokens"] = request.options.max_tokens
         if request.options and request.options.extra_params:
-            payload.update(request.options.extra_params)
-        if (request.metadata or {}).get("kerniq_internal"):
-            payload["enable_thinking"] = False
-            payload["thinking"] = {"type": "disabled"}
-            payload["reasoning_effort"] = "none"
+            # Drop thinking/reasoning keys. Models without a custom reasoning
+            # field warn and can fail the request. LM Studio's own chat does
+            # not send them.
+            extra = dict(request.options.extra_params)
+            for k in ("enable_thinking", "thinking", "reasoning_effort"):
+                extra.pop(k, None)
+            payload.update(extra)
         oai_tools = self._to_openai_tools(request.tools)
         if oai_tools:
             payload["tools"] = oai_tools
@@ -961,9 +1021,14 @@ class LMStudioProvider(ModelProvider):
                     )
                 cancel_check = (request.metadata or {}).get("cancel_check")
                 lines = response.aiter_lines()
+                # Aborting the socket during prefill of a large context kills
+                # the llama.cpp CUDA engine. Stay connected until the first
+                # token, then abort is safe.
+                got_token = False
                 while True:
+                    check = cancel_check if got_token else None
                     try:
-                        line = await next_stream_line(lines, response, cancel_check)
+                        line = await next_stream_line(lines, response, check)
                     except StreamCancelled:
                         content = "".join(content_parts)
                         reasoning = "".join(reasoning_parts) or None
@@ -1003,6 +1068,7 @@ class LMStudioProvider(ModelProvider):
                         if delta.get("content"):
                             content_parts.append(delta["content"])
                             gen_tokens += max(1, len(delta["content"]) // 4)
+                            got_token = True
                             if first_token_at is None:
                                 first_token_at = _time.monotonic()
                             cb = (request.metadata or {}).get("on_stream_delta")
@@ -1015,6 +1081,7 @@ class LMStudioProvider(ModelProvider):
                         if rc:
                             reasoning_parts.append(rc)
                             gen_tokens += max(1, len(rc) // 4)
+                            got_token = True
                             if first_token_at is None:
                                 first_token_at = _time.monotonic()
                             cb = (request.metadata or {}).get("on_stream_delta")

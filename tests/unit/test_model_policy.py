@@ -124,6 +124,99 @@ def test_loaded_model_reloads_when_context_length_changes():
     assert provider.model == "qwen3.5-9b"
 
 
+def test_temperature_does_not_reload_a_loaded_model():
+    """LM Studio rejects temperature on /models/load. A loaded model stays loaded."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from Kerniq.core.runtime_flow import use_model_for_mode
+
+    class Provider:
+        provider_id = "lm_studio"
+        model = ""
+        loads = []
+
+        async def model_is_loaded(self, key):
+            return True
+
+        async def load_model(self, key, context_length=None, temperature=None):
+            self.loads.append((key, context_length, temperature))
+
+    provider = Provider()
+    api = SimpleNamespace(
+        model="qwen/qwen3.6-35b-a3b",
+        act_model="",
+        split_models=False,
+        provider="lm_studio",
+        temperature=0.4,
+    )
+    assert asyncio.run(use_model_for_mode(provider, api, "act")) is None
+    assert provider.loads == []
+    assert provider.model == "qwen/qwen3.6-35b-a3b"
+
+
+def test_context_reload_does_not_send_temperature():
+    import asyncio
+    from types import SimpleNamespace
+
+    from Kerniq.core.runtime_flow import use_model_for_mode
+
+    class Provider:
+        provider_id = "lm_studio"
+        model = ""
+        loads = []
+
+        async def model_is_loaded(self, key):
+            return False
+
+        async def load_model(self, key, context_length=None, temperature=None):
+            self.loads.append((key, context_length, temperature))
+
+    provider = Provider()
+    api = SimpleNamespace(
+        model="qwen3.5-9b",
+        act_model="",
+        split_models=False,
+        provider="lm_studio",
+        context_length=8192,
+        temperature=0.2,
+    )
+    assert asyncio.run(use_model_for_mode(provider, api, "act")) is None
+    assert provider.loads == [("qwen3.5-9b", 8192, None)]
+
+
+def test_lmstudio_load_ignores_temperature_and_keeps_a_loaded_model():
+    import asyncio
+
+    from Kerniq.models.providers.lm_studio import LMStudioProvider
+
+    provider = LMStudioProvider()
+    posted = []
+
+    async def loaded(_key):
+        return True
+
+    async def context(_key):
+        return 32768
+
+    async def unload(_key):
+        raise AssertionError("unloaded a loaded model")
+
+    async def post(payload):
+        posted.append(payload)
+        return {"ok": True}
+
+    provider.model_is_loaded = loaded
+    provider._loaded_context_length = context
+    provider.unload_model_instances = unload
+    provider._post_load = post
+    result = asyncio.run(provider.load_model("qwen/qwen3.6-35b-a3b", temperature=0.4))
+    assert result["already_loaded"] is True
+    assert posted == []
+    asyncio.run(provider.load_model("qwen/qwen3.6-35b-a3b", context_length=32768, temperature=0.4))
+    assert posted == []
+
+
 def test_textual_tool_call_is_parsed():
     raw = (
         'update_plan{items:[{id:<|"|>1<|"|>,status:<|"|>pending<|"|>,'

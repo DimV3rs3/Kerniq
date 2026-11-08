@@ -191,6 +191,29 @@
   align-items: flex-end;
   max-width: min(88%, 620px);
 }
+.msg.user .user-files {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin-bottom: 6px;
+  max-width: 100%;
+}
+.msg.user .user-file {
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg-3);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msg.user .user-file.more { color: var(--muted); background: transparent; }
+
 .msg.user .user-bubble {
   max-width: 100%;
   padding: 9px 14px;

@@ -422,6 +422,22 @@ function setFooterContext(used, limit) {
   } else {
     el.textContent = t('ctx') + ': —';
   }
+  if (typeof setFooterCompact === 'function') setFooterCompact();
+}
+function compactTriggerPercent() {
+  try {
+    const plug = (typeof componentsCache !== 'undefined' && componentsCache.plugins || []).find(p => p.id === 'plugin_context_compact');
+    const draft = (typeof draftPlugins !== 'undefined' && draftPlugins['plugin_context_compact']) || null;
+    const values = (draft && draft.values) || (plug && plug.values) || {};
+    const n = Number(values.trigger_percent);
+    if (n >= 10 && n <= 95) return Math.round(n);
+  } catch (_) {}
+  return 75;
+}
+function setFooterCompact() {
+  const el = document.getElementById('footer-compact');
+  if (!el) return;
+  el.textContent = t('compressAt').replace('XX', String(compactTriggerPercent()));
 }
 // Rolling tok/s: 4 one-second buckets (3 past + current). Only while streaming generation.
 let tpsBuckets = []; // [{sec: number, tokens: number}]
@@ -731,15 +747,30 @@ function applyInverse(e) {
 }
 
 /* tree */
+function scopePath(rel) {
+  const root = explorerRoot();
+  const text = String(rel || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/^\.\//, '');
+  if (root !== 'attachments' && root !== 'downloads') return text;
+  if (!text) return root;
+  if (text === root || text.startsWith(root + '/')) return text;
+  return root + '/' + text;
+}
 function buildTree(entries) {
+  const rootName = explorerRoot();
+  const bucket = (rootName === 'attachments' || rootName === 'downloads') ? rootName : '';
   const root = { name: '', path: '', type: 'dir', children: {} };
   for (const e of entries) {
-    const parts = e.path.replace(/\\/g, '/').split('/').filter(Boolean);
+    let parts = String(e.path || '').replace(/\\/g, '/').split('/').filter(Boolean);
+    if (bucket && parts[0] === bucket) parts = parts.slice(1);
+    if (!parts.length) continue;
     let node = root;
+    const acc = bucket ? [bucket] : [];
     parts.forEach((part, i) => {
+      acc.push(part);
       const isLast = i === parts.length - 1;
+      const path = acc.join('/');
       if (!node.children[part]) {
-        node.children[part] = { name: part, path: parts.slice(0, i + 1).join('/'), type: isLast ? e.type : 'dir', hidden: isLast ? !!e.hidden : (part.startsWith('.')), children: {} };
+        node.children[part] = { name: part, path: path, type: isLast ? e.type : 'dir', hidden: isLast ? !!e.hidden : part.startsWith('.'), children: {} };
       } else if (!isLast) node.children[part].type = 'dir';
       node = node.children[part];
     });
@@ -797,10 +828,10 @@ function renderTree() {
     for (const ch of kids) {
       const row = document.createElement('div');
       row.className = 'row' + (ch.path === activeTab ? ' active' : '');
-      row.style.paddingLeft = (4 + depth * 14) + 'px';
+      const indent = depth > 0 ? '<span class="tree-indent" style="flex:0 0 ' + (depth * 12) + 'px"></span>' : '';
       const open = expanded.has(ch.path);
       if (ch.type === 'dir') {
-        row.innerHTML = `<span class="twist${open ? ' open' : ''}">${TWIST_SVG}</span>${DIR_SVG}<span class="fname">${esc(ch.name)}</span>`;
+        row.innerHTML = indent + `<span class="twist${open ? ' open' : ''}">${TWIST_SVG}</span>${DIR_SVG}<span class="fname">${esc(ch.name)}</span>`;
         row.title = ch.name;
         if (ch.hidden) row.classList.add('hidden-entry');
         row.onclick = () => { if (expanded.has(ch.path)) expanded.delete(ch.path); else expanded.add(ch.path); renderTree(); };
@@ -808,7 +839,7 @@ function renderTree() {
         el.appendChild(row);
         if (open) walk(ch, depth + 1);
       } else {
-        row.innerHTML = `<span class="twist"></span>${fileSvg(ch.name)}<span class="fname">${esc(ch.name)}</span>`;
+        row.innerHTML = indent + `<span class="twist"></span>${fileSvg(ch.name)}<span class="fname">${esc(ch.name)}</span>`;
         row.title = ch.name;
         if (ch.hidden) row.classList.add('hidden-entry');
         row.onclick = () => openFile(ch.path);
@@ -862,7 +893,8 @@ function showCtx(ev, path, isDir, isRoot) {
       else if (a === 'newfile' || a === 'newdir') {
         const name = await askName(a === 'newdir' ? t('createDir') : t('createFile'), '');
         if (!name) return;
-        const full = parent ? (parent + '/' + name) : name;
+        const base = scopePath(parent);
+        const full = base ? (base + '/' + name) : name;
         const r = await api('/api/fs/create', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: full, kind: a === 'newdir' ? 'dir' : 'file' }),
@@ -877,7 +909,7 @@ function showCtx(ev, path, isDir, isRoot) {
       } else if (a === 'download') {
         await downloadWorkspacePath(isRoot ? '' : path);
       } else if (a === 'reveal') {
-        const r = await api('/api/fs/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: path || '.' }) });
+        const r = await api('/api/fs/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: scopePath(path || '.') }) });
         if (r.error) toast(r.error, true); else toast('Opened');
       } else if (a === 'rename') {
         const base = path.split('/').pop();

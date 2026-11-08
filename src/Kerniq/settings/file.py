@@ -61,7 +61,25 @@ def write_state_file(state_dir: Path | str, name: str, data: dict[str, Any]) -> 
 
 
 def read_settings_file(state_dir: Path | str) -> dict[str, Any]:
-    return read_state_file(state_dir, MAIN_FILE)
+    root = state_root(state_dir)
+    # Kerniq never writes this name. A sandbox that plants settings.json.backup
+    # must not be able to leave a second config next to the real one.
+    backup = root / "settings.json.backup"
+    try:
+        if backup.is_file():
+            backup.unlink()
+    except OSError:
+        pass
+    data = read_state_file(state_dir, MAIN_FILE)
+    if not data:
+        return data
+    from .secrets import sign_critical, vet_settings
+
+    vetted, rewrite = vet_settings(state_dir, data)
+    if rewrite:
+        write_state_file(state_dir, MAIN_FILE, vetted)
+        sign_critical(state_dir, vetted)
+    return vetted
 
 
 def write_settings_file(state_dir: Path | str, data: dict[str, Any]) -> None:
@@ -69,6 +87,9 @@ def write_settings_file(state_dir: Path | str, data: dict[str, Any]) -> None:
     for key in ("tools", "plugins", "components"):
         cleaned.pop(key, None)
     write_state_file(state_dir, MAIN_FILE, cleaned)
+    from .secrets import sign_critical
+
+    sign_critical(state_dir, cleaned)
 
 
 def _read(path: Path) -> dict[str, Any]:

@@ -236,7 +236,7 @@ class SecurityPolicy:
                 return PolicyDecision.DENY
 
         name = getattr(tool, "name", None) or tool_id
-        if name in ("write_file", "edit_file", "delete_file", "create_file", "move_file", "create_directory", "unzip"):
+        if name in ("write_file", "edit_file", "delete_file", "create_file", "move_file", "copy_file", "rename_file", "create_directory", "unzip", "zip"):
             from .task_scope import current_task
             task = current_task()
             meta = getattr(task, "metadata", None) or {} if task is not None else {}

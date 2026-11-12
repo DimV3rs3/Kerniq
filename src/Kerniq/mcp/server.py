@@ -176,7 +176,7 @@ class MCPServerAdapter:
         logger.info(
             "MCP server %s starting (stdio), published=%s, workspace=%s",
             self.server_name,
-            names or "(none — set [mcp] published_tools in config)",
+            names or "(none – set [mcp] published_tools in config)",
             self.workspace,
         )
 

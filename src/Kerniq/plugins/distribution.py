@@ -1,9 +1,8 @@
 """Install, identify, and update plugins that are not part of the default kit.
 
-The default kit is the Web UI, Context Compact, the Plugin Manager, and Git session.
-Every other plugin is a folder with its own manifest. Kerniq does not import
-it by name. A folder is loaded only after it has been installed under
-``plugins/``.
+The default kit is what ships in this tree. Every other plugin is a folder
+with its own manifest. Kerniq does not import it by name. A folder is loaded
+only after it has been installed under ``plugins/``.
 """
 
 from __future__ import annotations
@@ -30,7 +29,21 @@ KIT_IDS = frozenset({
     "plugin_context_compact",
     "plugin_git_session",
     "plugin_lang_sandbox",
+    "plugin_skill_manager",
 })
+# Canonical repositories. One probe asks for all of them. A plugin does not
+# name the others; this map lives in Kerniq.
+OFFICIAL_REPOS = {
+    "plugin_web_ui": "DimV3rs3/Kerniq-web-ui",
+    "plugin_context_compact": "DimV3rs3/Kerniq-context-compact",
+    "plugin_plugin_manager": "DimV3rs3/Kerniq-plugin-manager",
+    "plugin_skill_manager": "DimV3rs3/Kerniq-skill-manager",
+    "plugin_git_session": "DimV3rs3/Kerniq-git-session",
+    "plugin_lang_sandbox": "DimV3rs3/Kerniq-language-sandbox",
+    "model-advisor": "DimV3rs3/Kerniq-model-advisor",
+    "office": "DimV3rs3/Kerniq-office",
+    "llm-benchmark": "DimV3rs3/Kerniq-llm-benchmark",
+}
 _GITHUB_API = "https://api.github.com"
 _DANGEROUS = [
     (re.compile(r"\beval\s*\("), "use of eval()"),
@@ -551,47 +564,80 @@ def _remote_version(origin: dict[str, Any]) -> str:
     return version
 
 
+def _update_source(report: dict[str, Any], origin: dict[str, Any]) -> tuple[str, str]:
+    """Where a newer copy would come from: a local path, or one GitHub repo."""
+    if origin.get("kind") == "path" and origin.get("path"):
+        return "path", str(origin.get("path") or "")
+    if origin.get("kind") == "github" and origin.get("repo"):
+        return "github", str(origin.get("repo") or "")
+    plugin_id = str(report.get("plugin_id") or "")
+    repo = OFFICIAL_REPOS.get(plugin_id) or ""
+    if repo:
+        return "github", repo
+    return "none", ""
+
+
 def check_updates(plugins_dir: Path | None = None) -> list[dict[str, Any]]:
     root = plugins_root(plugins_dir)
     rows: list[dict[str, Any]] = []
     if not root.is_dir():
         return rows
+    github: list[str] = []
     for folder in sorted(path for path in root.iterdir() if path.is_dir() and (path / "manifest.toml").is_file()):
         report = inspect_plugin(folder)
         origin = read_origin(folder) or {}
+        kind, source = _update_source(report, origin)
         row: dict[str, Any] = {
             "plugin_id": report.get("plugin_id") or folder.name,
             "name": report.get("name") or folder.name,
             "version": report.get("version") or "",
-            "kind": "kit" if report.get("kit") else (origin.get("kind") or "unknown"),
-            "repo": origin.get("repo") or origin.get("path") or "",
+            "kind": "kit" if report.get("kit") else (origin.get("kind") or kind),
+            "repo": source if kind == "github" else (origin.get("path") or ""),
             "ref": origin.get("ref") or "",
             "update": False,
             "remote": "",
             "error": "",
             "note": "",
+            "_source_kind": kind,
+            "_source": source,
         }
-        if report.get("kit"):
-            row["note"] = "Included with Kerniq. It updates when Kerniq updates."
-            rows.append(row)
+        if kind == "github" and source and source not in github:
+            github.append(source)
+        rows.append(row)
+    tags = None
+    if github:
+        from Kerniq.devtools.update_check import probe_cached
+
+        tags = probe_cached(github)
+    for row in rows:
+        kind = row.pop("_source_kind")
+        source = row.pop("_source")
+        if kind == "none":
+            if row["kind"] == "kit":
+                row["note"] = "Included with Kerniq."
+            else:
+                row["note"] = "No source recorded, so updates cannot be checked."
             continue
-        if not origin:
-            row["note"] = "No source recorded, so updates cannot be checked."
-            rows.append(row)
-            continue
-        try:
-            remote = _remote_version(origin)
-        except Exception as exc:
-            row["error"] = str(exc)
-            rows.append(row)
-            continue
+        if kind == "path":
+            try:
+                remote = _remote_version({"kind": "path", "path": source})
+            except Exception as exc:
+                row["error"] = str(exc)
+                continue
+        else:
+            if tags is None:
+                row["note"] = "Update check did not answer."
+                continue
+            remote = str(tags.get(source) or "")
+            if not remote:
+                row["note"] = "No release yet."
+                continue
         row["remote"] = remote
-        if remote and report.get("version") and is_newer(remote, str(report.get("version"))):
+        if remote and row.get("version") and is_newer(remote, str(row.get("version"))):
             row["update"] = True
-            row["note"] = f"{report.get('version')} → {remote}"
+            row["note"] = f"{row.get('version')} -> {remote}"
         else:
             row["note"] = "Up to date."
-        rows.append(row)
     return rows
 
 

@@ -123,7 +123,7 @@ def confine_allows(path: str, *, write: bool = False, environ: dict | None = Non
         return True
     if "\x00" in text:
         return False
-    # \\server\share, //server/share, \\?\C:\..., \\.\  — never stat these.
+    # \\server\share, //server/share, \\?\C:\..., \\.\  – never stat these.
     if text.replace("\\", "/").startswith("//"):
         return False
 
@@ -579,7 +579,56 @@ def _install(_launch=host_launch_allowed, _block_dll=native_dll_blocked):
                 _TLS.booting_ctypes = False
         if root in {"ctypes", "_ctypes"}:
             seal_ctypes()
+        _pin_win_folders(mod)
+        if fromlist:
+            for item in fromlist:
+                sub = getattr(mod, item, None)
+                if getattr(sub, "__name__", None):
+                    _pin_win_folders(sub)
         return mod
+
+    def _pin_win_folders(mod):
+        # pip's vendored platformdirs prefers WinDLL("ole32") / kernel32 to find
+        # LOCALAPPDATA, even when that variable is already set. Point the lookup
+        # at the workspace cache instead. kernel32 itself stays blocked.
+        if not confined or mod is None:
+            return
+        name = str(getattr(mod, "__name__", "") or "")
+        if "platformdirs" not in name and "appdirs" not in name:
+            return
+
+        def folder(csidl_name="CSIDL_LOCAL_APPDATA", *_a, **_k):
+            key = str(csidl_name or "")
+            if "COMMON" in key:
+                return os.environ.get("PROGRAMDATA") or os.environ.get("LOCALAPPDATA") or os.environ.get("TEMP") or "."
+            if "LOCAL" in key:
+                return os.environ.get("LOCALAPPDATA") or os.environ.get("TEMP") or "."
+            return os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA") or os.environ.get("TEMP") or "."
+
+        def pin(module):
+            found = False
+            for attr, current in list(vars(module).items()):
+                if "win_folder" not in attr or not callable(current):
+                    continue
+                try:
+                    if attr.startswith("_pick"):
+                        setattr(module, attr, lambda _folder=folder: _folder)
+                    else:
+                        setattr(module, attr, folder)
+                    found = True
+                except Exception:
+                    pass
+            return found
+
+        if not pin(mod):
+            return
+        for loaded in list(sys.modules.values()):
+            if loaded is None:
+                continue
+            lname = str(getattr(loaded, "__name__", "") or "")
+            if "platformdirs" not in lname and "appdirs" not in lname:
+                continue
+            pin(loaded)
 
     builtins.__import__ = _import
     if "ctypes" in sys.modules:

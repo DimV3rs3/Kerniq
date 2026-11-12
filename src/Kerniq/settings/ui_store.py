@@ -126,6 +126,8 @@ class ChatSettings(BaseModel):
     show_reasoning_live: bool = True
     empty_response_status: bool = True
     developer_mode: bool = False  # show tool args / raw payloads in UI
+    # Developer mode only. Off: tool cards show the name, errors stay in notifications.
+    show_tool_details: bool = False
     send_key: str = "enter"  # enter | shift_enter
     file_ops_only: bool = False  # UI: only show file create/edit/delete names
     aggregate_tools: bool = True  # merge consecutive identical tool names in UI
@@ -145,12 +147,16 @@ class ChatSettings(BaseModel):
     compose_plan: bool = True
     # Attached files and folders outside the workspace stay read-only until this is off.
     read_only_external_attachments: bool = True
+    # Off: a new chat is named from the first words. On: the model names it first.
+    generate_chat_title: bool = False
 
 
 class InterfaceSettings(BaseModel):
     """Look of the local UI. Stored in the project, not in the browser."""
 
     layout: str = "editor"  # editor | agent
+    # Agent chat column. False keeps a readable centred column. True uses the whole pane.
+    agent_chat_full: bool = False
     # Agent chat column. None or 0 = full window width. Positive = max width in px, centered.
     agent_chat_width: Optional[int] = None
     motion: str = "on"  # on | off | auto
@@ -160,6 +166,9 @@ class InterfaceSettings(BaseModel):
     show_notifications: bool = True
     auto_dismiss_notifications: bool = True
     theme: str = "dark"  # dark | light | system
+    # warm | auto | cold. Ignored while tint_on is false (neutral, no hue).
+    tint: str = "warm"
+    tint_on: bool = True
 
 
 class UiSettings(BaseModel):

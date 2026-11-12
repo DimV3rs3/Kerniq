@@ -121,16 +121,14 @@ Toggles that exist out of the box:
 
 Built-in tool names include `read_file`, `write_file`, `create_file`,
 `edit_file`, `delete_file`, `list_directory`, `create_directory`,
-`file_exists`, `get_file_info`, `search_code`, `run_command`, `web_search`,
+`file_exists`, `get_file_info`, `search_code`, `run_command`, `git_clone`, `web_search`,
 and `fetch_url`. Packs can add more. `kerniq tools list` is the live list.
-`create_file`, `write_file`, `edit_file`, and `read_file` refuse Office suffixes. Those documents belong to the Office plugin.
+`create_file`, `write_file`, `edit_file`, and `read_file` refuse those office suffixes. Those files are not plain text. A separate plugin can handle them. It is not part of this tree.
 
 ## `kerniq plugins`
 
 ```bash
 kerniq plugins list
-kerniq plugins check catalog/Kerniq-llm-benchmark
-kerniq plugins install --path catalog/Kerniq-llm-benchmark
 kerniq plugins install owner/repo
 kerniq plugins updates
 kerniq plugins remove PLUGIN_ID --yes

@@ -96,7 +96,7 @@ def _unlink_with_retry(path: Path, attempts: int = 15, delay: float = 0.4) -> st
             return str(path)
         except OSError as e:
             last_err = e
-            # Windows: file in use — wait and retry
+            # Windows: file in use – wait and retry
             time.sleep(delay * (1.0 + i * 0.15))
     return f"{path} (failed: {last_err})"
 
@@ -255,7 +255,7 @@ def _spawn_deferred(purge: bool, wipe_project: bool = False) -> int:
         args.append("--wipe-project")
 
     print(
-        "Running from kerniq.exe — cannot delete it while it is locked.\n"
+        "Running from kerniq.exe – cannot delete it while it is locked.\n"
         "Starting deferred uninstall via:\n"
         f"  {' '.join(args)}\n"
         "This window will exit; cleanup continues in the background."
@@ -470,7 +470,7 @@ def _do_uninstall(*, purge: bool = False, wipe_project: bool = False) -> int:
         print(out)
     # Retry pip once if WinError 32
     if code != 0 and ("WinError 32" in out or "being used by another process" in out.lower()):
-        print("pip hit a locked file — waiting and retrying…")
+        print("pip hit a locked file – waiting and retrying…")
         time.sleep(2.0)
         code, out = _run([sys.executable, "-m", "pip", "uninstall", "Kerniq", "-y"])
         if out:
@@ -514,7 +514,7 @@ def _do_uninstall(*, purge: bool = False, wipe_project: bool = False) -> int:
         else:
             for line in _wipe_project_trees(roots):
                 print(line)
-        # After wiping source, package import may be gone — still finish script cleanup
+        # After wiping source, package import may be gone – still finish script cleanup
         print("Project tree wipe requested; source folders above were targeted.")
 
     print()

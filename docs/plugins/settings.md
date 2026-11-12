@@ -17,9 +17,9 @@ def category(self) -> str:  # tools only
 
 Three files, shared by the console and the shell:
 
-- `state/settings.json` — agent, API, prompt, chat
-- `state/tools.json` — tool toggles and per-tool values
-- `state/plugins.json` — per-plugin values
+- `state/settings.json` – agent, API, prompt, chat
+- `state/tools.json` – tool toggles and per-tool values
+- `state/plugins.json` – per-plugin values
 
 The first run writes defaults. A change from either side replaces those values in the same file. Validation adds a missing component with its schema defaults. A component that is no longer installed is removed from its file.
 

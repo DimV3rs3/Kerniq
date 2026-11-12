@@ -307,9 +307,28 @@ def apply_sandbox_env(
                 visible.append(text)
         out["KERNIQ_CONFINE"] = "1"
         out["KERNIQ_VISIBLE"] = os.pathsep.join(visible)
+        cache = Path(workspace) / ".pip-cache"
+        tmp = Path(workspace) / ".tmp"
+        try:
+            cache.mkdir(parents=True, exist_ok=True)
+            tmp.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.warning("Pip cache folders were not created", exc_info=False)
+        else:
+            # pip looks these up through ctypes and dies when those DLLs are blocked.
+            # The values stay inside the workspace, so the guard can write them.
+            out["PIP_CACHE_DIR"] = str(cache)
+            out["LOCALAPPDATA"] = str(cache)
+            out["APPDATA"] = str(cache)
+            out["TEMP"] = str(tmp)
+            out["TMP"] = str(tmp)
+            out["TMPDIR"] = str(tmp)
     else:
         out.pop("KERNIQ_CONFINE", None)
         out.pop("KERNIQ_VISIBLE", None)
+    # A child print of a non-cp1251 character must not crash the script.
+    out["PYTHONUTF8"] = "1"
+    out["PYTHONIOENCODING"] = "utf-8"
     try:
         from Kerniq.sandbox.runtimes import apply_language_env
 

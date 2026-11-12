@@ -127,9 +127,9 @@ The model should call `web_search` / `fetch_url` without you rewriting a custom 
 | Expectation | Reality |
 |-------------|---------|
 | Model uses `web_search` + `fetch_url` in LM Studio chat | **Yes**, if MCP is configured and the model supports tools |
-| Full Kerniq Orchestrator loop inside LM Studio | **No** — LM Studio is the agent loop; Kerniq only **executes tools** |
-| All Kerniq tools auto-exposed | **No** — only `published_tools` allowlist |
-| Zero prompt engineering | Mostly — still depends on model quality and LM Studio tool UI |
+| Full Kerniq Orchestrator loop inside LM Studio | **No** – LM Studio is the agent loop; Kerniq only **executes tools** |
+| All Kerniq tools auto-exposed | **No** – only `published_tools` allowlist |
+| Zero prompt engineering | Mostly – still depends on model quality and LM Studio tool UI |
 | Multi-step autonomous coding agent | Prefer `kerniq run` / Web UI agent, not only MCP |
 
 ## Security

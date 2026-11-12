@@ -1,4 +1,4 @@
-"""Cursor-like Web UI plugin — explorer, editor, chat, settings tabs."""
+"""Web UI plugin – explorer, editor, chat, settings tabs."""
 
 from __future__ import annotations
 
@@ -194,47 +194,26 @@ async def _title_from_loaded_model(provider, model_id: str, text: str) -> tuple:
     """Ask one already-loaded model for a short title. Restores provider.model.
 
     Returns (title, model id that actually answered). An empty title and a
-    mismatched id are both discarded by the caller.
+    mismatched id are both discarded by the caller. The user text is not cut
+    down to the first few hundred characters, and the reply is not capped at
+    16 tokens, so a thinking model can finish and then name the chat.
     """
-    from uuid import uuid4
-
-    from Kerniq.interfaces.models import GenerationOptions, Message, MessageRole, ModelRequest
+    from Kerniq.core.runtime_flow import chat_title_request, title_from_response
 
     saved = getattr(provider, "model", None)
     provider.model = model_id
     try:
-        request = ModelRequest(
-            messages=[
-                Message(
-                    role=MessageRole.SYSTEM,
-                    content="Reply with a chat title of at most four words. No quotes.",
-                ),
-                Message(role=MessageRole.USER, content=(text or "")[:500]),
-            ],
-            session_id=uuid4(),
-            tools=None,
-            options=GenerationOptions(
-                temperature=0.2,
-                max_tokens=16,
-                streaming=False,
-                extra_params={},
-            ),
-            metadata={"kerniq_internal": "title", "model": model_id},
-        )
-        response = await provider.generate(request)
+        response = await provider.generate(chat_title_request(text))
     except Exception as exc:
         logger.info("embedding model did not return a title: %s", exc)
         return "", ""
     finally:
         provider.model = saved
-    raw = ""
-    if response and response.messages:
-        raw = response.messages[0].content or ""
     answered = ""
     meta = getattr(response, "metadata", None) or {}
     if isinstance(meta, dict):
         answered = str(meta.get("model") or "").strip()
-    return _clean_title(raw), answered
+    return title_from_response(response), answered
 
 
 def _public_error(exc: BaseException) -> tuple[str, str]:
@@ -360,6 +339,23 @@ class _State:
 
 
 STATE = _State()
+
+
+def _ui_busy() -> bool:
+    """True while a chat or a plugin job is still running. Restart waits for that."""
+    with STATE.runs_lock:
+        if any(not run.get("done") for run in STATE.runs.values()):
+            return True
+    with STATE.jobs_lock:
+        return any(job.get("status") == "running" for job in STATE.jobs.values())
+
+
+try:
+    from Kerniq.devtools.update_check import set_busy_check
+
+    set_busy_check(_ui_busy)
+except Exception:
+    pass
 # Per request thread. Concurrent browsers must not share one global user id.
 _ui_user: contextvars.ContextVar[str] = contextvars.ContextVar("kerniq_ui_user", default="")
 from Kerniq.security.approval_broker import ApprovalBroker
@@ -1112,6 +1108,12 @@ class UIHandler(BaseHTTPRequestHandler):
             from Kerniq.devtools.paths import find_project_root
 
             return _json(self, 200, current(project=find_project_root()))
+        if path == "/api/ui/auto-update":
+            from Kerniq.devtools.update_check import load_auto_update_flags
+
+            return _json(self, 200, load_auto_update_flags())
+        if path == "/api/skills":
+            return _json(self, 200, self._skill_public(qs.get("include_project")))
         _json(self, 404, {"error": "not found"})
 
     def do_POST(self) -> None:
@@ -1231,12 +1233,26 @@ class UIHandler(BaseHTTPRequestHandler):
             from Kerniq.plugins.distribution import check_updates
 
             return _json(self, 200, {"updates": check_updates(self._plugins_dir())})
+        if path == "/api/skills/search":
+            return _json(self, 200, self._skill_search(data))
+        if path == "/api/skills/install":
+            return _json(self, 200, self._skill_install(data))
+        if path == "/api/skills/state":
+            return _json(self, 200, self._skill_state(data))
+        if path == "/api/skills/remove":
+            return _json(self, 200, self._skill_remove(data))
         if path == "/api/ui/autostart":
             from Kerniq.devtools.autostart import configure
             from Kerniq.devtools.paths import find_project_root
 
             enabled = bool((data or {}).get("enabled"))
             return _json(self, 200, configure(enabled, project=find_project_root()))
+        if path == "/api/ui/auto-update":
+            from Kerniq.devtools.update_check import save_auto_update_flags
+
+            body = data if isinstance(data, dict) else {}
+            flags = save_auto_update_flags(bool(body.get("kerniq", True)), bool(body.get("plugins", True)))
+            return _json(self, 200, flags)
         if path == "/api/remote/run":
             return self._remote_run(data)
         _json(self, 404, {"error": "not found"})
@@ -1688,6 +1704,113 @@ class UIHandler(BaseHTTPRequestHandler):
         except Exception as e:
             return {"error": str(e)}
 
+    def _skill_engine(self):
+        import importlib.util
+        import sys
+
+        path = self._plugins_dir() / "skill_manager" / "engine.py"
+        if not path.is_file():
+            raise FileNotFoundError("Skill Manager is not installed.")
+        name = "kerniq_skill_manager_engine"
+        cached = sys.modules.get(name)
+        if cached is not None:
+            return cached
+        spec = importlib.util.spec_from_file_location(name, path)
+        if spec is None or spec.loader is None:
+            raise ImportError("Skill Manager engine is missing.")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    def _skill_rows(self, include_project):
+        engine = self._skill_engine()
+        opts = engine.current_options()
+        if include_project is None:
+            use_project = bool(opts.get("include_project", True))
+        else:
+            use_project = str(include_project).strip().lower() not in {"0", "false", "no", "off"}
+        workspace = engine.workspace_dir() if use_project else None
+        rows = []
+        for record in engine.list_skills(engine.skills_root(), workspace=workspace):
+            source = record.get("source") if isinstance(record.get("source"), dict) else {}
+            repo = str(source.get("repo") or source.get("url") or source.get("path") or "")
+            rows.append({
+                "id": record.get("id"),
+                "name": record.get("name") or record.get("id"),
+                "enabled": bool(record.get("enabled")),
+                "origin": record.get("origin") or "installed",
+                "repo": repo,
+            })
+        return rows
+
+    def _skill_public(self, include_project=None):
+        try:
+            return {"ok": True, "skills": self._skill_rows(include_project)}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "skills": []}
+
+    def _skill_flag(self, data, key):
+        if not isinstance(data, dict) or key not in data or data.get(key) is None:
+            return None
+        return str(data.get(key)).strip().lower() not in {"0", "false", "no", "off"}
+
+    def _skill_search(self, data):
+        try:
+            engine = self._skill_engine()
+            found = engine.search_github(str((data or {}).get("query") or (data or {}).get("source") or ""))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "repos": []}
+        return {
+            "ok": bool(found.get("ok")),
+            "repos": found.get("repos") or [],
+            "error": found.get("error") or "",
+        }
+
+    def _skill_install(self, data):
+        source = str((data or {}).get("source") or (data or {}).get("repo") or "").strip()
+        if not source:
+            return {"ok": False, "error": "Type owner/repo or a GitHub URL."}
+        try:
+            engine = self._skill_engine()
+            opts = engine.current_options()
+            block = self._skill_flag(data, "block_critical")
+            if block is None:
+                block = bool(opts.get("block_critical"))
+            result = engine.import_source(source, force=False, block_critical=block)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        if not isinstance(result, dict):
+            result = {"ok": False, "error": "Import failed."}
+        result["skills"] = self._skill_rows(self._skill_flag(data, "include_project"))
+        if result.get("ok") and not result.get("message"):
+            result["message"] = "Installed."
+        return result
+
+    def _skill_state(self, data):
+        skill_id = str((data or {}).get("id") or "").strip()
+        enabled = self._skill_flag(data, "enabled")
+        if not skill_id or enabled is None:
+            return {"ok": False, "error": "Skill id and enabled are required."}
+        try:
+            engine = self._skill_engine()
+            result = engine.set_skill_enabled(skill_id, enabled, workspace=engine.workspace_dir())
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        result["skills"] = self._skill_rows(self._skill_flag(data, "include_project"))
+        return result
+
+    def _skill_remove(self, data):
+        skill_id = str((data or {}).get("id") or "").strip()
+        if not skill_id:
+            return {"ok": False, "error": "Skill id is required."}
+        try:
+            engine = self._skill_engine()
+            result = engine.remove_skill(skill_id, confirm=True, workspace=engine.workspace_dir())
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        result["skills"] = self._skill_rows(self._skill_flag(data, "include_project"))
+        return result
 
     def _plugins_dir(self) -> Path:
         here = Path(__file__).resolve()
@@ -2393,28 +2516,38 @@ class UIHandler(BaseHTTPRequestHandler):
     def _load_ui_chats(self) -> Dict[str, Any]:
         user_id = getattr(self, "_kerniq_user", "local") or "local"
         warning = self._storage_warning()
+        file_data: Dict[str, Any] = {}
+        path = self._ui_chats_path()
+        if path.is_file():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                logger.info("ui chats unreadable", exc_info=True)
+                loaded = None
+            if isinstance(loaded, dict):
+                file_data = loaded
+            elif isinstance(loaded, list):
+                file_data = {"chats": loaded}
+        active_id = str(file_data.get("active_id") or "")[:80]
         if STATE.server_mode:
             try:
                 chats = _history_store().list_chats(user_id)
             except Exception:
                 logger.exception("server chats")
                 chats = []
-            return {"chats": chats if isinstance(chats, list) else [], "storage_warning": warning}
-        path = self._ui_chats_path()
-        if not path.is_file():
-            return {"chats": [], "storage_warning": warning}
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            logger.info("ui chats unreadable", exc_info=True)
-            return {"chats": [], "storage_warning": warning}
-        chats = data.get("chats") if isinstance(data, dict) else data
-        return {"chats": chats if isinstance(chats, list) else [], "storage_warning": warning}
+            return {
+                "chats": chats if isinstance(chats, list) else [],
+                "active_id": active_id,
+                "storage_warning": warning,
+            }
+        chats = file_data.get("chats")
+        return {"chats": chats if isinstance(chats, list) else [], "active_id": active_id, "storage_warning": warning}
 
     def _save_ui_chats(self, data) -> Dict[str, Any]:
         chats = (data or {}).get("chats") if isinstance(data, dict) else None
         if not isinstance(chats, list):
             return {"error": "chats must be a list"}
+        active_id = str((data or {}).get("active_id") or "").strip()[:80] if isinstance(data, dict) else ""
         user_id = getattr(self, "_kerniq_user", "local") or "local"
         warning = self._storage_warning()
         if STATE.server_mode:
@@ -2439,6 +2572,7 @@ class UIHandler(BaseHTTPRequestHandler):
             removed = _chat_ids(previous) - _chat_ids(chats)
             _forget_chat_memory(removed, user_id)
             _prune_sessions(_chat_ids(chats))
+            self._remember_active_chat(active_id)
             return {"ok": True, "count": len(chats), "storage_warning": warning}
         path = self._ui_chats_path()
         with _CHAT_SAVE_LOCK:
@@ -2452,7 +2586,7 @@ class UIHandler(BaseHTTPRequestHandler):
                 except Exception:
                     logger.info("ui chats unreadable before save", exc_info=True)
             path.parent.mkdir(parents=True, exist_ok=True)
-            payload = json.dumps({"chats": chats}, ensure_ascii=False)
+            payload = json.dumps({"chats": chats, "active_id": active_id}, ensure_ascii=False)
             def _write() -> None:
                 tmp = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
                 try:
@@ -2475,6 +2609,33 @@ class UIHandler(BaseHTTPRequestHandler):
         _forget_chat_memory(removed, user_id)
         _prune_sessions(_chat_ids(chats))
         return {"ok": True, "count": len(chats), "storage_warning": warning}
+
+    def _remember_active_chat(self, active_id: str) -> None:
+        """Server mode keeps chats in the history store. The open chat id still lives in ui_chats.json."""
+        path = self._ui_chats_path()
+        try:
+            with _CHAT_SAVE_LOCK:
+                blob: Dict[str, Any] = {}
+                if path.is_file():
+                    try:
+                        old = json.loads(path.read_text(encoding="utf-8"))
+                        if isinstance(old, dict):
+                            blob = old
+                        elif isinstance(old, list):
+                            blob = {"chats": old}
+                    except Exception:
+                        blob = {}
+                blob["active_id"] = active_id
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+                try:
+                    tmp.write_text(json.dumps(blob, ensure_ascii=False), encoding="utf-8")
+                    os.replace(tmp, path)
+                except OSError:
+                    with contextlib.suppress(Exception):
+                        tmp.unlink()
+        except Exception:
+            logger.info("active chat was not stored", exc_info=True)
 
     def _load_plan(self, model: str) -> Dict[str, Any]:
         from Kerniq.models.identity import instance_model_key
@@ -2613,10 +2774,12 @@ class UIHandler(BaseHTTPRequestHandler):
                 requested = int(requested) if requested else None
             except (TypeError, ValueError):
                 requested = None
-            if requested is None:
-                from Kerniq.core.runtime_flow import LM_STUDIO_SAFE_CONTEXT
-                requested = LM_STUDIO_SAFE_CONTEXT
-            kwargs = {"context_length": requested}
+            if requested is not None and requested < 1:
+                requested = None
+            # Empty context is the model's own maximum. Do not substitute 32768.
+            kwargs = {}
+            if requested is not None:
+                kwargs["context_length"] = requested
             res = asyncio.run(p.load_model(model, **kwargs))
             return {
                 "ok": True,
@@ -3526,26 +3689,15 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             pass
         for msg in resp.messages:
             if msg.tool_calls:
-                visible_calls = []
+                visible = False
                 for tc in msg.tool_calls:
                     tool_obj = reg.get_tool(tc.name) if hasattr(reg, "get_tool") else None
                     if getattr(tool_obj, "user_hidden", False):
                         continue
-                    visible_calls.append(tc)
-                if visible_calls:
+                    visible = True
+                    break
+                if visible:
                     _emit(run_id, {"type": "status", "status": "tool", "text": "Calling tool…"})
-                for tc in visible_calls:
-                    _emit(
-                        run_id,
-                        {
-                            "type": "tool",
-                            "name": tc.name,
-                            "call_id": str(tc.id or ""),
-                            "status": "pending",
-                            "summary": "",
-                            "args": tc.arguments,
-                        },
-                    )
         hb_stop["v"] = True
         try:
             hb_task.cancel()
@@ -3578,6 +3730,10 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         async def wrapped(arguments, context, _orig=orig_exec, _name=tname, _configured=configured, _hidden=bool(getattr(tool, "user_hidden", False))):
             from Kerniq.interfaces.tools import ToolResult
             from Kerniq.tools.deadline import tool_timeout_seconds
+            from Kerniq.core.silence import suppress_tool_cards
+
+            if suppress_tool_cards.get():
+                return await _orig(arguments, context)
 
             if _is_cancelled():
                 try:
@@ -3610,8 +3766,17 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
                     )
                 return cancelled
             seconds = tool_timeout_seconds(arguments, fallback=_configured)
+            call_id = str(getattr(context, "last_tool_call_id", "") or "unknown")
             if not _hidden:
                 _emit(run_id, {"type": "status", "status": "waiting_tool", "text": "Waiting for a tool"})
+                _emit(run_id, {
+                    "type": "tool",
+                    "name": _name,
+                    "call_id": call_id,
+                    "status": "pending",
+                    "summary": "",
+                    "args": arguments,
+                })
             before = None
             path = arguments.get("path") if isinstance(arguments, dict) else None
             if _name in ("write_file", "create_file", "edit_file", "delete_file") and path:
@@ -3844,7 +4009,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
     # Never bake system into task
     user_task = (task or "").strip()
     if user_task.startswith("[System]") or user_task.startswith("[system]"):
-        # client bug — extract user part only
+        # client bug – extract user part only
         import re as _re
         mm = _re.search(r"\[User\]\s*(.*)$", user_task, flags=_re.S | _re.I)
         if mm:
@@ -4014,6 +4179,16 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         from Kerniq.core.runtime_flow import route_mode
         return await route_mode(provider, task_text, compose_plan=compose_plan)
 
+    async def _name_chat(task_text: str) -> str:
+        from Kerniq.core.runtime_flow import chat_title_request, title_from_response
+
+        try:
+            response = await provider.generate(chat_title_request(task_text))
+        except Exception:
+            logger.info("chat title failed", exc_info=False)
+            return ""
+        return title_from_response(response)
+
     async def _await_cancel(coro):
         """Stop must unblock routing and model load, not only the agent loop."""
         task = asyncio.create_task(coro)
@@ -4034,6 +4209,7 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
             raise
 
     if mode_auto:
+        _emit(run_id, {"type": "status", "status": "choosing_mode", "text": "Choosing mode"})
         routed = await _await_cancel(_verdict(user_task))
         if _is_cancelled():
             _finish_cancelled()
@@ -4044,6 +4220,16 @@ async def _run_agent_async(run_id: str, task: str, data: dict | None = None) -> 
         _finish_cancelled()
         return
     _emit(run_id, {"type": "mode", "mode": mode})
+    if bool(data.get("needs_title")):
+        # Name the chat before the run. A title request after the run lands on
+        # whatever model is loaded then, including a background agent model.
+        _emit(run_id, {"type": "status", "status": "chat_title", "text": "Generating chat title"})
+        named = await _await_cancel(_name_chat(user_task))
+        if _is_cancelled():
+            _finish_cancelled()
+            return
+        if isinstance(named, str) and named.strip():
+            _emit(run_id, {"type": "chat_title", "title": named.strip()})
     await _await_cancel(_use_mode_model(mode))
     if _is_cancelled():
         _finish_cancelled()
@@ -4251,7 +4437,7 @@ class PluginImpl(Plugin):
             version="0.2.0",
             api_version="1.0",
             entry_point="main.PluginImpl",
-            description="Cursor-like local UI",
+            description="Local UI: explorer, editor, chat, and settings",
             capabilities=["ui", "http"],
         )
 
@@ -4422,7 +4608,7 @@ class PluginImpl(Plugin):
                 ThreadingHTTPServer.allow_reuse_address = True
                 httpd = ThreadingHTTPServer((host, port), UIHandler)
             except OSError as e:
-                logger.error("Failed to bind Web UI on %s:%s — %s", host, port, e)
+                logger.error("Failed to bind Web UI on %s:%s – %s", host, port, e)
                 return
             STATE.server = httpd
             _ensure_state_writable(context)

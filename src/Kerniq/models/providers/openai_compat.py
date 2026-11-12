@@ -332,7 +332,10 @@ class OpenAICompatProvider(ModelProvider):
             payload["max_tokens"] = request.options.max_tokens
         if request.options and request.options.extra_params:
             payload.update(request.options.extra_params)
-        if (request.metadata or {}).get("kerniq_internal"):
+        internal = str((request.metadata or {}).get("kerniq_internal") or "")
+        # Route and title may think. A token cap of 16 cut the thought off
+        # before PLAN, ACT, or the title was written. Other internal calls stay quiet.
+        if internal and internal not in ("route", "title"):
             payload["enable_thinking"] = False
             payload["thinking"] = {"type": "disabled"}
             payload["reasoning_effort"] = "none"

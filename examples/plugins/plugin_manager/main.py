@@ -368,7 +368,7 @@ class RemovePluginTool(Tool):
     def description(self) -> str:
         return (
             "Remove an installed plugin directory under ./plugins/<name>. "
-            "Does not uninstall Python packages — only deletes the plugin folder."
+            "Does not uninstall Python packages – only deletes the plugin folder."
         )
 
     @property
@@ -458,7 +458,7 @@ class SecurityScanPluginTool(Tool):
         return (
             "Run a basic static security scan on a plugin directory under ./plugins/<name>. "
             "Looks for eval/exec, subprocess, os.system, pickle, ctypes, etc. "
-            "Not a guarantee of safety — review findings manually."
+            "Not a guarantee of safety – review findings manually."
         )
 
     @property

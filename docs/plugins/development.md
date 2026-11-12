@@ -103,12 +103,12 @@ class PluginImpl(Plugin):
         }]
 ```
 
-The Web UI ships the slots `settings` and `panel`. `catalog/Kerniq-llm-benchmark` is a separate plugin that fills both once it is installed. Its id is `llm-benchmark`. It is not part of the default kit. A host that returns no slots cannot be extended, even if a guest names it.
+The Web UI ships the slots `settings` and `panel`. A separate plugin can fill either once it is installed. It is not part of the default kit. A host that returns no slots cannot be extended, even if a guest names it.
 
 ## Install
 
-The default kit already contains the Web UI, Context Compact, and the Plugin Manager. Other plugins are installed.
+The default kit already contains the Web UI, Context Compact, the Plugin Manager, and the Skill Manager. Other plugins are installed.
 
-`kerniq plugins check FOLDER` reports whether a folder is a complete standalone plugin. `kerniq plugins install owner/repo` downloads one. `kerniq plugins install --path FOLDER` installs a local folder. `kerniq plugins updates` compares installed add-ons with the source they were installed from. `kerniq plugins remove ID --yes` deletes an add-on. The Web UI, Context Compact, and the Plugin Manager cannot be removed.
+`kerniq plugins check FOLDER` reports whether a folder is a complete standalone plugin. `kerniq plugins install owner/repo` downloads one. `kerniq plugins install --path FOLDER` installs a local folder. `kerniq plugins updates` compares installed add-ons with the source they were installed from. `kerniq plugins remove ID --yes` deletes an add-on. The Web UI, Context Compact, the Plugin Manager, and the Skill Manager cannot be removed.
 
 Restart Kerniq after an install. `kerniq plugins list` shows what is loaded. `kerniq plugins validate` writes missing settings and rejects values the schema does not allow. Settings fields come from `settings_schema()` on the plugin class. See [settings.md](settings.md).

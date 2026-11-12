@@ -11,5 +11,7 @@ def test_environment_dump_is_denied():
 
 
 def test_private_internals_are_denied():
-    assert assess_command("cat .kerniq/secrets").allowed is False
+    verdict = assess_command(r".\workspace\.kerniq-venv\Scripts\python.exe -m pip install numpy")
+    assert verdict.allowed is False
+    assert "python -m pip install" in verdict.reason
     assert assess_command("python -c 'import sitecustomize'").allowed is False

@@ -1,7 +1,7 @@
 """Context compaction.
 
 When the transcript is near the budget, the plugin first outlines code
-(file path, class and method names — not bodies) and then asks the active
+(file path, class and method names – not bodies) and then asks the active
 model to write a durable summary. If the model call fails, the outline is
 kept as-is. The original user goal and the recent tail stay verbatim.
 """

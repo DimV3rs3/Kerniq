@@ -125,6 +125,7 @@
   background: transparent;
   color: var(--plan);
   font-weight: 650;
+  cursor: pointer;
 }
 .plan-chevron {
   flex: 0 0 8px;
@@ -140,7 +141,7 @@
   max-height: 200px;
   padding: 0 12px 10px;
   overflow: auto;
-  resize: vertical;
+  resize: none !important;
   transition: max-height .28s var(--ease), opacity .2s, padding .28s var(--ease);
 }
 @media (max-width: 900px) {
@@ -561,7 +562,7 @@ a.file-ref:hover { text-decoration: underline; }
 .attach-chip b { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; font-weight: 400; opacity: .7; cursor: pointer; }
 .attach-chip b:hover { opacity: 1; background: var(--bg-4); }
 
-/* composer — the one place the current mode shows up */
+/* composer – the one place the current mode shows up */
 .composer { flex-shrink: 0; padding: 0 12px 12px; }
 .composer-box {
   --mode: var(--acc);

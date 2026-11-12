@@ -8,7 +8,7 @@ from typing import Any, Sequence
 from ...pack import ToolPack, pack_resources_dir
 from ....interfaces.tools import Tool
 from ....security.policy import SecurityPolicy
-from .tools import TerminalTools
+from .tools import GitCloneTool, TerminalTools
 
 
 class Pack(ToolPack):
@@ -39,4 +39,4 @@ class Pack(ToolPack):
         policy = kwargs.get("policy")
         if policy is None:
             policy = SecurityPolicy(workspace_root=Path(workspace))
-        return [TerminalTools(Path(workspace), policy)]
+        return [TerminalTools(Path(workspace), policy), GitCloneTool(str(workspace))]

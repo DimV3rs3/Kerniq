@@ -40,7 +40,14 @@ def test_plugin_register_settings_and_shutdown(tmp_path):
             path.name for path in _plugins_root().iterdir()
             if path.is_dir() and (path / "manifest.toml").is_file()
         }
-        assert shipped == {"plugin_manager", "web_ui", "context_compact", "git_session", "lang_sandbox"}
+        assert shipped == {
+            "plugin_manager",
+            "web_ui",
+            "context_compact",
+            "git_session",
+            "lang_sandbox",
+            "skill_manager",
+        }
 
         from Kerniq.plugins.distribution import inspect_plugin, install_tree
         from Kerniq.plugins.extensions import scan_extensions

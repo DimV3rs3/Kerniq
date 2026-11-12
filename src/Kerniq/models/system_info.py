@@ -389,8 +389,11 @@ def recommend_for_lm_studio(
             if any(k in mid for k in keys):
                 preferred_model = m.get("id") or m.get("name")
                 break
-        if preferred_model is None and models:
-            preferred_model = models[0].get("id") or models[0].get("name")
+        if preferred_model is None:
+            recs.append(
+                "No installed model name matched that size. "
+                "A name without a parameter count was not assumed to be that size."
+            )
 
     return {
         "system": system.to_dict(),

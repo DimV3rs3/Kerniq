@@ -1,8 +1,8 @@
 """Three state files. Kerniq reads and writes them; nothing else owns the format.
 
-- state/settings.json — agent, API, prompt, chat
-- state/tools.json — tool toggles and per-tool values
-- state/plugins.json — per-plugin values
+- state/settings.json – agent, API, prompt, chat
+- state/tools.json – tool toggles and per-tool values
+- state/plugins.json – per-plugin values
 
 Defaults are written the first time a file is created. A later change from
 the console or the shell replaces those values in the same file. An older

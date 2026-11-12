@@ -9,6 +9,7 @@ async function saveInterface(patch) {
     layout: 'editor', motion: 'on', blur: true, highlight: true, auto_think: false,
     show_notifications: true, auto_dismiss_notifications: true, agent_chat_full: false,
     theme: document.documentElement.dataset.themeChoice || 'dark',
+    tint: 'warm', tint_on: true,
   }, settings.interface || {}, patch || {});
   if (serverModeOn()) {
     writeBrowserSettings({
@@ -45,6 +46,7 @@ function applyTheme(pref) {
     b.classList.toggle('on', on);
     b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
+  if (typeof syncSegGlide === 'function') syncSegGlide(document.getElementById('seg-theme'));
 }
 try {
   const schemeMq = window.matchMedia('(prefers-color-scheme: light)');
@@ -94,11 +96,56 @@ function applyInterface(row) {
     b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
   applyAgentChatFull(data.agent_chat_full === true);
+  applyTint(data);
+  requestAnimationFrame(() => { if (typeof syncAllSegs === 'function') syncAllSegs(); });
 }
 function applyAgentChatFull(full) {
   document.documentElement.dataset.chatFull = full ? '1' : '0';
   const box = document.getElementById('s-agent-chat-full');
   if (box) box.checked = !!full;
+}
+function resolveTint(data) {
+  const on = !data || data.tint_on !== false;
+  const choice = data && (data.tint === 'cold' || data.tint === 'auto' || data.tint === 'warm') ? data.tint : 'warm';
+  if (!on) return { on: false, choice, resolved: 'neutral' };
+  const mode = document.documentElement.dataset.layout === 'agent' ? 'agent' : 'editor';
+  const resolved = choice === 'auto' ? (mode === 'agent' ? 'warm' : 'cold') : choice;
+  return { on: true, choice, resolved };
+}
+function applyTint(row) {
+  const data = row || (typeof settings !== 'undefined' && settings && settings.interface) || {};
+  const tint = resolveTint(data);
+  document.documentElement.dataset.tintOn = tint.on ? '1' : '0';
+  document.documentElement.dataset.tintChoice = tint.choice;
+  document.documentElement.dataset.tint = tint.resolved;
+  const box = document.getElementById('ui-tint-on');
+  if (box) box.checked = tint.on;
+  const seg = document.getElementById('seg-tint');
+  if (seg) seg.classList.toggle('is-locked', !tint.on);
+  document.querySelectorAll('#seg-tint button').forEach(b => {
+    const on = b.dataset.v === tint.choice;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+    b.disabled = !tint.on;
+  });
+  if (typeof syncSegGlide === 'function') syncSegGlide(seg);
+}
+function syncSegGlide(seg) {
+  if (!seg) return;
+  const on = seg.querySelector('button.on');
+  if (!on || !seg.offsetWidth) return;
+  const sr = seg.getBoundingClientRect();
+  const br = on.getBoundingClientRect();
+  const bl = parseFloat(getComputedStyle(seg).borderLeftWidth) || 0;
+  const bt = parseFloat(getComputedStyle(seg).borderTopWidth) || 0;
+  seg.style.setProperty('--seg-x', (br.left - sr.left - bl) + 'px');
+  seg.style.setProperty('--seg-y', (br.top - sr.top - bt) + 'px');
+  seg.style.setProperty('--seg-w', br.width + 'px');
+  seg.style.setProperty('--seg-h', br.height + 'px');
+}
+function syncAllSegs() {
+  document.querySelectorAll('.seg').forEach(syncSegGlide);
+  if (typeof syncModeGlide === 'function') syncModeGlide();
 }
 async function setWebUiValue(key, value) {
   const draft = draftPlugins['plugin_web_ui'] || (draftPlugins['plugin_web_ui'] = { values: {} });
@@ -146,6 +193,7 @@ function refreshInterfaceControls() {
     if ([...log.options].some(o => o.value === (saved.log_level || 'warning'))) log.value = saved.log_level || 'warning';
   }
   refreshAutostart();
+  refreshAutoUpdate();
 }
 async function refreshAutostart() {
   const box = document.getElementById('ui-autostart');
@@ -155,6 +203,27 @@ async function refreshAutostart() {
   box.checked = !!data.enabled;
   const note = document.getElementById('ui-autostart-note');
   if (note) note.textContent = data.message || '';
+}
+async function refreshAutoUpdate() {
+  const kerniq = document.getElementById('ui-update-kerniq');
+  const plugins = document.getElementById('ui-update-plugins');
+  if (!kerniq && !plugins) return;
+  const data = await api('/api/ui/auto-update').catch(() => null);
+  const flags = data && !data.error ? data : { kerniq: true, plugins: true };
+  if (kerniq && document.activeElement !== kerniq) kerniq.checked = flags.kerniq !== false;
+  if (plugins && document.activeElement !== plugins) plugins.checked = flags.plugins !== false;
+}
+function saveAutoUpdate() {
+  const kerniq = document.getElementById('ui-update-kerniq');
+  const plugins = document.getElementById('ui-update-plugins');
+  api('/api/ui/auto-update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      kerniq: !!(kerniq && kerniq.checked),
+      plugins: !!(plugins && plugins.checked),
+    }),
+  }).catch(() => {});
 }
 document.getElementById('ui-lang')?.addEventListener('change', async (e) => {
   const v = e.target.value || 'en';
@@ -207,6 +276,8 @@ document.getElementById('ui-autostart')?.addEventListener('change', async (e) =>
   if (note && r && r.message) note.textContent = r.message;
   if (r && r.message) toast(r.message);
 });
+document.getElementById('ui-update-kerniq')?.addEventListener('change', saveAutoUpdate);
+document.getElementById('ui-update-plugins')?.addEventListener('change', saveAutoUpdate);
 document.getElementById('ui-auto-think')?.addEventListener('change', (e) => {
   autoThink = !!e.target.checked;
   saveInterface({ auto_think: autoThink });
@@ -515,14 +586,14 @@ watchBenchmark();
     const stateText = (document.getElementById('bench-note-text') || {}).textContent || '';
     const status = document.createElement('p');
     status.className = 'ext-metric';
-    status.textContent = stateText || translate('No benchmark is running.');
+    status.textContent = stateText || 'No benchmark is running.';
     body.appendChild(status);
     const actions = document.createElement('div');
     actions.className = 'ext-actions';
     const run = document.createElement('button');
     run.type = 'button';
     run.className = 'save-active';
-    run.textContent = translate('Run benchmark');
+    run.textContent = 'Run benchmark';
     run.addEventListener('click', () => runPluginAction(ext.plugin_id, 'run', run));
     const settingsBtn = document.createElement('button');
     settingsBtn.type = 'button';
@@ -581,7 +652,7 @@ watchBenchmark();
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'ghost';
-      open.textContent = isBenchmarkExt(ext) ? translate('Open benchmark window') : translate('Open settings');
+      open.textContent = isBenchmarkExt(ext) ? 'Open benchmark window' : translate('Open settings');
       open.addEventListener('click', () => {
         if (isBenchmarkExt(ext)) openSheet(ext);
         else if (typeof openPlugin === 'function') openPlugin(ext.plugin_id);
@@ -626,6 +697,27 @@ watchBenchmark();
       saveInterface({ theme: b.dataset.v });
     }));
   }
+  const tintBox = document.getElementById('ui-tint-on');
+  if (tintBox) {
+    tintBox.addEventListener('change', () => {
+      saveInterface({ tint_on: tintBox.checked });
+      applyTint(Object.assign({}, (settings && settings.interface) || {}, { tint_on: tintBox.checked }));
+    });
+  }
+  const tintSeg = document.getElementById('seg-tint');
+  if (tintSeg) {
+    tintSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      if (tintSeg.classList.contains('is-locked')) return;
+      saveInterface({ tint: b.dataset.v });
+      applyTint(Object.assign({}, (settings && settings.interface) || {}, { tint: b.dataset.v, tint_on: true }));
+    }));
+  }
+  document.addEventListener('click', (ev) => {
+    const btn = ev.target.closest && ev.target.closest('.seg button');
+    if (!btn || !btn.parentElement) return;
+    requestAnimationFrame(() => syncSegGlide(btn.parentElement));
+  });
+  window.addEventListener('resize', () => syncAllSegs());
   const stop = document.getElementById('btn-run-stop');
   if (stop) stop.addEventListener('click', () => {
     const b = document.getElementById('btn-action');
@@ -1144,7 +1236,7 @@ function openLangModal() {
     const name = document.createElement('span');
     const broken = pack.valid === false;
     name.textContent = broken
-      ? ((pack.name_en || id) + ' — ' + ((pack.errors && pack.errors[0]) || 'Invalid'))
+      ? ((pack.name_en || id) + ' – ' + ((pack.errors && pack.errors[0]) || 'Invalid'))
       : ((pack.name_native || pack.name_en || id) + ' · ' + (pack.name_en || id));
     const btn = document.createElement('button');
     btn.type = 'button';

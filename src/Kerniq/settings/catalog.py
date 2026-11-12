@@ -54,6 +54,8 @@ CORE_SETTINGS: tuple[tuple[str, str, str, str], ...] = (
     ("interface", "ui-lang", "Interface language", "Language of Kerniq itself"),
     ("interface", "ui-footer", "Status footer", "Provider, model, and context in the footer"),
     ("interface", "ui-autostart", "Start when you sign in", "Open the UI at sign-in"),
+    ("interface", "ui-update-kerniq", "Auto-update Kerniq", "Install a newer Kerniq release and restart"),
+    ("interface", "ui-update-plugins", "Auto-update plugins", "Install newer plugin releases and restart"),
     ("interface", "ui-show-toasts", "Show notifications", "Toasts"),
     ("interface", "ui-auto-dismiss", "Dismiss notifications", "Toasts leave on their own"),
     ("interface", "ui-auto-think", "Auto-expand reasoning", "Open the reasoning block while the model thinks"),
@@ -159,7 +161,7 @@ def search_settings(query: str = "", *, limit: int = 12) -> dict[str, Any]:
     shown = matched[: max(1, int(limit or 12))]
     lines = []
     for row in shown:
-        lines.append(f"{row['label']} — {row['tab_label']}. {row['hint']}. {row['link']}")
+        lines.append(f"{row['label']} – {row['tab_label']}. {row['hint']}. {row['link']}")
     note = ""
     if total > len(shown):
         note = f"\n{total - len(shown)} more. Ask again with a narrower query."

@@ -6,19 +6,24 @@ __pycache__/
 *.egg-info/
 .venv/
 .kerniq-venv/
+.kerniq-view/
 .kerniq-runtimes/
 /.kerniq/
 
 /state/
+/skills/
 /sessions/
 /logs/
 *.log
 workspace/
+downloads/
+attachments/
 
 /plugins/*
 !/plugins/web_ui/
 !/plugins/context_compact/
 !/plugins/plugin_manager/
+!/plugins/skill_manager/
 !/plugins/README.md
 
 /src/Kerniq/tools/packs/*

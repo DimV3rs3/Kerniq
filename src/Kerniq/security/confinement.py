@@ -55,7 +55,12 @@ def confined_reason(command: str) -> str | None:
     """Why a host-inspection or privileged command is denied. Empty if allowed."""
     text = flatten_quotes(command or "")
     if PRIVATE_INTERNALS.search(text):
-        return "Commands that touch Kerniq internals are denied."
+        return (
+            "Commands that touch Kerniq internals are denied. "
+            "python and pip on PATH are already the workspace venv. "
+            "Use python -m pip install and python script.py. "
+            "Do not name .kerniq-venv, Activate.ps1, or sitecustomize."
+        )
     if BASE64_EXEC.search(text):
         return "Decoding a payload into the shell is denied."
     if ENV_DUMP.search(text):

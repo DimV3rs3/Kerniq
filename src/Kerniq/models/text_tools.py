@@ -8,7 +8,7 @@ fallback for the turn that missed the channel.
 Accepted shapes, with optional space or newline between the name and the JSON:
 
 * ``update_plan{"items": [...]}``
-* ``update_plan[{...}, {...}]`` — a bare array is the ``items`` argument
+* ``update_plan[{...}, {...}]`` – a bare array is the ``items`` argument
 * ``name{bare_key: value}`` and the ``<|"|>`` quote marker
 """
 

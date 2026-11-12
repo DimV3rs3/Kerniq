@@ -27,23 +27,12 @@ def test_cli_does_not_hardcode_tool_imports():
     assert "list_directory" not in tools_fn
 
 
-def test_multi_agent_prompt_names_the_limit_and_one_call():
-    text = compose_system_prompt(
-        "OPERATOR",
-        lang="en",
-        mode="act",
-        multi_agent=True,
-        agent_slots=6,
-        agent_context=32768,
-    )
-    assert "run_agents" in text
-    assert "Up to 6 agents" in text
-    assert "32768 tokens" in text
-    assert "one call" in text
-    assert "Do not call run_agents once per task." in text
-    plan = compose_system_prompt("OPERATOR", lang="en", mode="plan", multi_agent=True, agent_slots=6, agent_context=32768)
-    assert "not available" in plan
-    assert "32768" not in plan
+def test_the_core_prompt_does_not_mention_a_plugin():
+    text = compose_system_prompt("OPERATOR", lang="en", mode="act")
+    assert "run_agents" not in text
+    assert "MULTI-AGENT" not in text
+    plan = compose_system_prompt("OPERATOR", lang="en", mode="plan")
+    assert "run_agents" not in plan
     text = compose_system_prompt("OPERATOR RULE: prefer tiny diffs.", lang="ru", mode="plan")
     assert text.startswith(KERNIQ_IDENTITY)
     assert text.index(KERNIQ_IDENTITY) < text.index("OPERATOR RULE")
@@ -61,7 +50,7 @@ def test_deepseek_ui_is_key_and_model_only():
 
 
 def test_provider_model_field_opens_the_picker():
-    for pid in ("lm_studio", "ollama", "openai", "anthropic", "openrouter", "gemini"):
+    for pid in ("lm_studio", "ollama", "openai", "grok", "anthropic", "openrouter", "gemini"):
         spec = spec_by_id(pid)
         model = next(f for f in spec["fields"] if f["key"] == "model")
         assert model["type"] == "model", pid
@@ -75,8 +64,82 @@ def test_claude_code_is_a_path_not_a_key():
 
 
 def test_known_remote_providers_exist():
-    for pid in ("openrouter", "openai", "anthropic", "gemini", "groq", "mistral", "ollama"):
+    for pid in ("openrouter", "openai", "grok", "anthropic", "gemini", "groq", "mistral", "ollama"):
         assert spec_by_id(pid) is not None
+
+
+def test_grok_is_the_xai_responses_api():
+    spec = spec_by_id("grok")
+    assert spec["kind"] == "grok"
+    assert spec["tool_calls"] is True
+    assert spec["default_base_url"] == "https://api.x.ai/v1"
+    assert [f["key"] for f in spec["fields"]] == ["api_token", "model"]
+    api = SimpleNamespace(
+        model_dump=lambda: {
+            "provider": "grok",
+            "base_url": "http://127.0.0.1:1234",
+            "api_token": "xai-test",
+            "model": "grok-4.7",
+            "binary_path": "",
+        }
+    )
+    provider = build_provider("grok", api=api)
+    assert provider.provider_id == "grok"
+    assert provider.base_url == "https://api.x.ai/v1"
+    assert provider.api_key == "xai-test"
+    assert provider.model == "grok-4.7"
+    assert "127.0.0.1" not in provider.base_url
+
+    from Kerniq.interfaces.models import Message, MessageRole, ToolCall
+    from Kerniq.models.providers.grok import build_responses_payload, parse_responses_body
+
+    prior = Message(
+        role=MessageRole.ASSISTANT,
+        content="",
+        tool_calls=[ToolCall(id="call_1", name="read_file", arguments={"path": "a.txt"})],
+        metadata={
+            "grok_output": [
+                {"type": "reasoning", "encrypted_content": "secret-trace"},
+                {"type": "function_call", "call_id": "call_1", "name": "read_file", "arguments": "{\"path\":\"a.txt\"}"},
+            ]
+        },
+    )
+    tool = Message(role=MessageRole.TOOL, content="file body", tool_call_id="call_1", name="read_file")
+    user = Message(role=MessageRole.USER, content="read a.txt")
+    payload = build_responses_payload(
+        [user, prior, tool],
+        [{"name": "read_file", "description": "Read", "parameters": {"type": "object", "properties": {}}}],
+        "grok-4.7",
+    )
+    assert payload["model"] == "grok-4.7"
+    assert payload["store"] is False
+    assert "reasoning.encrypted_content" in payload["include"]
+    assert "messages" not in payload
+    assert "enable_thinking" not in payload
+    assert "thinking" not in payload
+    assert payload["tools"][0]["type"] == "function"
+    assert payload["tools"][0]["name"] == "read_file"
+    assert "function" not in payload["tools"][0]
+    kinds = [item.get("type") or item.get("role") for item in payload["input"]]
+    assert "reasoning" in [item.get("type") for item in payload["input"] if isinstance(item, dict)]
+    assert {"type": "function_call_output", "call_id": "call_1", "output": "file body"} in payload["input"]
+    assert "user" in kinds
+
+    parsed = parse_responses_body(
+        {
+            "id": "resp_1",
+            "status": "completed",
+            "output": [
+                {"type": "reasoning", "encrypted_content": "again", "summary": [{"type": "summary_text", "text": "Look at the file."}]},
+                {"type": "message", "content": [{"type": "output_text", "text": "Done."}]},
+            ],
+            "usage": {"input_tokens": 3, "output_tokens": 4, "total_tokens": 7},
+        }
+    )
+    assert parsed.content == "Done."
+    assert parsed.metadata["reasoning"] == "Look at the file."
+    assert parsed.metadata["grok_output"][0]["encrypted_content"] == "again"
+    assert not parsed.tool_calls
 
 
 def test_deepseek_ignores_stale_local_base_url():

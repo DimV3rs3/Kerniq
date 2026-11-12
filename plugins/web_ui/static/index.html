@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#13161b"/>
 <title>Kerniq</title>
 <link rel="icon" href="/static/brand/kerniq-tile.svg" type="image/svg+xml"/>
-<script>(function(){var t='dark';try{t=localStorage.getItem('kerniq.theme')||'dark';}catch(e){}var r=t;if(t==='system'){try{r=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}catch(e){r='dark';}}if(r!=='light'&&r!=='dark')r='dark';document.documentElement.dataset.theme=r;document.documentElement.dataset.themeChoice=t==='light'||t==='dark'||t==='system'?t:'dark';var phone=window.matchMedia('(orientation: portrait) and (max-width: 820px)').matches;if(phone){document.documentElement.dataset.phone='1';document.documentElement.dataset.layout='agent';document.documentElement.dataset.tone='agent';}else{document.documentElement.dataset.phone='0';}document.documentElement.dataset.motion='on';document.documentElement.dataset.blur='on';if(!phone){document.documentElement.dataset.layout='editor';document.documentElement.dataset.tone='editor';}})();</script>
+<script>(function(){var t='dark';try{t=localStorage.getItem('kerniq.theme')||'dark';}catch(e){}var r=t;if(t==='system'){try{r=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}catch(e){r='dark';}}if(r!=='light'&&r!=='dark')r='dark';document.documentElement.dataset.theme=r;document.documentElement.dataset.themeChoice=t==='light'||t==='dark'||t==='system'?t:'dark';var phone=window.matchMedia('(orientation: portrait) and (max-width: 820px)').matches;if(phone){document.documentElement.dataset.phone='1';document.documentElement.dataset.layout='agent';document.documentElement.dataset.tone='agent';}else{document.documentElement.dataset.phone='0';}document.documentElement.dataset.motion='on';document.documentElement.dataset.blur='on';document.documentElement.dataset.tint='warm';document.documentElement.dataset.tintOn='1';document.documentElement.dataset.tintChoice='warm';if(!phone){document.documentElement.dataset.layout='editor';document.documentElement.dataset.tone='editor';}})();</script>
 
 <link rel="stylesheet" href="/static/styles.css"/>
 <link rel="stylesheet" href="/static/modules/explorer.css"/>
@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="/static/modules/overlays.css"/>
 <link rel="stylesheet" href="/static/modules/theme.css"/>
 <link rel="stylesheet" href="/static/modules/layout-agent.css"/>
+<link rel="stylesheet" href="/static/modules/advice.css"/>
 </head><body>
 <div class="topbar">
   <div class="top-left">
@@ -68,6 +69,7 @@
         <span>Kerniq</span>
       </div>
       <button type="button" class="side-new" id="side-new-chat"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="newChatLong">New chat</span></button>
+      <label class="side-find"><input type="search" id="side-search" data-i18n-placeholder="sideSearchPh" placeholder="Search chats" autocomplete="off"/></label>
       <div class="side-list" id="side-list"></div>
       <div class="drawer-foot phone-only">
         <button type="button" class="icon-btn" id="drawer-new" title="New chat" aria-label="New chat">
@@ -130,9 +132,18 @@
     <div class="status-bar"><span class="spin" id="agent-spin"></span><span id="agent-status">Ready</span></div>
     <div id="attach-chips"></div>
     <div class="composer"><div class="composer-box">
-      <button type="button" id="btn-attach" class="ghost composer-plus" title="Attach" data-i18n-title="attach" aria-label="Attach">+</button>
       <div class="ta-wrap"><textarea id="prompt" rows="1" placeholder="Ask to edit a file, explain code, or plan the next change…" data-i18n-placeholder="promptPh"></textarea></div>
-      <button type="button" id="btn-action" class="send-btn is-send" disabled title="Send" aria-label="Send"><span class="send-ico" aria-hidden="true">↑</span></button>
+      <div class="composer-tools">
+        <button type="button" id="btn-attach" class="ghost composer-plus" title="Attach" data-i18n-title="attach" aria-label="Attach">+</button>
+        <div class="mode-pair" id="composer-modes" data-mode="act">
+          <span class="mode-glide" aria-hidden="true"></span>
+          <button type="button" class="composer-chip" id="composer-plan" data-mode="plan">Plan</button>
+          <button type="button" class="composer-chip on" id="composer-act" data-mode="act">Act</button>
+        </div>
+        <button type="button" class="composer-chip composer-model" id="composer-model">model</button>
+        <span class="composer-spacer"></span>
+        <button type="button" id="btn-action" class="send-btn is-send" disabled title="Send" aria-label="Send"><span class="send-ico" aria-hidden="true">↑</span></button>
+      </div>
     </div></div>
   </aside>
 </div>
@@ -291,8 +302,8 @@
         <div class="field"><label class="lbl"><span data-i18n="maxTokens">Max tokens</span><span class="info-tip" tabindex="0" data-tip="Max tokens to generate. Empty = model maximum.">i</span></label>
           <input type="number" id="s-api-max-tokens" min="1" max="1000000" step="1" placeholder="auto (model max)"/>
         </div>
-        <div class="field"><label class="lbl"><span data-i18n="contextLength">Context length</span><span class="info-tip" tabindex="0" data-tip="Tokens to load a local model with. Empty loads 32768. The model card maximum (128k–256k) plus several slots does not fit a normal GPU and the engine dies on the first prompt. Type a number to use that window. A model already loaded in LM Studio is left as it is.">i</span></label>
-          <input type="number" id="s-api-context" min="256" max="2000000" step="1" placeholder="32768"/>
+        <div class="field"><label class="lbl"><span data-i18n="contextLength">Context length</span><span class="info-tip" tabindex="0" data-tip="Tokens to load a local model with. Empty uses that model's maximum. Max tokens cannot be higher than this window. The field is locked while the model is set to auto.">i</span></label>
+          <input type="number" id="s-api-context" min="256" max="2000000" step="1" placeholder="auto"/>
         </div>
         </div>
       </div>
@@ -342,6 +353,13 @@
             <span class="info-tip" tabindex="0" data-tip="Show tool-call arguments in chat. Also unlocks a risk bypass that auto-approves every level, including critical.">i</span>
           </label>
         </div>
+        <div class="field field-check" id="tool-details-field" hidden>
+          <label class="check-line">
+            <input type="checkbox" id="s-tool-details" class="soft-check"/>
+            <span>Show tool call details</span>
+            <span class="info-tip" tabindex="0" data-tip="Developer mode only. Off by default. On shows arguments and output for every tool call. Off shows no details. Errors still appear as notifications.">i</span>
+          </label>
+        </div>
         <div class="field field-check" id="parallel-tools-field" hidden>
           <label class="check-line">
             <input type="checkbox" id="s-parallel-tools" class="soft-check"/>
@@ -357,13 +375,20 @@
             <div class="radio-group">
               <label class="check-line">
                 <input type="radio" name="send-key" id="s-send-enter" class="soft-check" value="enter" checked/>
-                <span data-i18n="sendEnter">Enter — send, Shift+Enter — new line</span>
+                <span data-i18n="sendEnter">Enter – send, Shift+Enter – new line</span>
               </label>
               <label class="check-line">
                 <input type="radio" name="send-key" id="s-send-shift-enter" class="soft-check" value="shift_enter"/>
-                <span data-i18n="sendShift">Shift+Enter — send, Enter — new line</span>
+                <span data-i18n="sendShift">Shift+Enter – send, Enter – new line</span>
               </label>
             </div>
+          </div>
+          <div class="field field-check">
+            <label class="check-line">
+              <input type="checkbox" id="s-chat-title" class="soft-check"/>
+              <span data-i18n="generateChatTitle">Generate a chat title</span>
+              <span class="info-tip" tabindex="0" data-i18n-tip="generateChatTitleTip" data-tip="On: when a new chat is sent, the model names it first. If that fails, the title stays the first words of the message.">i</span>
+            </label>
           </div>
         </div>
         <div class="set-group">
@@ -426,7 +451,7 @@
             <option value="low">low</option>
             <option value="medium">medium</option>
             <option value="high">high</option>
-            <option value="all" hidden data-i18n="approveAll">all — no prompts</option>
+            <option value="all" hidden data-i18n="approveAll">all – no prompts</option>
           </select>
         </div>
         <div class="field field-check span-2">
@@ -471,6 +496,21 @@
               <button type="button" role="radio" data-v="system" data-keep-unlocked data-i18n="themeSystem">System</button>
             </div>
           </div>
+          <div class="field field-check">
+            <label class="check-line">
+              <input type="checkbox" id="ui-tint-on" class="soft-check" checked data-keep-unlocked/>
+              <span data-i18n="tintOn">Tint</span>
+              <span class="info-tip" tabindex="0" data-i18n-tip="tintOnTip" data-tip="On: the interface uses a warm or cold tint. Off: neutral, and the tint choice is locked.">i</span>
+            </label>
+          </div>
+          <div class="field">
+            <label class="lbl"><span data-i18n="tintChoice">Warm or cold</span><span class="info-tip" tabindex="0" data-i18n-tip="tintChoiceTip" data-tip="Warm is a warm grey. Cold is a cool grey. Auto follows the mode: agent is warm, editor is cold. Accent colours do not change.">i</span></label>
+            <div class="seg" id="seg-tint" role="radiogroup" aria-label="Tint">
+              <button type="button" role="radio" data-v="warm" data-keep-unlocked data-i18n="tintWarm">Warm</button>
+              <button type="button" role="radio" data-v="auto" data-keep-unlocked data-i18n="tintAuto">Auto</button>
+              <button type="button" role="radio" data-v="cold" data-keep-unlocked data-i18n="tintCold">Cold</button>
+            </div>
+          </div>
         </div>
         <div class="set-group">
           <h3 data-i18n="groupLayout">Layout</h3>
@@ -485,7 +525,7 @@
             <label class="check-line">
               <input type="checkbox" id="s-agent-chat-full" class="soft-check" data-keep-unlocked/>
               <span data-i18n="agent_chat_full">Full width chat</span>
-              <span class="info-tip" tabindex="0" data-i18n-tip="agent_chat_full_tip" data-tip="On: the agent conversation uses the whole window. Off: it sits in a readable column, centred.">i</span>
+              <span class="info-tip" tabindex="0" data-i18n-tip="agent_chat_full_tip" data-tip="On: messages use the whole window. The title, status, and input stay in a readable column. Off: the messages stay in that column too.">i</span>
             </label>
           </div>
         </div>
@@ -536,6 +576,23 @@
             </label>
           </div>
           <p class="hint" id="ui-autostart-note"></p>
+        </div>
+        <div class="set-group">
+          <h3 data-i18n="groupUpdates">Updates</h3>
+          <div class="field field-check">
+            <label class="check-line">
+              <input type="checkbox" id="ui-update-kerniq" class="soft-check" checked data-keep-unlocked/>
+              <span data-i18n="uiUpdateKerniq">Auto-update Kerniq</span>
+              <span class="info-tip" tabindex="0" data-i18n-tip="uiUpdateKerniqTip" data-tip="One check when Kerniq starts. A newer release is installed, then Kerniq restarts. Settings stay. Off skips that check.">i</span>
+            </label>
+          </div>
+          <div class="field field-check">
+            <label class="check-line">
+              <input type="checkbox" id="ui-update-plugins" class="soft-check" checked data-keep-unlocked/>
+              <span data-i18n="uiUpdatePlugins">Auto-update plugins</span>
+              <span class="info-tip" tabindex="0" data-i18n-tip="uiUpdatePluginsTip" data-tip="The same check looks at installed plugins. A newer release replaces that plugin. Kerniq restarts once if anything was installed.">i</span>
+            </label>
+          </div>
         </div>
         <div class="set-group">
           <h3 data-i18n="groupNotifications">Notifications</h3>
@@ -636,9 +693,9 @@ Its options show up here.</div></div>
 </div>
 <div class="footer" id="app-footer">
   <span class="dot idle" id="footer-dot"></span>
-  <button type="button" class="footer-hit" id="footer-provider">provider: —</button>
-  <button type="button" class="footer-hit" id="footer-model">model: —</button>
-  <button type="button" class="footer-hit" id="footer-ctx">ctx: —</button>
+  <button type="button" class="footer-hit" id="footer-provider">provider: –</button>
+  <button type="button" class="footer-hit" id="footer-model">model: –</button>
+  <button type="button" class="footer-hit" id="footer-ctx">ctx: –</button>
   <button type="button" class="footer-hit" id="footer-compact">compress at 75%</button>
   <span id="footer-tps" style="display:none">0.0 tok/s</span>
 </div>

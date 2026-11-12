@@ -17,8 +17,8 @@
 }
 .modal-bg .modal {
   opacity: 0;
-  transform: translateY(8px);
-  transition: opacity .28s ease, transform .28s ease;
+  transform: translateY(8px) scale(.95);
+  transition: opacity .2s ease, transform .2s cubic-bezier(.2, .7, .2, 1);
 }
 .modal-bg.on {
   opacity: 1;
@@ -71,18 +71,20 @@ html[data-blur="off"] body.modal-open .settings-actions {
 .plugin-modal .modal-x { left: auto; right: 12px; }
 .plugin-modal #plugin-modal-title { margin: 0 36px 16px 0; }
 .plugin-modal #plugin-modal-body { flex: 1; min-height: 0; overflow: auto; }
-.plugin-modal textarea { min-height: 120px; resize: vertical; font-family: inherit; }
 .plugin-modal .set-cols { margin-top: 4px; }
 .path-pick { display: flex; align-items: center; gap: 8px; }
 .path-pick input { flex: 1 1 auto; min-width: 0; width: auto; }
 .path-pick button { flex: none; }
 .plugin-actions { display: flex; gap: 8px; margin: 0 0 16px; }
-#tab-plugins .tools-split {
-  display: flex;
-  justify-content: center;
-  grid-template-columns: none;
+#tab-plugins .tools-split { display: block; width: 100%; }
+#tab-plugins .tools-list,
+#s-plugins-list {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  flex: none;
+  box-sizing: border-box;
 }
-#tab-plugins .tools-list { width: min(560px, 100%); flex: none; }
 .modal {
   position: relative;
   width: 90%;
@@ -271,7 +273,7 @@ html[data-blur="off"] body.modal-open .settings-actions {
 
 
 /* ---- settings: blocks side by side where they are small ---- */
-.field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; }
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 32px; }
 .field-grid > .field { min-width: 0; }
 .field-grid input[type=number] { width: 100%; max-width: none; }
 .field-grid .row > input[type=number] { flex: 1 1 0; width: auto; }

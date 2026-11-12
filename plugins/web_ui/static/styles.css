@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Kerniq — interface styles
+   Kerniq – interface styles
    One token layer, one component layer. No override stacks.
    ========================================================================== */
 
@@ -7,19 +7,19 @@
   color-scheme: dark;
 
   /* dark: deeper ground, brighter text, colour that still reads as colour */
-  --bg-0: #12141a;
-  --bg-1: #181c24;
-  --bg-2: #222833;
-  --bg-3: #2d3542;
-  --bg-4: #3c4656;
+  --bg-0: #1b1b1b;
+  --bg-1: #161616;
+  --bg-2: #242424;
+  --bg-3: #2c2c2c;
+  --bg-4: #353535;
 
-  --line: #313a49;
-  --line-strong: #4a5568;
+  --line: #2c2c2c;
+  --line-strong: #3a3a3a;
 
-  --fg: #f4f6fa;
-  --fg-2: #d0d7e2;
-  --muted: #a9b3c2;
-  --faint: #8491a4;
+  --fg: #ececec;
+  --fg-2: #d4d4d4;
+  --muted: #9a9a9a;
+  --faint: #6e6e6e;
 
   --acc: #4c9dff;
   --acc-ink: #061018;
@@ -39,7 +39,7 @@
   --knob: #f2f4f8;
 
   --bar-h: 38px;
-  --top-h: 46px;
+  --top-h: 40px;
   --foot-h: 28px;
   --r-s: 6px;
   --r-m: 8px;
@@ -461,16 +461,17 @@ body.settings-mode .panel-toggles { display: none !important; }
   display: flex;
   overflow: hidden;
   background: var(--bg-1);
-  box-shadow: 0 28px 60px rgba(10, 12, 16, .45);
+  box-shadow: 0 28px 70px rgba(10, 12, 16, 0);
   transform: translateY(-101%);
   visibility: hidden;
   will-change: transform;
-  transition: transform .42s cubic-bezier(.4, 0, .2, 1), visibility 0s linear .42s, filter .32s ease;
+  transition: transform .46s cubic-bezier(.22, 1, .36, 1), visibility 0s linear .46s, box-shadow .46s ease;
 }
 body.settings-mode #view-settings {
   transform: none;
   visibility: visible;
-  transition: transform .46s cubic-bezier(.22, 1, .36, 1), visibility 0s linear 0s, filter .32s ease;
+  box-shadow: 0 28px 70px rgba(10, 12, 16, .28);
+  transition: transform .46s cubic-bezier(.22, 1, .36, 1), visibility 0s linear 0s, box-shadow .46s ease;
 }
 
 .panel {

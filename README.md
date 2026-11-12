@@ -1,4 +1,4 @@
-# Kerniq 0.1.9
+# Kerniq 0.1.10
 
 Kerniq is a local-first platform for AI agents. One process takes a task, asks a model, runs the tools that model requests, and keeps the session. The same loop is used by the command line, the Web UI, and the MCP server. A model provider or a plugin is an adapter. It is not a second copy of the loop.
 
@@ -6,11 +6,11 @@ File tools may touch only the workspace you set. The model is shown `./workspace
 
 ## What it does
 
-- Runs a task against a local or hosted model. Built-in providers include LM Studio, Ollama, OpenAI, Anthropic, Gemini, Groq, Mistral, DeepSeek, OpenRouter, and the Claude Code CLI. `mock` is the offline provider used by tests and by `kerniq run --provider mock`.
+- Runs a task against a local or hosted model. Built-in providers include LM Studio, Ollama, OpenAI, Grok, Anthropic, Gemini, Groq, Mistral, DeepSeek, OpenRouter, and the Claude Code CLI. Grok uses the xAI Responses API (`POST /v1/responses`), not chat completions. `mock` is the offline provider used by tests and by `kerniq run --provider mock`.
 - Shares one settings store between the CLI and the Web UI: agent, API, prompt, chat, and interface in `state/settings.json`, tool values in `state/tools.json`, plugin values in `state/plugins.json`.
 - Ships tool packs for files, the workspace shell, the web, and the plan. The live list is `kerniq tools list`. A picture is sent only when the provider catalog says that model can see images. The model looks at a file with `view_image`, not by reading the bytes as text.
 - Keeps Plan mode and Act mode separate. Each mode has its own plan.
-- Loads plugins from folders under `plugins/`. The default kit is the Web UI, Context Compact, and the Plugin Manager. Every other plugin is a separate folder Kerniq identifies by its manifest after it is installed. `catalog/` holds those plugins so they can be published on their own. They are not loaded until then. A plugin's own tools stay out of the agent's command list unless that plugin's manifest says so. A plugin can add a screen to another plugin only when the host declares a slot for it.
+- Loads plugins from folders under `plugins/`. The default kit is the Web UI, Context Compact, the Plugin Manager, and the Skill Manager. Every other plugin is a separate folder Kerniq identifies by its manifest after it is installed. `catalog/` holds those plugins so they can be published on their own. They are not loaded until then. A plugin's own tools stay out of the agent's command list unless that plugin's manifest says so. A plugin can add a screen to another plugin only when the host declares a slot for it. Skill Manager imports `SKILL.md` skills from GitHub or a folder. The model sees the name and description first and loads the instructions with `skill_load`.
 - Includes server mode. One Kerniq process serves every browser. Each browser is a separate user with its own chats and its own workspace. MySQL is optional.
 - On a phone held upright, the Web UI stays in the agent chat. Landscape and desktop keep the editor layout.
 
@@ -73,7 +73,7 @@ Stop the UI from the status bar, or with Ctrl+C in the terminal that started it.
 
 ## Commands
 
-`kerniq` and `python -m Kerniq` are the same program after install. `kerniq --help` prints the command list. `kerniq --version` prints `0.1.9`. Every flag is in [docs/cli.md](docs/cli.md).
+`kerniq` and `python -m Kerniq` are the same program after install. `kerniq --help` prints the command list. `kerniq --version` prints `0.1.10`. Every flag is in [docs/cli.md](docs/cli.md).
 
 | Command | What it does |
 |---------|----------------|
@@ -111,7 +111,7 @@ Context trimming keeps the system prompt, the original user goal, and the newest
 
 ### System readings
 
-Kerniq reads this computer's operating system, CPU, memory, and, when `nvidia-smi` is present, GPU memory. Those readings stay on this computer. They are not sent to a model provider, to GitHub, or to any other host. Kerniq uses them locally, and a plugin may use the same local readings. The model advisor does that when it compares a model's quantization, parameter count, and context window with this machine. It does not upload the readings either.
+Kerniq reads this computer's operating system, CPU, memory, and, when `nvidia-smi` is present, GPU memory. Those readings stay on this computer. They are not sent to a model provider, to GitHub, or to any other host. A separate plugin may use the same local readings. It is not part of this tree.
 
 ### Plugins
 
@@ -124,9 +124,13 @@ expose_to_agent = true
 
 The default is hidden. Hidden tools are also left out of `kerniq tools list`, the system prompt, and MCP.
 
-A plugin may attach to another plugin only where the host allows it. The host returns slot names from `extension_slots()`. The other plugin offers `{host, slot, id, label, icon}` from `contributions()`. An offer is kept only when the host lists that slot. The Web UI offers `settings` and `panel`. The LLM benchmark plugin fills both after it is installed: a Benchmark item in settings, and a separate window with the run state. It is not part of the kit. Its id is `llm-benchmark`. Copy a plugin folder into `plugins/` and restart, or install it from the Plugins tab. Details: [docs/plugins/development.md](docs/plugins/development.md).
+The plugins that ship with Kerniq are the Web UI, Context Compact, the Plugin Manager, and Skill Manager. Anything else is a separate plugin. It is not part of this tree. Install it into `plugins/` and restart, or use the Plugins tab.
 
-`create_file`, `write_file`, `edit_file`, and `read_file` refuse `.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, `.pptx`, `.odt`, `.ods`, and `.odp`. Those are Office documents. The Office plugin (`catalog/Kerniq-office`) creates and edits them, including numbered tables, styles, and fonts, for Microsoft Office and LibreOffice.
+Kerniq looks for a newer release of itself, and of plugins that are already installed, once when the UI or the CLI starts. That is one request, kept for six hours. Interface settings has Auto-update Kerniq and Auto-update plugins. Both start on. After an update is installed, Kerniq restarts. Settings stay.
+
+A plugin may attach to another plugin only where the host allows it. The host returns slot names from `extension_slots()`. The other plugin offers `{host, slot, id, label, icon}` from `contributions()`. An offer is kept only when the host lists that slot. The Web UI offers `settings` and `panel`. Details: [docs/plugins/development.md](docs/plugins/development.md).
+
+`create_file`, `write_file`, `edit_file`, and `read_file` refuse `.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, `.pptx`, `.odt`, `.ods`, and `.odp`. Those files are not plain text. A separate plugin can handle them. It is not part of this tree.
 
 ### Server mode
 
@@ -170,13 +174,13 @@ Uninstall resets settings, `sessions/`, `logs/`, and `state/`, then removes only
 
 ## Documentation
 
-- [docs/cli.md](docs/cli.md) — every command and flag
-- [CHANGELOG.md](CHANGELOG.md) — what changed since 0.1.8
-- [docs/architecture/overview.md](docs/architecture/overview.md) — how the pieces fit
-- [docs/architecture/security.md](docs/architecture/security.md) — workspace and approvals
-- [docs/plugins/development.md](docs/plugins/development.md) — writing a plugin
-- [docs/plugins/settings.md](docs/plugins/settings.md) — tool and plugin settings
-- [docs/mcp/server.md](docs/mcp/server.md) — exposing tools to other clients
+- [docs/cli.md](docs/cli.md) – every command and flag
+- [CHANGELOG.md](CHANGELOG.md) – what changed since 0.1.8
+- [docs/architecture/overview.md](docs/architecture/overview.md) – how the pieces fit
+- [docs/architecture/security.md](docs/architecture/security.md) – workspace and approvals
+- [docs/plugins/development.md](docs/plugins/development.md) – writing a plugin
+- [docs/plugins/settings.md](docs/plugins/settings.md) – tool and plugin settings
+- [docs/mcp/server.md](docs/mcp/server.md) – exposing tools to other clients
 
 ## License
 

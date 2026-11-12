@@ -13,29 +13,36 @@ const SIDE_ICON = {
   chat: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 3.5V6a2 2 0 0 1 2-2z"/></svg>',
   trash: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
 };
+let sideQuery = '';
 function renderSideChats() {
   const el = document.getElementById('side-list');
   if (!el) return;
   el.innerHTML = '';
+  const q = sideQuery.trim().toLowerCase();
   chats.slice().reverse().forEach(c => {
+    const titleText = chatTitleText(c);
+    if (q && titleText.toLowerCase().indexOf(q) < 0) return;
     const locked = !!running && c.id !== activeChatId;     // no chat switching mid-run
     const d = document.createElement('div');
     d.className = 'side-item' + (c.id === activeChatId ? ' active' : '') + (locked ? ' disabled' : '');
     d.innerHTML = '<span class="side-ico">' + SIDE_ICON.chat + '</span><span class="title"></span>' +
       '<button type="button" class="x" aria-label="Delete">' + SIDE_ICON.trash + '</button>';
     const title = d.querySelector('.title');
-    title.textContent = chatTitleText(c);
-    d.title = chatTitleText(c);
+    title.textContent = titleText;
+    d.title = titleText;
     d.addEventListener('click', () => {
-      if (locked || c.id === activeChatId) return;
+      if (running || c.id === activeChatId) return;
       activeChatId = c.id;
       applyStoredMode();
       applyChatContextFooter();
+      saveChats();
       renderChatList(); renderMessages();
     });
+    const del = d.querySelector('.x');
+    del.disabled = !!(running && c.id === activeChatId);
     d.querySelector('.x').addEventListener('click', (e) => {
       e.stopPropagation();
-      if (running) return;
+      if (running && c.id === activeChatId) return;
       chats = chats.filter(x => x.id !== c.id);
       if (activeChatId === c.id) activeChatId = chats.length ? chats[chats.length - 1].id : null;
       saveChats(); applyChatContextFooter(); renderChatList(); renderMessages();
@@ -43,6 +50,10 @@ function renderSideChats() {
     el.appendChild(d);
   });
 }
+document.getElementById('side-search')?.addEventListener('input', (ev) => {
+  sideQuery = ev.target.value || '';
+  renderSideChats();
+});
 function chatLimit() {
   return (typeof serverModeOn === 'function' && serverModeOn()) ? 3 : Infinity;
 }
@@ -70,14 +81,18 @@ function renderChatList() {
     d.className = 'h' + (c.id === activeChatId ? ' active' : '');
     d.innerHTML = '<span class="title"></span><button class="x" title="×">×</button>';
     d.querySelector('.title').textContent = c.title || 'Chat';
+    d.querySelector('.x').disabled = !!(running && c.id === activeChatId);
     d.querySelector('.title').onclick = () => {
+      if (running) return;
       activeChatId = c.id;
       applyStoredMode();
       applyChatContextFooter();
+      saveChats();
       renderChatList(); renderMessages();
     };
     d.querySelector('.x').onclick = (e) => {
       e.stopPropagation();
+      if (running && c.id === activeChatId) return;
       chats = chats.filter(x => x.id !== c.id);
       if (activeChatId === c.id) activeChatId = chats.length ? chats[chats.length - 1].id : null;
       saveChats(); applyChatContextFooter(); renderChatList(); renderMessages();
@@ -102,6 +117,7 @@ function applyChatContextFooter() {
 }
 
 function newChat(force) {
+  if (running && !force) return;
   const empty = chats.find(c => !c.messages.length);
   if (!force && empty) { activeChatId = empty.id; renderChatList(); renderMessages(); toast('An empty chat already exists'); return; }
   if (chats.length >= chatLimit()) {
@@ -405,6 +421,64 @@ function settleMessageClamps(root) {
   });
 }
 
+function paintEmptyCopy() {
+  const box = document.querySelector('#msgs .empty-chat');
+  if (!box) return;
+  const hour = new Date().getHours();
+  const greetKey = hour < 5 || hour >= 22 ? 'greetNight' : hour < 12 ? 'greetMorning' : hour < 18 ? 'greetDay' : 'greetEvening';
+  const strong = box.querySelector('strong');
+  const sub = box.querySelector(':scope > span');
+  if (strong) strong.textContent = t(greetKey);
+  if (sub) sub.textContent = t('emptyChatBody');
+  const keys = ['chipExplain', 'chipBug', 'chipPlan', 'chipTests'];
+  box.querySelectorAll('.empty-chip').forEach((b, i) => { if (keys[i]) b.textContent = t(keys[i]); });
+}
+function stageChat(home) {
+  const panel = document.getElementById('chat-panel');
+  if (!panel) return;
+  const was = panel.classList.contains('is-home');
+  if (was === home) {
+    if (home && !panel.classList.contains('home-in') && !panel._homeTimer) panel.classList.add('home-in');
+    return;
+  }
+  const comp = panel.querySelector(':scope > .composer');
+  const nodes = [panel.querySelector(':scope > .status-bar'), panel.querySelector(':scope > #attach-chips'), comp].filter(Boolean);
+  const first = nodes.map(n => n.getBoundingClientRect());
+  panel.classList.toggle('is-home', home);
+  panel.classList.remove('home-in');
+  if (nodes.length && typeof motionMs === 'function' && motionMs(1)) {
+    nodes.forEach((n, i) => {
+      const last = n.getBoundingClientRect();
+      const dy = first[i].top - last.top;
+      if (Math.abs(dy) < 2) return;
+      n.style.transition = 'none';
+      n.style.transform = 'translateY(' + dy + 'px)';
+    });
+    void panel.offsetWidth;
+    nodes.forEach(n => {
+      if (!n.style.transform) return;
+      n.style.transition = 'transform .48s cubic-bezier(.22, 1, .36, 1)';
+      n.style.transform = 'translateY(0)';
+      const done = (ev) => {
+        if (ev && ev.propertyName !== 'transform') return;
+        n.style.transition = '';
+        n.style.transform = '';
+        n.removeEventListener('transitionend', done);
+      };
+      n.addEventListener('transitionend', done);
+    });
+  }
+  clearTimeout(panel._homeTimer);
+  panel._homeTimer = 0;
+  if (home) {
+    const delay = (typeof motionMs === 'function') ? motionMs(480) : 480;
+    panel._homeTimer = setTimeout(() => {
+      panel._homeTimer = 0;
+      if (panel.classList.contains('is-home')) panel.classList.add('home-in');
+    }, delay);
+  }
+}
+
 function renderMessagesNow() {
   if (document.body.classList.contains('settings-mode')) {
     window._renderPaused = true;
@@ -413,7 +487,30 @@ function renderMessagesNow() {
   const el = document.getElementById('msgs');
   if (!el) return;
   const c = currentChat();
-  if (!c) { el.innerHTML = ''; refreshChatHeading(); return; }
+  const homeRows = c ? aggregateMessages(c.messages).filter(m => !(m.kind === 'think_collapsed' && !(m.text || '').trim())) : [];
+  if (!homeRows.length) {
+    if (!el.querySelector('.empty-chat')) {
+      el.innerHTML = '<div class="empty-chat"><strong></strong><span></span><div class="empty-chips"></div></div>';
+      const box = el.querySelector('.empty-chips');
+      [['chipExplain', 'chipExplainPrompt'], ['chipBug', 'chipBugPrompt'], ['chipPlan', 'chipPlanPrompt'], ['chipTests', 'chipTestsPrompt']].forEach(([label, fill]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'empty-chip';
+        b.addEventListener('click', () => {
+          const prompt = document.getElementById('prompt');
+          if (!prompt) return;
+          prompt.value = t(fill);
+          prompt.dispatchEvent(new Event('input', { bubbles: true }));
+          prompt.focus();
+        });
+        box.appendChild(b);
+      });
+    }
+    paintEmptyCopy();
+    refreshChatHeading();
+    stageChat(true);
+    return;
+  }
   const prevTop = el.scrollTop;
   // every rebuild creates new elements; starting their animations at the shared clock's phase keeps
   // the shimmer / pulse running instead of restarting on each update
@@ -421,14 +518,7 @@ function renderMessagesNow() {
   el.style.setProperty('--shimmer-delay', '-' + ((clock % 1900) / 1000).toFixed(3) + 's');
   el.style.setProperty('--pulse-delay', '-' + ((clock % 1200) / 1000).toFixed(3) + 's');
   el.innerHTML = '';
-  const rows = aggregateMessages(c.messages).filter(m => !(m.kind === 'think_collapsed' && !(m.text || '').trim()));
-  if (!rows.length) {
-    el.innerHTML = '<div class="empty-chat"><strong></strong><span></span></div>';
-    el.querySelector('strong').textContent = t('emptyChatTitle');
-    el.querySelector('span').textContent = t('emptyChatBody');
-    refreshChatHeading();
-    return;
-  }
+  const rows = homeRows;
   rows.forEach(m => {
     const d = document.createElement('div');
     try {
@@ -468,12 +558,12 @@ function renderMessagesNow() {
       const ok = m.success !== false && m.status !== 'error';
       const pending = m.status === 'pending';
       d.className = 'msg tool' + (pending ? ' pending' : (ok ? ' ok' : ' err'));
-      const debug = !!(settings && settings.chat && settings.chat.developer_mode);
+      const debug = !!(settings && settings.chat && settings.chat.show_tool_details);
       let body = '<span class="tool-ico">' + HAMMER_SVG + '</span><span class="tool-name">' + esc(m.name) + '</span>'
         + '<span class="tool-state">' + esc(toolCardState(m)) + '</span>';
-      if (!pending && m.stop_reason && m.stop_reason !== 'completed') body += '<span class="muted">(' + esc(m.stop_reason) + ')</span>';
-      if (debug && m.args && !pending) body += '<span class="tool-detail">' + esc(typeof m.args === 'string' ? m.args : JSON.stringify(m.args)) + '</span>';
-      if (!pending && m.summary) body += '<span class="tool-detail">' + esc(m.summary) + '</span>';
+      if (debug && !pending && m.stop_reason && m.stop_reason !== 'completed') body += '<span class="muted">(' + esc(m.stop_reason) + ')</span>';
+      if (debug && !pending && m.args) body += '<span class="tool-detail">' + esc(typeof m.args === 'string' ? m.args : JSON.stringify(m.args)) + '</span>';
+      if (debug && !pending && m.summary) body += '<span class="tool-detail">' + esc(m.summary) + '</span>';
       d.innerHTML = body;
     } else if (m.kind === 'file_op') {
       const col = m.op === 'create' ? 'var(--ok)' : m.op === 'delete' ? 'var(--err)' : 'var(--warn)';
@@ -503,6 +593,7 @@ function renderMessagesNow() {
   }
   updateScrollBtn();
   renderPlan();
+  stageChat(false);
 }
 
 const promptEl = document.getElementById('prompt');
@@ -713,6 +804,8 @@ actionBtn.onclick = async () => {
   sendLock = true;
   sendAbort = false;
   running = true;
+  setRunLock(true);
+  renderChatList();
   updateActionBtn();
   try {
     const savedModel = String((settings && settings.api && settings.api.model) || '').trim();
@@ -726,8 +819,10 @@ actionBtn.onclick = async () => {
     const ok = await ensureModelReady(readyFor);
     if (sendAbort || !ok) {
       autoFooterModel = '';
-      if (!ok && !sendAbort) toast(translate('Model not ready — send cancelled'), true);
+      if (!ok && !sendAbort) toast(translate('Model not ready – send cancelled'), true);
       running = false;
+      setRunLock(false);
+      renderChatList();
       updateActionBtn();
       refreshModelFooter().catch(() => {});
       return;
@@ -738,6 +833,8 @@ actionBtn.onclick = async () => {
       autoFooterModel = '';
       toast('No active chat', true);
       running = false;
+      setRunLock(false);
+      renderChatList();
       updateActionBtn();
       refreshModelFooter().catch(() => {});
       return;
@@ -752,8 +849,9 @@ actionBtn.onclick = async () => {
       if (notes.length) taskToSend = text.trim() + '\n\n' + notes.join('\n\n');
     }
     c.messages.push({ role: 'user', content: text.trim(), attachments: chatAttachments.slice() });
-    const wantsTitle = c.title === 'New chat' || c.title === 'Chat';
-    if (wantsTitle) {
+    const freshTitle = c.title === 'New chat' || c.title === 'Chat';
+    const wantsTitle = freshTitle && !!(settings && settings.chat && settings.chat.generate_chat_title);
+    if (freshTitle) {
       const named = attachmentNames(chatAttachments);
       c.title = hasMeaningfulText(text) ? chatTitleFromPrompt(text) : (named[0] || 'New chat');
     }
@@ -762,18 +860,7 @@ actionBtn.onclick = async () => {
     promptEl.value = ''; autoGrow(); updateActionBtn();
     saveChats(); renderChatList(); renderMessages();
     setStatus(statusLabel('processing'), true);
-    await runAgent(taskToSend);
-    // Ask for a title only after the run. A parallel title request shares the
-    // single LM Studio slot and kills the CUDA engine during prefill.
-    if (wantsTitle) {
-      api('/api/chat/title', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text.trim() }),
-      }).then(r => {
-        if (r && r.title) { c.title = r.title; saveChats(); renderChatList(); refreshChatHeading(); }
-      }).catch(() => {});
-    }
+    await runAgent(taskToSend, wantsTitle);
   } catch (err) {
     console.error('send failed', err);
     autoFooterModel = '';
@@ -787,7 +874,7 @@ actionBtn.onclick = async () => {
     sendAbort = false;
   }
 };
-async function runAgent(task) {
+async function runAgent(task, needsTitle) {
   running = true;
   setRunLock(true);
   setFooterActivity('work');
@@ -828,6 +915,7 @@ async function runAgent(task) {
         history: hist,
         mode: (modeAuto ? 'auto' : (typeof agentMode === 'string' ? agentMode : 'act')),
         mode_auto: !!modeAuto,
+        needs_title: !!needsTitle,
         compose_plan: planComposeAvailable() && !!document.getElementById('s-compose-plan')?.checked,
         auto_act: document.getElementById('s-auto-act')
           ? document.getElementById('s-auto-act').checked
@@ -880,7 +968,7 @@ async function pollRun(runId, startCursor, idleCapSec) {
   let idleTicks = 0;
   let networkFails = 0;
   let cursor = Number(startCursor || 0);
-  // Match agent timeout (seconds) — long prompt prefill must not kill the UI.
+  // Match agent timeout (seconds) – long prompt prefill must not kill the UI.
   // A refresh passes a short cap: a live run heartbeats every 15s, a dead one does not.
   const timeoutSec = Math.max(
     120,
@@ -953,6 +1041,8 @@ async function pollRun(runId, startCursor, idleCapSec) {
 const STATUS_KEYS = {
   loading_model: 'processing',
   processing: 'processing',
+  choosing_mode: 'choosingMode',
+  chat_title: 'generatingChatTitle',
   thinking: 'thinking',
   generating: 'generating',
   tool: 'waitingForTool',
@@ -1051,6 +1141,16 @@ function handleEvent(e) {
     showApproval(e.request);
     return;
   }
+  if (e.type === 'chat_title' && e.title) {
+    const named = currentChat();
+    if (named) {
+      named.title = String(e.title);
+      saveChats();
+      renderChatList();
+      if (typeof refreshChatHeading === 'function') refreshChatHeading();
+    }
+    return;
+  }
   if (e.type === 'mode' && (e.mode === 'plan' || e.mode === 'act')) {
     if (e.mode === 'plan') runSawPlan = true;
     if (e.mode === 'act' && runSawPlan) {
@@ -1144,6 +1244,7 @@ function handleEvent(e) {
         renderMessages();
       }
     } else if (st === 'done' || st === 'cancelled' || st === 'error') {
+      if (closeDanglingTools(c)) { /* a card that never settled must not stay on waiting */ }
       generatingTokens = false;
       if (st === 'error') {
         setFooterActivity('err');
@@ -1163,7 +1264,7 @@ function handleEvent(e) {
       }
       generatingTokens = false;
       setStatus(statusLabel(st, e.text), true);
-    } else if (st === 'generating' || st === 'thinking' || st === 'processing') {
+    } else if (st === 'generating' || st === 'thinking' || st === 'processing' || st === 'choosing_mode' || st === 'chat_title') {
       setFooterActivity('work');
       generatingTokens = st === 'generating';
       setStatus(statusLabel(st, e.text), true);
@@ -1185,7 +1286,7 @@ function handleEvent(e) {
       setStatus(e.text || statusLabel(st), true);
     }
   } else if (e.type === 'reasoning_delta') {
-    // Reasoning streams tokens too — count for tok/s while thinking
+    // Reasoning streams tokens too – count for tok/s while thinking
     noteGeneratedText(e.text || '');
     setFooterActivity('work');
     setStatus(statusLabel('thinking'), true);
@@ -1195,6 +1296,7 @@ function handleEvent(e) {
     live.text = (live.text || '') + (e.text || '');
     scheduleRender();
   } else if (e.type === 'content_delta') {
+    closeDanglingTools(c);
     setFooterActivity('work');
     setStatus(statusLabel('generating'), true);
     noteGeneratedText(e.text || '');
@@ -1337,7 +1439,7 @@ function handleEvent(e) {
         if (currentSec) tpsBuckets.push({ sec: currentSec, tokens: tokensThisSecond });
         currentSec = sec; tokensThisSecond = 0;
       }
-      // value is tok/s — approximate tokens for this tick
+      // value is tok/s – approximate tokens for this tick
       tokensThisSecond += Math.max(1, Number(e.value) * 0.35);
       _tpsTick();
     }
@@ -1365,7 +1467,21 @@ function normPlanStatus(s) {
   if (['active', 'doing', 'in_progress', 'current', 'progress', 'wip'].includes(v)) return 'active';
   return 'pending';
 }
-function planCollapsed() { return false; }
+function planCollapsed() {
+  try { return localStorage.getItem('kerniq_plan_collapsed') === '1'; } catch (e) { return false; }
+}
+function closeDanglingTools(chat) {
+  if (!chat || !Array.isArray(chat.messages)) return false;
+  let changed = false;
+  chat.messages.forEach(m => {
+    if (m && m.kind === 'tool' && m.status === 'pending') {
+      m.status = 'success';
+      m.success = true;
+      changed = true;
+    }
+  });
+  return changed;
+}
 function coercePlan(items) {
   const list = (items || []).map(raw => ({
     id: raw && raw.id,
@@ -1492,6 +1608,14 @@ function applyStoredMode() {
   if (c && (c.mode === 'plan' || c.mode === 'act')) agentMode = c.mode;
   applyModeSwitch();
 }
+function syncModeGlide() {
+  const pair = document.getElementById('composer-modes');
+  if (!pair) return;
+  const on = pair.querySelector('.composer-chip.on');
+  if (!on) return;
+  pair.style.setProperty('--mode-x', on.offsetLeft + 'px');
+  pair.style.setProperty('--mode-w', on.offsetWidth + 'px');
+}
 function applyModeSwitch() {
   const plan = document.getElementById('mode-plan');
   const act = document.getElementById('mode-act');
@@ -1513,6 +1637,15 @@ function applyModeSwitch() {
     box.classList.toggle('busy', busy);
     box.title = busy ? translate('Mode cannot be changed while the agent is working') : '';
   }
+  ['composer-plan', 'composer-act'].forEach(id => {
+    const chip = document.getElementById(id);
+    if (!chip) return;
+    chip.classList.toggle('on', chip.dataset.mode === agentMode);
+    chip.disabled = locked;
+  });
+  const pair = document.getElementById('composer-modes');
+  if (pair) pair.dataset.mode = agentMode === 'plan' ? 'plan' : 'act';
+  syncModeGlide();
 }
 document.getElementById('mode-switch')?.addEventListener('click', (ev) => {
   if (modeAuto || running) return;
@@ -1521,7 +1654,18 @@ document.getElementById('mode-switch')?.addEventListener('click', (ev) => {
   agentMode = btn.dataset.mode === 'plan' ? 'plan' : 'act';
   rememberMode(agentMode);
 });
+document.querySelector('.composer-tools')?.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('#composer-plan, #composer-act, #composer-model');
+  if (!btn) return;
+  if (btn.id === 'composer-model') {
+    if (typeof openSettingsAt === 'function') openSettingsAt('api', 's-model');
+    return;
+  }
+  if (modeAuto || running || btn.disabled) return;
+  rememberMode(btn.dataset.mode === 'plan' ? 'plan' : 'act');
+});
 document.getElementById('plan-toggle')?.addEventListener('click', () => {
+  try { localStorage.setItem('kerniq_plan_collapsed', planCollapsed() ? '0' : '1'); } catch (e) {}
   renderPlan();
 });
 applyModeSwitch();

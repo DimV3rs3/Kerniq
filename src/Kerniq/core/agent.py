@@ -28,7 +28,8 @@ KERNIQ_IDENTITY = (
     "Call web_search, and fetch_url when a page matters, before you answer or edit. "
     "Do this in Plan and in Act. Local files do not replace a fact that can have changed. "
     "Skip the lookup only when the user forbade the network or you just read the answer in a project file. "
-    "Do not invent a current API from memory."
+    "Do not invent a current API from memory. "
+    "The developer of Kerniq is DimVerse. "
     "Shell python and pip are the workspace sandbox .kerniq-venv. Do not use the host Python, an existing .venv, or Docker to test code. "
     "The operator's system prompt follows this identity. Follow it unless it conflicts with workspace safety rules."
 )
@@ -162,9 +163,6 @@ def compose_system_prompt(
     plan_handoff: bool = False,
     compose_plan: bool = False,
     host_freedom: bool = False,
-    multi_agent: bool = False,
-    agent_slots: int = 0,
-    agent_context: int = 0,
 ) -> str:
     """Identity first, then the operator prompt, then operational rules."""
     parts = [KERNIQ_IDENTITY]
@@ -192,36 +190,6 @@ def compose_system_prompt(
         parts.append(PLAN_HANDOFF_TEXT if plan_handoff else PLAN_HUMAN_TEXT)
     else:
         parts.append(ACT_MODE_TEXT if compose_plan else ACT_MODE_FREE)
-    if multi_agent:
-        if mode == "plan":
-            parts.append(
-                "MULTI-AGENT is on, but this is Plan mode. run_agents is not available. "
-                "Research only. Do not start workers."
-            )
-        else:
-            try:
-                slots = max(1, int(agent_slots or 1))
-            except (TypeError, ValueError):
-                slots = 1
-            try:
-                context = int(agent_context or 0)
-            except (TypeError, ValueError):
-                context = 0
-            context_line = (
-                f"Each agent context is {context} tokens."
-                if context > 0
-                else "Each agent uses the provider's default context."
-            )
-            parts.append(
-                "MULTI-AGENT is on. You do not edit, create, delete, move, or unpack files, and you do not run the shell. "
-                "Those tools are not available. Nothing starts until you call the tool run_agents. "
-                f"Up to {slots} agents run at the same time. {context_line} "
-                "Put every task in that one call, in the tasks array. Do not call run_agents once per task. "
-                "Tasks that do not list depends_on run together. A task with depends_on waits for those tasks. "
-                "You write system_prompt. Workers do not see this chat, so the prompt and each task must carry every fact they need. "
-                "You keep the strategy. A worker that says success is not proof. "
-                "Do not call run_agents for one small edit, one calculation, or one file."
-            )
     return "\n\n".join(part for part in parts if part)
 
 
@@ -238,13 +206,23 @@ def host_shell_hint(*, host_freedom: bool = False) -> str:
     else:
         os_name = "Linux"
         shell = "bash"
+    venv = (
+        "python and pip on PATH are already the workspace virtual environment. "
+        "Install with python -m pip install PACKAGE. Run a file with python script.py. "
+        "Do not name .kerniq-venv, Activate.ps1, or sitecustomize. "
+        "python -c is denied; write a script file. "
+        "Do not use Invoke-WebRequest, curl, or wget; use the download_file tool."
+    )
+    if system == "windows":
+        venv += " PowerShell 5.1 does not accept &&. Separate commands with ;."
     if host_freedom:
         return (
             f"Host OS: {os_name}. Architecture: {arch}. run_command uses {shell}. "
             "Host freedom is on for this desktop session. Absolute paths and privileged "
             "commands are allowed. You still must not destroy the operating system or "
             "required system files: do not format disks, wipe devices, remove the "
-            "filesystem root, shut the machine down, or overwrite boot files and account databases."
+            "filesystem root, shut the machine down, or overwrite boot files and account databases. "
+            + venv
         )
     try:
         from Kerniq.server.homes import jail_root
@@ -269,7 +247,8 @@ def host_shell_hint(*, host_freedom: bool = False) -> str:
         f"Host OS: {os_name}. Architecture: {arch}. run_command uses {shell}. "
         f"{place} "
         "Do not use absolute paths, drive letters, '..', sudo or other privileged commands, "
-        "or commands that inspect the host (network, users, services, hardware, processes, or environment)."
+        "or commands that inspect the host (network, users, services, hardware, processes, or environment). "
+        + venv
     )
 
 
@@ -406,12 +385,6 @@ class Agent:
         lang = response_language if response_language is not None else self.response_language
         compose_plan = bool(getattr(self.orchestrator, "compose_plan", False))
         freedom = bool(getattr(getattr(self.orchestrator, "security_policy", None), "host_freedom", False))
-        try:
-            from .delegation import multi_agent_settings
-
-            agent_facts = multi_agent_settings(self.orchestrator._state_dir())
-        except Exception:
-            agent_facts = {"enabled": False, "maximum_agents": 2, "worker_context": 0}
         sys_text = compose_system_prompt(
             sys_text,
             lang=lang,
@@ -419,10 +392,15 @@ class Agent:
             plan_handoff=bool(plan_handoff),
             compose_plan=compose_plan and bool(plan_gate),
             host_freedom=freedom,
-            multi_agent=bool(agent_facts.get("enabled")),
-            agent_slots=int(agent_facts.get("maximum_agents") or 0),
-            agent_context=int(agent_facts.get("worker_context") or 0),
         )
+        try:
+            from Kerniq.plugins.live import model_system_notes
+
+            extra = model_system_notes(mode)
+        except Exception:
+            extra = ""
+        if extra:
+            sys_text = (sys_text.rstrip() + "\n\n" + extra).strip()
 
         if sys_text:
             context.add_message(Message(role=MessageRole.SYSTEM, content=sys_text))

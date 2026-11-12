@@ -1,11 +1,12 @@
-"""Build 24: plugin zips, the multi-agent tool gate, and VRAM parsers."""
+"""Build 24: plugin zips and VRAM parsers. Build 29: plugins extend the prompt themselves."""
 
 import zipfile
 from pathlib import Path
 
-from Kerniq.core.delegation import allow_tool
+from Kerniq.interfaces.settings_schema import SettingField, SettingType, SettingsSchema
 from Kerniq.models.system_info import parse_nvidia_query, parse_windows_vram_rows
 from Kerniq.plugins.distribution import adopt_plugin_archives
+from Kerniq.plugins.live import apply_model_tool_filters, drop_live, model_system_notes, note_live
 
 
 _MANIFEST = """\
@@ -77,15 +78,43 @@ def test_a_parent_path_in_a_zip_does_not_escape(tmp_path: Path):
     assert not (tmp_path / "bad_plug").exists()
 
 
-def test_allow_tool_keeps_readonly_and_run_agents_in_act_mode():
-    assert allow_tool("write_file", "high", mode="act", enabled=False) is True
-    assert allow_tool("run_agents", "medium", mode="act", enabled=False) is True
-    assert allow_tool("run_agents", "medium", mode="plan", enabled=True) is False
-    assert allow_tool("read_file", "low", mode="plan", enabled=True) is True
-    assert allow_tool("write_file", "high", mode="act", enabled=True) is False
-    assert allow_tool("update_plan", "low", mode="act", enabled=True) is False
-    assert allow_tool("read_file", "low", mode="act", enabled=True) is True
-    assert allow_tool("run_agents", "medium", mode="act", enabled=True) is True
+def test_a_loaded_plugin_can_note_the_prompt_and_filter_tools():
+    class Gate:
+        def system_note(self, mode):
+            return "GATE " + str(mode)
+
+        def filter_model_tools(self, specs, mode, tools=None):
+            return [spec for spec in specs if spec["function"]["name"] != "explode"]
+
+    note_live("sample_gate", Gate())
+    try:
+        assert model_system_notes("act") == "GATE act"
+        specs = [
+            {"type": "function", "function": {"name": "explode"}},
+            {"type": "function", "function": {"name": "read_file"}},
+        ]
+        kept = apply_model_tool_filters(specs, "act", {})
+        assert [spec["function"]["name"] for spec in kept] == ["read_file"]
+    finally:
+        drop_live("sample_gate")
+    assert model_system_notes("act") == ""
+    assert apply_model_tool_filters([{"type": "function", "function": {"name": "explode"}}], "act", {})[0]["function"]["name"] == "explode"
+
+
+def test_a_plugin_can_keep_its_own_language():
+    schema = SettingsSchema(
+        component_id="sample",
+        component_type="plugin",
+        title="Sample",
+        translate=False,
+        fields=[SettingField(key="enabled", label="Enabled", type=SettingType.BOOL, default=True)],
+    )
+    assert schema.to_public()["translate"] is False
+    assert "translate" not in SettingsSchema(
+        component_id="sample",
+        component_type="plugin",
+        title="Sample",
+    ).to_public()
 
 
 def test_vram_parsers_use_the_reported_numbers():

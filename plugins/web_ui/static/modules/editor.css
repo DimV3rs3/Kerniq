@@ -114,6 +114,10 @@
   z-index: 0;
 }
 .editor-mark[hidden] { display: none !important; }
+html[data-theme="light"] .editor-mark {
+  background-image: url("/static/brand/kerniq-black-out.svg");
+  opacity: 0.22;
+}
 .line-nums {
   position: sticky;
   left: 0;
@@ -190,7 +194,7 @@
 .code-wrap:has(#editor:disabled) .line-nums { display: none; }
 .code-wrap:has(#editor:disabled) .hl-wrap { width: 100%; }
 
-/* syntax colours (VS Code Dark+) — used by the editor and by chat code blocks */
+/* syntax colours (VS Code Dark+) – used by the editor and by chat code blocks */
 .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #6a9955; font-style: italic; }
 .token.punctuation { color: #b9c0cc; }
 .token.property, .token.parameter, .token.variable, .token.attr-name { color: #9cdcfe; }

@@ -30,6 +30,171 @@ def _ensure_collapse(schema: SettingsSchema | None, tool_id: str, title: str) ->
 
 _OFFICE_SUFFIXES = {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp"}
 
+# Longest suffix first. zip, tar and gzip come from the standard library.
+# 7z and rar are used only when a reader is already installed. Kerniq does not download one.
+_ARCHIVE_SUFFIXES = (
+    ".tar.gz", ".tar.bz2", ".tar.xz",
+    ".tgz", ".tbz2", ".tbz", ".txz",
+    ".tar", ".zip", ".7z", ".rar", ".gz", ".bz2", ".xz",
+)
+_ARCHIVE_WRITE = {".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".7z"}
+
+
+def archive_suffix(name: str) -> str:
+    low = str(name or "").replace("\\", "/").lower()
+    for suffix in _ARCHIVE_SUFFIXES:
+        if low.endswith(suffix):
+            return suffix
+    return ""
+
+
+def archive_stem(name: str) -> str:
+    raw = str(name or "").replace("\\", "/").split("/")[-1]
+    suffix = archive_suffix(raw)
+    if suffix:
+        return raw[: -len(suffix)] or "archive"
+    stem = pathlib.Path(raw).stem
+    return stem or "archive"
+
+
+def _archive_members(names):
+    for raw in names:
+        cleaned = str(raw or "").replace("\\", "/").lstrip("/")
+        if not cleaned:
+            continue
+        directory = cleaned.endswith("/")
+        parts = [part for part in cleaned.split("/") if part not in ("", ".")]
+        if not parts or ".." in parts:
+            continue
+        yield "/".join(parts), directory
+
+
+def _write_member(dest: pathlib.Path, workspace: pathlib.Path, relative: str, payload) -> str | None:
+    target = (dest / relative).resolve()
+    root = workspace.resolve()
+    if not target.is_relative_to(root):
+        return None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("wb") as handle:
+        if hasattr(payload, "read"):
+            shutil.copyfileobj(payload, handle)
+        else:
+            handle.write(payload or b"")
+    return target.relative_to(root).as_posix()
+
+
+def _extract_zip(src: pathlib.Path, dest: pathlib.Path, workspace: pathlib.Path) -> list[str]:
+    import zipfile
+
+    extracted = []
+    with zipfile.ZipFile(src, "r") as archive:
+        for info in archive.infolist():
+            for relative, directory in _archive_members([info.filename]):
+                if directory or info.is_dir():
+                    (dest / relative).mkdir(parents=True, exist_ok=True)
+                    continue
+                with archive.open(info) as payload:
+                    shown = _write_member(dest, workspace, relative, payload)
+                if shown:
+                    extracted.append(shown)
+    return extracted
+
+
+def _extract_tar(src: pathlib.Path, dest: pathlib.Path, workspace: pathlib.Path) -> list[str]:
+    import tarfile
+
+    extracted = []
+    with tarfile.open(src, "r:*") as archive:
+        for member in archive.getmembers():
+            if member.issym() or member.islnk() or not member.isfile() and not member.isdir():
+                continue
+            for relative, directory in _archive_members([member.name + ("/" if member.isdir() else "")]):
+                if directory or member.isdir():
+                    (dest / relative).mkdir(parents=True, exist_ok=True)
+                    continue
+                payload = archive.extractfile(member)
+                if payload is None:
+                    continue
+                shown = _write_member(dest, workspace, relative, payload)
+                if shown:
+                    extracted.append(shown)
+    return extracted
+
+
+def _extract_single(src: pathlib.Path, dest: pathlib.Path, workspace: pathlib.Path, opener) -> list[str]:
+    inner = archive_stem(src.name)
+    if not inner or inner in {".", ".."}:
+        inner = "unpacked"
+    with opener(src, "rb") as payload:
+        shown = _write_member(dest, workspace, inner, payload)
+    return [shown] if shown else []
+
+
+def _extract_7z(src: pathlib.Path, dest: pathlib.Path, workspace: pathlib.Path) -> list[str]:
+    try:
+        import py7zr
+    except Exception:
+        raise ValueError("7z is not available. Kerniq does not download 7-Zip. Use zip, tar, or tar.gz.")
+    extracted = []
+    with py7zr.SevenZipFile(src, "r") as archive:
+        blobs = archive.readall() or {}
+    for name, payload in blobs.items():
+        for relative, directory in _archive_members([name]):
+            if directory:
+                (dest / relative).mkdir(parents=True, exist_ok=True)
+                continue
+            shown = _write_member(dest, workspace, relative, payload)
+            if shown:
+                extracted.append(shown)
+    return extracted
+
+
+def _extract_rar(src: pathlib.Path, dest: pathlib.Path, workspace: pathlib.Path) -> list[str]:
+    try:
+        import rarfile
+    except Exception:
+        raise ValueError("rar is not available. Kerniq does not download unrar. Use zip, tar, or tar.gz.")
+    tool = str(getattr(rarfile, "UNRAR_TOOL", "") or "").strip()
+    if not tool or tool.lower() in {"unrar", "rar", "bsdtar", "unar"} and not shutil.which(tool):
+        raise ValueError("rar is not available. Kerniq does not download unrar. Use zip, tar, or tar.gz.")
+    extracted = []
+    with rarfile.RarFile(src) as archive:
+        for info in archive.infolist():
+            for relative, directory in _archive_members([info.filename]):
+                if directory or info.isdir():
+                    (dest / relative).mkdir(parents=True, exist_ok=True)
+                    continue
+                with archive.open(info) as payload:
+                    shown = _write_member(dest, workspace, relative, payload)
+                if shown:
+                    extracted.append(shown)
+    return extracted
+
+
+def extract_archive(src: pathlib.Path, dest: pathlib.Path, workspace: pathlib.Path) -> list[str]:
+    kind = archive_suffix(src.name)
+    if kind == ".zip":
+        return _extract_zip(src, dest, workspace)
+    if kind in {".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tbz", ".tar.xz", ".txz"}:
+        return _extract_tar(src, dest, workspace)
+    if kind == ".gz":
+        import gzip
+        return _extract_single(src, dest, workspace, gzip.open)
+    if kind == ".bz2":
+        import bz2
+        return _extract_single(src, dest, workspace, bz2.open)
+    if kind == ".xz":
+        import lzma
+        return _extract_single(src, dest, workspace, lzma.open)
+    if kind == ".7z":
+        return _extract_7z(src, dest, workspace)
+    if kind == ".rar":
+        return _extract_rar(src, dest, workspace)
+    raise ValueError(
+        "Unsupported archive. Kerniq unpacks zip, tar, tar.gz, tgz, tar.bz2, tar.xz, gz, bz2, and xz "
+        "without extra programs. 7z and rar are unpacked only when their reader is already installed."
+    )
+
 
 def _office_refusal(path: pathlib.Path) -> str | None:
     if path.suffix.lower() not in _OFFICE_SUFFIXES:
@@ -1350,8 +1515,10 @@ class ZipTool(FileSystemToolBase):
     @property
     def description(self) -> str:
         return (
-            "Create a .zip archive inside the workspace from one or more paths "
-            "(files or directories). Does not use the terminal."
+            "Create an archive inside the workspace from one or more paths. "
+            "Writes .zip by default. Also writes .tar, .tar.gz, .tgz, .tar.bz2, and .tar.xz. "
+            "Does not use the terminal and does not download a packer. "
+            "On Windows, pack .zip. Do not produce a tar.gz for a Windows host."
         )
 
     @property
@@ -1370,13 +1537,12 @@ class ZipTool(FileSystemToolBase):
                 },
                 "archive": {
                     "type": "string",
-                    "description": "Output .zip path relative to workspace (default: archive.zip)",
+                    "description": "Output path. Default archive.zip. Use .tar.gz only when the host is not Windows.",
                 },
             },
         }
 
     async def execute(self, arguments, context):
-        import zipfile
         call_id = arguments.get("tool_call_id", "unknown")
         try:
             paths = list(arguments.get("paths") or [])
@@ -1384,25 +1550,57 @@ class ZipTool(FileSystemToolBase):
                 paths.append(arguments["path"])
             if not paths:
                 return self._create_error_result(call_id, "Provide path or paths", "ZIP_ARGS")
-            archive_rel = arguments.get("archive") or "archive.zip"
-            if not str(archive_rel).lower().endswith(".zip"):
-                archive_rel = str(archive_rel) + ".zip"
+            archive_rel = str(arguments.get("archive") or "archive.zip")
+            kind = archive_suffix(archive_rel)
+            if kind not in _ARCHIVE_WRITE:
+                archive_rel = archive_rel + ".zip"
+                kind = ".zip"
             out = self._safe_path(archive_rel, write=True)
             out.parent.mkdir(parents=True, exist_ok=True)
             added = []
-            with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                for rel in paths:
-                    src = self._safe_path(rel, must_exist=True)
-                    if src.is_file():
-                        arcname = src.relative_to(self.workspace).as_posix()
+            files: list[tuple[str, pathlib.Path]] = []
+            for rel in paths:
+                src = self._safe_path(rel, must_exist=True)
+                if src.is_file():
+                    files.append((src.relative_to(self.workspace).as_posix(), src))
+                elif src.is_dir():
+                    for item in src.rglob("*"):
+                        if item.is_file():
+                            files.append((item.relative_to(self.workspace).as_posix(), item))
+            if kind == ".zip":
+                import zipfile
+                with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                    for arcname, src in files:
                         zf.write(src, arcname)
                         added.append(arcname)
-                    elif src.is_dir():
-                        for f in src.rglob("*"):
-                            if f.is_file():
-                                arcname = f.relative_to(self.workspace).as_posix()
-                                zf.write(f, arcname)
-                                added.append(arcname)
+            elif kind == ".7z":
+                try:
+                    import py7zr
+                except Exception:
+                    return self._create_error_result(
+                        call_id,
+                        "7z is not available. Kerniq does not download 7-Zip. Write a .zip instead.",
+                        "ZIP_TYPE",
+                    )
+                with py7zr.SevenZipFile(out, "w") as zf:
+                    for arcname, src in files:
+                        zf.write(src, arcname)
+                        added.append(arcname)
+            else:
+                import tarfile
+                mode = {
+                    ".tar": "w",
+                    ".tar.gz": "w:gz",
+                    ".tgz": "w:gz",
+                    ".tar.bz2": "w:bz2",
+                    ".tbz2": "w:bz2",
+                    ".tar.xz": "w:xz",
+                    ".txz": "w:xz",
+                }[kind]
+                with tarfile.open(out, mode) as tf:
+                    for arcname, src in files:
+                        tf.add(src, arcname=arcname, recursive=False)
+                        added.append(arcname)
             return ToolResult(
                 tool_call_id=call_id,
                 tool_id=self.tool_id,
@@ -1428,8 +1626,10 @@ class UnzipTool(FileSystemToolBase):
     @property
     def description(self) -> str:
         return (
-            "Extract a .zip archive. An archive in ./attachments or ./downloads "
-            "is extracted into ./workspace, not next to the archive. "
+            "Extract an archive. Reads zip, tar, tar.gz, tgz, tar.bz2, tar.xz, gz, bz2, and xz "
+            "with the Python standard library. 7z and rar are read only when that reader is already "
+            "installed. Kerniq does not download 7-Zip or unrar. "
+            "An archive in ./attachments or ./downloads is extracted into ./workspace, not next to the archive. "
             "Blocks path traversal. Does not use the terminal."
         )
 
@@ -1438,7 +1638,7 @@ class UnzipTool(FileSystemToolBase):
         return {
             "type": "object",
             "properties": {
-                "archive": {"type": "string", "description": "Workspace-relative .zip path"},
+                "archive": {"type": "string", "description": "Archive path: .zip, .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz, .gz, .bz2, .xz, and .7z or .rar when a reader is already installed."},
                 "path": {"type": "string", "description": "Alias for archive"},
                 "destination": {
                     "type": "string",
@@ -1449,53 +1649,88 @@ class UnzipTool(FileSystemToolBase):
         }
 
     async def execute(self, arguments, context):
-        import zipfile
         call_id = arguments.get("tool_call_id", "unknown")
         try:
             arch_rel = arguments.get("archive") or arguments.get("path")
             if not arch_rel:
                 return self._create_error_result(call_id, "Provide archive path", "UNZIP_ARGS")
             src = self._safe_path(arch_rel, must_exist=True, write=False)
-            if src.suffix.lower() != ".zip":
-                return self._create_error_result(call_id, "Not a .zip file", "UNZIP_TYPE")
+            if not archive_suffix(src.name):
+                return self._create_error_result(
+                    call_id,
+                    "Not an archive Kerniq can read. Use zip, tar, tar.gz, tgz, tar.bz2, tar.xz, gz, bz2, or xz.",
+                    "UNZIP_TYPE",
+                )
             dest_rel = arguments.get("destination")
             if dest_rel:
                 dest = self._safe_path(dest_rel, write=True)
             elif self._bucket_of(src) in {"attachments", "downloads"}:
-                dest = self._safe_path(src.stem or "archive", write=True)
+                dest = self._safe_path(archive_stem(src.name), write=True)
             else:
-                dest = src.with_suffix("")
+                dest = src.parent / archive_stem(src.name)
             dest.mkdir(parents=True, exist_ok=True)
-            extracted = []
-            workspace_root = self.workspace.resolve()
-            with zipfile.ZipFile(src, "r") as zf:
-                for info in zf.infolist():
-                    name = info.filename.replace("\\", "/").lstrip("/")
-                    if not name or ".." in name.split("/"):
-                        continue
-                    target = (dest / name).resolve()
-                    if not target.is_relative_to(workspace_root):
-                        continue
-                    if info.is_dir():
-                        target.mkdir(parents=True, exist_ok=True)
-                        continue
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with zf.open(info) as src_f, open(target, "wb") as out_f:
-                        out_f.write(src_f.read())
-                    extracted.append(target.relative_to(workspace_root).as_posix())
+            extracted = extract_archive(src, dest, self.workspace)
             try:
-                shown = dest.resolve().relative_to(workspace_root).as_posix()
+                shown = dest.resolve().relative_to(self.workspace.resolve()).as_posix()
             except ValueError:
                 shown = self._shown_path(dest) or str(dest)
             return ToolResult(
                 tool_call_id=call_id,
                 tool_id=self.tool_id,
                 status="success",
-                output={"destination": shown, "files": len(extracted)},
+                output={"destination": shown, "files": len(extracted), "format": archive_suffix(src.name)},
                 human_readable=f"Extracted {len(extracted)} file(s) to {shown}",
             )
         except Exception as e:
             return self._create_error_result(call_id, str(e), "UNZIP_ERROR")
+
+
+class RenameFileTool(FileSystemToolBase):
+    @property
+    def tool_id(self) -> str:
+        return "fs_rename_file"
+
+    @property
+    def name(self) -> str:
+        return "rename_file"
+
+    @property
+    def description(self) -> str:
+        return "Rename a file or directory in its current folder. new_name is the name only, not a path."
+
+    @property
+    def input_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "new_name": {"type": "string"},
+            },
+            "required": ["path", "new_name"],
+        }
+
+    async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
+        call_id = arguments.get("tool_call_id", "unknown")
+        try:
+            src = self._safe_path(arguments["path"], must_exist=True, write=True)
+            new_name = str(arguments.get("new_name") or "").replace("\\", "/").strip()
+            if not new_name or "/" in new_name or new_name in {".", ".."}:
+                raise PermissionError("new_name must be a file name, not a path")
+            dst = self._safe_path(str(src.parent / new_name), write=True)
+            if dst == src:
+                raise PermissionError("Source and destination are the same")
+            if dst.exists():
+                raise PermissionError("A file with that name already exists")
+            src.rename(dst)
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="success",
+                output={"path": arguments["path"], "new_name": new_name},
+                human_readable=f"Renamed {arguments['path']} to {new_name}",
+            )
+        except Exception as e:
+            return self._create_error_result(call_id, str(e), "FS_ERROR")
 
 
 class MoveFileTool(FileSystemToolBase):
@@ -1643,6 +1878,7 @@ class FileSystemTools:
             ZipTool(self.workspace),
             UnzipTool(self.workspace),
             MoveFileTool(self.workspace),
+            RenameFileTool(self.workspace),
             CopyFileTool(self.workspace),
         ]
         for tool in self._tools:

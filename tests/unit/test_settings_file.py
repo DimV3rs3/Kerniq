@@ -190,7 +190,30 @@ def test_tool_toggles_share_tools_json(tmp_path):
     assert tools["fs_list_max_depth"] == 2
 
 
-def test_removed_component_settings_are_forgotten(tmp_path):
+def test_a_partial_save_keeps_the_other_plugin_fields(tmp_path):
+    schema = SettingsSchema(
+        component_id="multi_agent",
+        component_type="plugin",
+        title="Multi-agent",
+        fields=[
+            SettingField(key="enabled", label="Enabled", type=SettingType.BOOL, default=False),
+            SettingField(key="model_strategy", label="Strategy", type=SettingType.STRING, default="keep"),
+            SettingField(key="background_model", label="Model", type=SettingType.STRING, default=""),
+            SettingField(key="maximum_agents", label="Agents", type=SettingType.INT, default=2),
+        ],
+    )
+    components = ComponentSettingsStore(tmp_path)
+    components.save("plugin", "multi_agent", {
+        "enabled": False,
+        "model_strategy": "swap",
+        "background_model": "nvidia/nemotron-3-nano-4b",
+        "maximum_agents": 6,
+    }, schema)
+    saved = components.save("plugin", "multi_agent", {"enabled": True}, schema)
+    assert saved["enabled"] is True
+    assert saved["model_strategy"] == "swap"
+    assert saved["background_model"] == "nvidia/nemotron-3-nano-4b"
+    assert saved["maximum_agents"] == 6
     components = ComponentSettingsStore(tmp_path)
     components.save("plugin", "plugin_weather", {"enabled": False})
     components.forget("plugin", "plugin_weather")

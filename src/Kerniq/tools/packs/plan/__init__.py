@@ -1,4 +1,4 @@
-"""Plan tool pack. Discovered with the other packs — not imported by CLI main."""
+"""Plan tool pack. Discovered with the other packs – not imported by CLI main."""
 
 from __future__ import annotations
 

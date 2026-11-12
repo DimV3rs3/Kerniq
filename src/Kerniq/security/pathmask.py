@@ -195,7 +195,7 @@ def scrub_for_model(
 
 
 def is_absolute_text(raw: str) -> bool:
-    """True for ``/``, ``C:\\``, and ``\\\\server`` — including on Windows, where ``Path('/')`` is not absolute."""
+    """True for ``/``, ``C:\\``, and ``\\\\server`` – including on Windows, where ``Path('/')`` is not absolute."""
     text = str(raw or "").strip()
     if not text:
         return False

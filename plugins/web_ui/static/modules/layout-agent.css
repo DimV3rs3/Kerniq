@@ -10,6 +10,9 @@ html[data-layout="agent"] #explorer > .root-stack { display: none; }
 html[data-layout="agent"] #explorer > h3 button,
 html[data-layout="agent"] #explorer .explorer-create { display: none !important; }
 html[data-layout="agent"] #explorer > .side-chats { display: flex; }
+html[data-layout="agent"] #explorer { background: var(--bg-0); }
+html[data-layout="agent"] .side-chats { background: transparent; }
+html[data-layout="agent"] .side-new { background: transparent; }
 .side-new {
   gap: 8px;
   justify-content: flex-start;
@@ -59,6 +62,12 @@ html[data-layout="agent"] #editor-panel,
 html[data-layout="agent"] #resizer-right,
 html[data-layout="agent"] #btn-toggle-chat,
 html[data-layout="agent"] #chat-hist { display: none !important; }
+/* the slide keeps the editor, and its Kerniq mark, underneath the chat */
+html[data-layout="agent"] #view-main.layout-anim #editor-panel,
+html[data-layout="agent"] #view-main.sheet-out #editor-panel {
+  display: flex !important;
+  opacity: 1 !important;
+}
 html[data-layout="agent"] #chat-panel,
 html[data-layout="agent"] #chat-panel.collapsed {
   flex: 1 1 0;
@@ -70,38 +79,48 @@ html[data-layout="agent"] #chat-panel.collapsed {
   border: 0 !important;
   background: var(--bg-0);
 }
-html[data-layout="agent"] #chat-panel > h3,
-html[data-layout="agent"] #chat-panel > .msgs-wrap,
-html[data-layout="agent"] #chat-panel > .status-bar,
-html[data-layout="agent"] #chat-panel > #attach-chips { width: auto; min-width: 0; max-width: none; }
-html[data-layout="agent"] #chat-panel > .composer {
-  width: 100%;
+html[data-layout="agent"] #chat-panel > .msgs-wrap {
+  width: auto;
   min-width: 0;
-  max-width: var(--agent-chat-max, none);
+  max-width: none;
+  flex-shrink: 1;
+}
+/* title, status, chips and the composer share one column */
+html[data-layout="agent"] #chat-panel > h3,
+html[data-layout="agent"] #chat-panel > .status-bar,
+html[data-layout="agent"] #chat-panel > .composer,
+html[data-layout="agent"] #chat-panel > #attach-chips {
+  width: min(100%, var(--agent-col));
+  min-width: 0;
+  max-width: var(--agent-col);
   margin-left: auto;
   margin-right: auto;
   box-sizing: border-box;
+  flex-shrink: 1;
 }
-/* keep the conversation in a readable column */
 html[data-layout="agent"] {
   --col-pad: 22px;
+  --agent-col: 840px;
+  --agent-chat-max: var(--agent-col);
 }
-html[data-layout="agent"] #chat-panel > h3 { padding: 0 var(--col-pad); background: transparent; }
-html[data-layout="agent"] .msgs { padding: calc(18px + var(--plan-h, 0px)) var(--col-pad) 22px; gap: 14px; }
-html[data-layout="agent"] .msgs,
-html[data-layout="agent"] .composer,
-html[data-layout="agent"] .status-bar,
-html[data-layout="agent"] #attach-chips,
 html[data-layout="agent"] #chat-panel > h3 {
-  max-width: var(--agent-chat-max, none);
+  padding: 0 var(--col-pad);
+  background: transparent;
+  left: 50%;
+  right: auto;
+  width: min(100% - 28px, var(--agent-col));
+  transform: translateX(-50%);
+}
+html[data-layout="agent"] .msgs { padding: calc(18px + var(--plan-h, 0px)) var(--col-pad) 22px; gap: 14px; }
+html[data-layout="agent"] .msgs {
+  max-width: var(--agent-col);
   margin-left: auto;
   margin-right: auto;
-  width: 100%;
+  width: min(100%, var(--agent-col));
   box-sizing: border-box;
 }
 html[data-layout="agent"] .composer-box { width: 100%; box-sizing: border-box; }
-html[data-layout="agent"]:not([data-chat-full="1"]) { --agent-chat-max: 840px; }
-html[data-layout="agent"][data-chat-full="1"] { --agent-chat-max: none; }
+html[data-layout="agent"][data-chat-full="1"] .msgs { max-width: none; width: 100%; }
 html[data-layout="agent"] .status-bar { padding: 0 var(--col-pad); }
 html[data-layout="agent"] #attach-chips { padding: 0 var(--col-pad) 6px; }
 html[data-layout="agent"] .composer { padding: 0 var(--col-pad) 18px; }
@@ -155,11 +174,13 @@ html[data-layout="agent"] .scroll-bottom { right: 22px; }
   will-change: width;
 }
 #view-main.layout-anim .resizer { display: none !important; }
-#view-main.layout-anim .pin > * {
+#view-main.layout-anim .pin > *:not(.composer):not(.status-bar):not(h3):not(#attach-chips) {
   width: var(--pin) !important;
   min-width: var(--pin) !important;
   max-width: var(--pin) !important;
+  flex: 0 0 auto !important;
   flex-shrink: 0 !important;
+  align-self: flex-start !important;
 }
 #view-main.layout-anim.keep-tree #explorer > .tree { display: block !important; }
 #view-main.layout-anim.keep-tree #explorer > .side-chats { display: none !important; }
@@ -181,9 +202,11 @@ html[data-layout="agent"] .scroll-bottom { right: 22px; }
   z-index: 2;
   display: block !important;
 }
+#view-main.layout-anim.reveal-editor .editor-mark[hidden] { display: none !important; }
 #view-main.layout-settle #explorer, #view-main.layout-settle #chat-panel, #view-main.layout-settle #editor-panel { transition: none !important; }
 .resizer.at-limit::after { background: var(--plan); opacity: 1; }
 
 /* the plan floats above the messages: reserve its height so scrolling to the top never hides a prompt behind it */
+html[data-theme="light"] .editor-mark { opacity: .34; }
 .msgs-wrap { --plan-h: 0px; }
 

@@ -65,10 +65,15 @@ class ComponentSettingsStore:
     def save(self, kind: str, component_id: str, values: Dict[str, Any], schema: Optional[SettingsSchema] = None) -> Dict[str, Any]:
         values = redact_secret_fields(values)
         if schema:
+            existing = self._bucket(self._read(kind)).get(component_id) or {}
+            if not isinstance(existing, dict):
+                existing = {}
             clean: Dict[str, Any] = {}
             for field in schema.fields:
                 if field.key in values:
                     clean[field.key] = coerce_value(field, values[field.key])
+                elif field.key in existing:
+                    clean[field.key] = coerce_value(field, existing[field.key])
                 else:
                     clean[field.key] = field.default
             values = clean

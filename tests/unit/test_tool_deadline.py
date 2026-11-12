@@ -34,8 +34,8 @@ def test_a_settings_deadline_ignores_the_model_timeout(monkeypatch):
     monkeypatch.setattr("Kerniq.tools.deadline.tool_timeout_seconds", spy)
 
     class Tool:
-        name = "run_agents"
-        tool_id = "run_agents"
+        name = "long_job"
+        tool_id = "long_job"
         cfg_timeout_from_settings = True
         cfg_default_timeout = 5400
         cfg_timeout_ceiling = 5400
@@ -45,7 +45,7 @@ def test_a_settings_deadline_ignores_the_model_timeout(monkeypatch):
 
     class Call:
         id = "c1"
-        name = "run_agents"
+        name = "long_job"
         arguments = {"timeout": 120}
 
     class Ctx:

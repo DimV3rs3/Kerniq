@@ -1,4 +1,4 @@
-"""Tool pack contract — folder-based, portable tool groups."""
+"""Tool pack contract – folder-based, portable tool groups."""
 
 from __future__ import annotations
 

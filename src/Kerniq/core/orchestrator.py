@@ -112,6 +112,12 @@ class Orchestrator:
             ceiling=getattr(tool, "cfg_timeout_ceiling", None),
         )
         proxy = _ToolCallContext(context, call.id)
+        # Which model is answering this chat. A tool can read it when the
+        # saved model is "auto" and the settings value is still empty.
+        live = str(getattr(self.provider, "model", "") or "").strip()
+        meta = getattr(context, "metadata", None)
+        if live and isinstance(meta, dict):
+            meta["chat_model"] = live
         try:
             with use_task(context):
                 # A few extra seconds so the tool can report its own timeout
@@ -722,7 +728,7 @@ class Orchestrator:
                     i += 1
                 groups.append(g)
             elif m.role == MessageRole.TOOL:
-                # orphan tool — keep as own group; sanitize will drop if broken
+                # orphan tool – keep as own group; sanitize will drop if broken
                 groups.append([m])
                 i += 1
             else:
@@ -824,7 +830,7 @@ class Orchestrator:
                     pending_tool_ids.discard(tid)
                     last_role = "tool"
                 elif not pending_tool_ids and last_role == "assistant":
-                    # some providers omit ids — allow tool right after assistant with tool_calls
+                    # some providers omit ids – allow tool right after assistant with tool_calls
                     out.append(m)
                     last_role = "tool"
                 else:
@@ -854,7 +860,7 @@ class Orchestrator:
 
             # ignore unknown
 
-        # If we still have unresolved tool_calls at the end, that's ok — model will continue
+        # If we still have unresolved tool_calls at the end, that's ok – model will continue
         return out
 
     def _nudge_after_empty(self, context: TaskContext) -> None:
@@ -904,7 +910,7 @@ class Orchestrator:
         if outcome not in ("verified", "cancelled"):
             note = f"[kerniq] outcome={outcome}"
             if detail:
-                note += f" — {detail}"
+                note += f" – {detail}"
             if note not in text:
                 text = (text.rstrip() + "\n\n" + note).strip()
         return text
@@ -942,25 +948,25 @@ class Orchestrator:
             specs = [spec for spec in specs if _spec_name(spec) in allowed]
         if not (context.metadata or {}).get("vision"):
             specs = [spec for spec in specs if _spec_name(spec) != "view_image"]
-        specs = self._apply_multi_agent(specs, mode)
-        return specs
+        return self._apply_plugin_tool_filters(specs, mode)
 
-    def _apply_multi_agent(self, specs, mode: str):
+    def _apply_plugin_tool_filters(self, specs, mode: str):
+        """Loaded plugins may hide tools from the main model. The registry itself is unchanged."""
         try:
-            from .delegation import allow_tool, multi_agent_enabled
-
-            if not multi_agent_enabled(self._state_dir()):
-                return specs
+            from Kerniq.plugins.live import apply_model_tool_filters
         except Exception:
             return specs
-        kept = []
-        for spec in specs:
-            name = _spec_name(spec)
-            tool = self.tool_registry.get_tool(name) if self.tool_registry is not None else None
-            risk = str(getattr(tool, "risk_level", "medium") if tool is not None else "medium")
-            if allow_tool(name, risk, mode=mode, enabled=True):
-                kept.append(spec)
-        return kept
+        tools = {}
+        registry = self.tool_registry
+        if registry is not None and hasattr(registry, "get_tool"):
+            for spec in specs:
+                name = _spec_name(spec)
+                if not name:
+                    continue
+                tool = registry.get_tool(name)
+                if tool is not None:
+                    tools[name] = tool
+        return apply_model_tool_filters(specs, mode, tools)
 
     async def _exhaust_current_item(self, context: TaskContext) -> str:
         """The same lookup failed often enough. Record it and move on."""
@@ -1381,7 +1387,7 @@ class Orchestrator:
                     loop_nudged = True
                     tool_streak = 0
                     last_tool_sig = None
-                    logger.warning("Identical tool streak — asking for a different approach")
+                    logger.warning("Identical tool streak – asking for a different approach")
                     for call in tool_calls:
                         context.add_message(Message(
                             role=MessageRole.TOOL,
@@ -1410,7 +1416,7 @@ class Orchestrator:
                         )
                     self._user_note(context, note)
                     continue
-                logger.warning("Identical tool streak=%s sig=%s — stopping loop", tool_streak, sig[:200])
+                logger.warning("Identical tool streak=%s sig=%s – stopping loop", tool_streak, sig[:200])
                 return self._finish(
                     context,
                     "Stopped: the model repeated the same tool call(s) "

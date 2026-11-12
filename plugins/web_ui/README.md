@@ -12,6 +12,6 @@ On a desktop, switch between the agent chat and the editor from the header. On a
 
 If the selected model, or the model that would be chosen automatically, reports that it can see images, photos can be attached. Otherwise the attach menu does not offer them.
 
-This plugin is a host. `extension_slots()` returns `settings` and `panel`. Another plugin can add a settings section or a window only by contributing to one of those slots. The LLM benchmark plugin (`llm-benchmark`) does that after it is installed. It is not part of this kit. The Plugins section searches GitHub, installs a repository, removes an add-on, and shows when that add-on has a newer version. Restart Kerniq after an install. On a phone, the settings icons sit in the center of the top row so the back button does not cover the agent icon. The Plugins icon is a plug.
+This plugin is a host. `extension_slots()` returns `settings` and `panel`. Another plugin can add a settings section or a window only by contributing to one of those slots. That plugin is not part of this kit. The Plugins section searches GitHub, installs a repository, removes an add-on, and shows when that add-on has a newer version. Restart Kerniq after an install. On a phone, the settings icons sit in the center of the top row so the back button does not cover the agent icon. The Plugins icon is a plug.
 
 Interface languages other than English are JSON packs imported from Interface settings. Server mode (one process, one workspace per browser user) is a setting of this plugin. It is documented in the project README.

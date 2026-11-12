@@ -277,12 +277,15 @@ function setStatus(text, spinning) {
 function loadChats() {
   chats = [];
 }
+let chatsLoaded = false;
 function saveChats() {
+  if (!chatsLoaded) return;
   clearTimeout(saveChats._t);
+  const body = JSON.stringify({ chats, active_id: activeChatId || '' });
   saveChats._t = setTimeout(() => {
     api('/api/ui/chats', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chats }),
+      body,
     }).then((res) => {
       if (res && res.error === 'chats_full') {
         toast(t('chatsFull'), true);
@@ -291,18 +294,38 @@ function saveChats() {
     }).catch(() => {});
   }, 250);
 }
+function flushChats() {
+  if (!chatsLoaded) return;
+  clearTimeout(saveChats._t);
+  try {
+    fetch('/api/ui/chats', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chats, active_id: activeChatId || '' }),
+      keepalive: true,
+    });
+  } catch (_) {}
+}
+window.addEventListener('pagehide', flushChats);
 async function loadChatsFromServer() {
   dropBrowserState();
-  try {
-    const data = await api('/api/ui/chats');
-    chats = Array.isArray(data && data.chats) ? data.chats : [];
-  } catch (_) { chats = []; }
+  chatsLoaded = false;
+  let data = null;
+  try { data = await api('/api/ui/chats'); } catch (_) { data = null; }
+  if (!data || data.error || !Array.isArray(data.chats)) {
+    chats = [];
+    return;
+  }
+  chats = data.chats;
+  chatsLoaded = true;
   chats.forEach(c => {
     if (c.prompt_tokens == null) c.prompt_tokens = null;
     if (c.context_limit == null) c.context_limit = null;
     if (!Array.isArray(c.messages)) c.messages = [];
   });
-  if (!chats.find(c => c.id === activeChatId)) activeChatId = chats.length ? chats[chats.length - 1].id : null;
+  const wanted = String(data.active_id || '');
+  const found = chats.find(c => c.id === wanted);
+  activeChatId = found ? found.id : (chats.length ? chats[chats.length - 1].id : null);
 }
 function dropBrowserState() {
   try {
@@ -314,7 +337,7 @@ function dropBrowserState() {
 
 
 function fmtTokens(n) {
-  if (n == null || isNaN(n)) return '—';
+  if (n == null || isNaN(n)) return '–';
   n = Number(n);
   if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, '') + 'K';
@@ -362,7 +385,7 @@ function estimateChatTokens() {
   return Math.max(0, est);
 }
 
-let _modelContextLimit = null; // tokens — loaded window when known
+let _modelContextLimit = null; // tokens – loaded window when known
 let _lastPromptTokens = null; // from provider usage (real)
 let _lastCompletionTokens = null;
 let _toolsSchemaTokens = 400; // approx when tool catalog enabled
@@ -393,7 +416,7 @@ function setFooterState(mode) {
 }
 function setFooterProvider(name, ok) {
   const el = document.getElementById('footer-provider');
-  if (el) el.textContent = t('provider') + ': ' + (name || '—');
+  if (el) el.textContent = t('provider') + ': ' + (name || '–');
   if (ok === false) providerReachable = false;
   else if (ok === true) providerReachable = true;
   if (!running) settleFooter();
@@ -404,7 +427,7 @@ function setFooterContext(used, limit) {
   if (!el) return;
   if (limit == null) limit = _modelContextLimit;
   if (used == null) used = _lastPromptTokens;
-  // Sticky: do not clear a good value with null (stops 17K <-> — flicker)
+  // Sticky: do not clear a good value with null (stops 17K <-> – flicker)
   if (used == null && el.dataset.lastUsed) used = Number(el.dataset.lastUsed);
   if ((limit == null || !(limit > 0)) && el.dataset.lastLimit) limit = Number(el.dataset.lastLimit);
   if (used != null && used >= 0) el.dataset.lastUsed = String(used);
@@ -415,12 +438,12 @@ function setFooterContext(used, limit) {
       const pctStr = pct >= 10 ? String(Math.round(pct)) : pct.toFixed(1);
       el.textContent = t('ctx') + ': ' + fmtTokens(used) + '/' + fmtTokens(limit) + ' (' + pctStr + '%)';
     } else {
-      el.textContent = t('ctx') + ': —/' + fmtTokens(limit);
+      el.textContent = t('ctx') + ': –/' + fmtTokens(limit);
     }
   } else if (used != null && used >= 0) {
-    el.textContent = t('ctx') + ': ' + fmtTokens(used) + '/—';
+    el.textContent = t('ctx') + ': ' + fmtTokens(used) + '/–';
   } else {
-    el.textContent = t('ctx') + ': —';
+    el.textContent = t('ctx') + ': –';
   }
   if (typeof setFooterCompact === 'function') setFooterCompact();
 }
@@ -541,6 +564,12 @@ function setFooterModelStatus(text, ok) {
   el.classList.toggle('bad', ok === false);
   el.classList.toggle('ok', ok === true);
   el.classList.toggle('foreign', ok === 'foreign');
+  const chip = document.getElementById('composer-model');
+  if (chip) {
+    const raw = String(text || '').replace(/^.*?:\s*/, '').trim();
+    chip.textContent = raw || t('model');
+    chip.title = text || '';
+  }
 }
 
 function settingsOpen() { return document.body.classList.contains('settings-mode'); }

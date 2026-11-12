@@ -1,0 +1,14 @@
+plugin_id = "plugin_skill_manager"
+name = "Skill Manager"
+version = "1.0.0"
+api_version = "1.0"
+manifest_version = "1.0"
+entry_point = "main.PluginImpl"
+description = "Import Agent Skills (SKILL.md) from GitHub or a folder and offer them to the model."
+capabilities = ["tools"]
+author = "Kerniq"
+license = "MIT"
+permissions = ["network", "filesystem"]
+
+[tools]
+expose_to_agent = true

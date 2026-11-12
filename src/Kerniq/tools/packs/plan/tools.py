@@ -1,4 +1,4 @@
-"""update_plan — the only way the agent publishes the floating TODO list."""
+"""update_plan – the only way the agent publishes the floating TODO list."""
 
 from __future__ import annotations
 

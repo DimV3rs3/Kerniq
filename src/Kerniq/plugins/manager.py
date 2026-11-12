@@ -119,6 +119,9 @@ class PluginManager:
 
             main_py = plugin_path / "main.py"
             if not main_py.exists():
+                from .live import drop_live
+
+                drop_live(pid)
                 msg = f"Plugin {pid} missing main.py"
                 logger.error(msg)
                 self.statuses[pid] = PluginStatus.ERROR
@@ -158,17 +161,25 @@ class PluginManager:
             context = self.context_factory()
             context.plugin_id = pid
             if _plugin_disabled(context, pid):
+                from .live import drop_live
+
+                drop_live(pid)
                 self.statuses[pid] = PluginStatus.STOPPED
                 logger.info("Plugin %s is disabled.", pid)
                 return
             if await plugin_instance.initialize(context):
                 from .folder_tools import register_folder_tools
+                from .live import note_live
 
                 register_folder_tools(plugin_instance, plugin_path, context)
                 self.plugins[pid] = plugin_instance
                 self.statuses[pid] = PluginStatus.AVAILABLE
+                note_live(pid, plugin_instance)
                 logger.info("Plugin %s loaded successfully.", pid)
             else:
+                from .live import drop_live
+
+                drop_live(pid)
                 msg = f"Plugin {pid} initialize() returned False"
                 logger.error(msg)
                 self.statuses[pid] = PluginStatus.ERROR
@@ -177,18 +188,27 @@ class PluginManager:
             logger.error(
                 "Error loading plugin from %s: %s", plugin_path, e, exc_info=False
             )
-            # Do not re-raise — one bad plugin must not kill UI / others
+            # Do not re-raise – one bad plugin must not kill UI / others
             self.errors[plugin_key] = str(e)
             if plugin_key not in self.statuses:
                 self.statuses[plugin_key] = PluginStatus.ERROR
+            try:
+                from .live import drop_live
+
+                drop_live(locals().get("pid") or "")
+            except Exception:
+                pass
 
     async def shutdown_all(self) -> None:
+        from .live import drop_live
+
         for plugin_id, plugin in list(self.plugins.items()):
             try:
                 await plugin.shutdown()
                 self.statuses[plugin_id] = PluginStatus.STOPPED
             except Exception as e:
                 logger.error("Error shutting down plugin %s: %s", plugin_id, e)
+            drop_live(plugin_id)
 
     def get_plugin_status(self, plugin_id: str) -> Optional[PluginStatus]:
         return self.statuses.get(plugin_id)

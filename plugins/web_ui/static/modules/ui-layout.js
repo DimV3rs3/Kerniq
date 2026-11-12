@@ -55,6 +55,7 @@ function applyLayoutAttrs(mode, persist) {
     b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
   refreshLayoutLabels();
+  if (typeof applyTint === 'function') applyTint();
 }
 /* instant version: used on start-up and whenever motion is off */
 function applyLayout(mode, persist) {
@@ -91,12 +92,36 @@ function freezePanels(w) {
   });
   void P.view.offsetWidth;             // commit the start widths before animating away from them
 }
+function pinPanelChildren(el, px) {
+  if (!el) return;
+  [...el.children].forEach(child => {
+    if (px == null) {
+      ['width', 'min-width', 'max-width', 'flex-shrink', 'flex-grow', 'align-self'].forEach(p => child.style.removeProperty(p));
+    } else {
+      const w = px + 'px';
+      if (child.matches && child.matches('.composer, .status-bar, h3, #attach-chips')) return;
+      child.style.setProperty('width', w, 'important');
+      child.style.setProperty('min-width', w, 'important');
+      child.style.setProperty('max-width', w, 'important');
+      child.style.setProperty('flex-shrink', '0', 'important');
+      child.style.setProperty('flex-grow', '0', 'important');
+      child.style.setProperty('align-self', 'flex-start', 'important');
+    }
+  });
+}
 async function layoutPhase(target, ms, pins) {
   const P = layoutPanels();
   const dur = motionMs(ms);
   [['ex', P.ex], ['ed', P.ed], ['ch', P.ch]].forEach(([k, el]) => {
-    if (pins && pins[k] != null) { el.classList.add('pin'); el.style.setProperty('--pin', pins[k] + 'px'); }
-    else { el.classList.remove('pin'); el.style.removeProperty('--pin'); }
+    if (pins && pins[k] != null) {
+      el.classList.add('pin');
+      el.style.setProperty('--pin', pins[k] + 'px');
+      pinPanelChildren(el, pins[k]);
+    } else {
+      el.classList.remove('pin');
+      el.style.removeProperty('--pin');
+      pinPanelChildren(el, null);
+    }
   });
   void P.view.offsetWidth;
   [['ex', P.ex], ['ed', P.ed], ['ch', P.ch]].forEach(([k, el]) => {
@@ -113,6 +138,7 @@ function finishLayoutAnim() {
     ['width', 'flex', 'transition', '--pin'].forEach(prop => el.style.removeProperty(prop));
     el.style.transform = '';
     el.classList.remove('pin');
+    pinPanelChildren(el, null);
   });
   P.view.classList.remove('layout-anim');
   applyStoredPanelSizes();
@@ -152,10 +178,31 @@ async function switchLayout(next) {
       await layoutPhase({ ex: 0, ed: editorW, ch: 0 }, 420, pins);
       P.view.classList.remove('keep-tree');
       applyLayoutAttrs('agent');
-      await layoutPhase({ ex: 0, ed: 0, ch: W }, 520, { ed: editorW });
+      // Editor stays full size underneath, logo included. The chat slides over it
+      // at its column width, so the composer does not stretch and then snap.
+      [P.ex, P.ed, P.ch].forEach(el => {
+        el.style.setProperty('transition', 'none', 'important');
+        el.classList.remove('pin');
+        pinPanelChildren(el, null);
+      });
+      P.ex.style.setProperty('width', '0px', 'important');
+      P.ed.style.setProperty('width', W + 'px', 'important');
+      P.ed.style.setProperty('flex', '1 1 auto', 'important');
+      P.ch.style.setProperty('width', W + 'px', 'important');
+      P.ch.style.transform = 'translateX(100%)';
+      P.view.classList.add('sheet-out', 'reveal-editor');
+      void P.view.offsetWidth;
+      const slide = motionMs(520);
+      P.ch.style.setProperty('transition', slide ? ('transform ' + slide + 'ms ' + LAYOUT_EASE) : 'none', 'important');
+      P.view.classList.add('sheet-go');
+      P.ch.style.transform = 'translateX(0)';
+      await wait(slide + 40);
+      P.ch.style.transform = '';
+      P.ch.style.removeProperty('transition');
+      P.view.classList.remove('sheet-out', 'sheet-go', 'reveal-editor');
       refreshLayoutLabels();
       renderChatList();
-      if (sideOpen.agent) await layoutPhase({ ex: S, ed: 0, ch: W - S }, 380, { ex: S });
+      if (sideOpen.agent) await layoutPhase({ ex: S, ed: Math.max(0, W - S), ch: W - S }, 380, { ex: S });
     } else {
       document.documentElement.dataset.tone = 'editor';
       typePillLabel(t('editorLabel'));

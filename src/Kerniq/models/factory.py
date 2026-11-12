@@ -8,6 +8,7 @@ from ..interfaces.errors import ConfigurationError
 from .catalog import spec_by_id
 from .providers.anthropic import AnthropicProvider
 from .providers.claude_code import ClaudeCodeProvider
+from .providers.grok import GrokProvider
 from .providers.lm_studio import LMStudioProvider
 from .providers.mock import MockProvider
 from .providers.openai_compat import OpenAICompatProvider
@@ -65,6 +66,13 @@ def build_provider(
             base_url=base or "http://127.0.0.1:1234",
             api_key=token or None,
             model=model,
+            timeout=timeout,
+        )
+    if kind == "grok":
+        return GrokProvider(
+            api_key=token or None,
+            model=model,
+            base_url=base or "https://api.x.ai/v1",
             timeout=timeout,
         )
     if kind == "openai":

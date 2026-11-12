@@ -32,45 +32,32 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 
 
 async def maybe_auto_update(argv: Optional[list] = None) -> Optional[int]:
-    """If a newer release exists, apply it and re-exec the same command.
+    """Check once, in the background for a long command. Restart only if something installed.
 
-    Skipped for: uninstall/remove/update/server, --help, and when KERNIQ_NO_AUTO_UPDATE=1.
-    Settings/state are preserved (no wipe). Must be awaited: calling the
-    coroutine without await is what LM Studio reported as a RuntimeWarning.
+    Skipped for uninstall, the manual update command, and help. A second check
+    in the same process is skipped. Settings decide Kerniq and plugins separately.
     """
     import os
     import sys
-    if os.environ.get("KERNIQ_NO_AUTO_UPDATE", "").strip() in ("1", "true", "yes"):
+    if os.environ.get("KERNIQ_NO_AUTO_UPDATE", "").strip().lower() in {"1", "true", "yes"}:
         return None
     if os.environ.get("KERNIQ_UPDATING") == "1":
-        return None  # already re-exec after update
+        return None
     args = list(argv) if argv is not None else sys.argv[1:]
     if not args:
         return None
-    skip = {"uninstall", "remove", "update", "server", "--help", "-h", "--version"}
-    if args[0] in skip:
+    if args[0] in {"uninstall", "remove", "update", "--help", "-h", "--version"}:
+        return None
+    from Kerniq.devtools.update_check import maintain
+
+    long_running = args[0] in {"server", "run"} or (args[0] == "plugins" and "ui" in args)
+    if long_running:
+        import threading
+        threading.Thread(target=maintain, name="kerniq-update", daemon=True).start()
         return None
     try:
-        from Kerniq.devtools.update_check import check_for_update, apply_update
-
-        info = await check_for_update()
-        if not info.is_newer:
-            return None
-        print(
-            f"Kerniq update available: {info.local_version} → {info.remote_version}. "
-            "Updating in place (settings kept)…"
-        )
-        ok, msg = apply_update()
-        print(msg)
-        if not ok:
-            print("Auto-update failed; continuing with the current version.")
-            print(msg)
-            return None
-        env = os.environ.copy()
-        env["KERNIQ_UPDATING"] = "1"
-        os.execvpe(sys.executable, [sys.executable, "-m", "Kerniq", *args], env)
-    except Exception as e:
-        print(f"Auto-update skipped: {e}")
+        await asyncio.to_thread(maintain)
+    except Exception:
         return None
     return None
 
@@ -205,7 +192,7 @@ async def run_agent(args: argparse.Namespace, config) -> int:
     if provider_name not in ("mock", "mock_provider"):
         if not await provider.check_connection():
             if provider_name == "lm_studio" and not args.provider and ui.api.provider == "lm_studio":
-                logger.warning("LM Studio not reachable — falling back to mock")
+                logger.warning("LM Studio not reachable – falling back to mock")
                 from Kerniq.models.providers.mock import MockProvider
                 provider = MockProvider()
                 provider_name = "mock"
@@ -841,7 +828,7 @@ async def async_main(argv: Optional[list] = None) -> int:
                 if report.get("kit"):
                     print(f"{report.get('plugin_id')} is part of the Kerniq kit, not a separate plugin.")
                 elif report.get("standalone"):
-                    print(f"OK {report.get('plugin_id')} {report.get('version')} — standalone plugin.")
+                    print(f"OK {report.get('plugin_id')} {report.get('version')} – standalone plugin.")
                 else:
                     print("Not a standalone plugin.")
                 for err in report.get("errors") or []:
@@ -1208,7 +1195,7 @@ async def async_main(argv: Optional[list] = None) -> int:
             ui = ui_store.load()
             if not args.value:
                 code = getattr(ui.chat, "response_language", "auto")
-                print(f"{code} — {RESPONSE_LANGUAGES.get(code, code)}")
+                print(f"{code} – {RESPONSE_LANGUAGES.get(code, code)}")
                 return 0
             raw = args.value.strip()
             code = None
@@ -1225,7 +1212,7 @@ async def async_main(argv: Optional[list] = None) -> int:
                 return 1
             ui.chat.response_language = code
             ui_store.save(ui)
-            print(f"Response language set to {code} — {RESPONSE_LANGUAGES[code]}")
+            print(f"Response language set to {code} – {RESPONSE_LANGUAGES[code]}")
             return 0
 
         from Kerniq.settings.component_store import ComponentSettingsStore
@@ -1257,7 +1244,7 @@ async def async_main(argv: Optional[list] = None) -> int:
                 raw_part = read_state_file(state_dir, filename)
                 names = raw_part.get("components") if isinstance(raw_part.get("components"), dict) else {}
                 if not names:
-                    print("    (none yet — run plugins validate or open settings)")
+                    print("    (none yet – run plugins validate or open settings)")
                 for name in sorted(names):
                     print(f"    {name}")
             return 0

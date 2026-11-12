@@ -88,6 +88,70 @@ assert not hasattr(sys.modules["__main__"], "_ORIG_OPEN")
     assert result.returncode == 0, result.stderr + result.stdout
 
 
+def test_pip_folder_lookup_does_not_load_ole32(tmp_path: Path):
+    visible = tmp_path / "workspace"
+    pkg = visible / "vendor" / "platformdirs"
+    pkg.mkdir(parents=True)
+    (visible / "vendor" / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "__init__.py").write_text(
+        "from .windows import get_win_folder\n"
+        "def user_cache_dir():\n"
+        "    return get_win_folder('CSIDL_LOCAL_APPDATA')\n",
+        encoding="utf-8",
+    )
+    (pkg / "windows.py").write_text(
+        "def get_win_folder(name):\n"
+        "    import ctypes\n"
+        "    ctypes.CDLL('ole32')\n"
+        "    return 'BAD'\n"
+        "def _pick_get_win_folder():\n"
+        "    return get_win_folder\n",
+        encoding="utf-8",
+    )
+    cache = visible / ".pip-cache"
+    script = visible / "check_pip.py"
+    script.write_text(
+        sitecustomize_source()
+        + "\n"
+        + f"import sys\nsys.path.insert(0, {str(visible)!r})\n"
+        + r"""
+import ctypes
+import os
+def blocked(fn):
+    try:
+        fn()
+    except PermissionError:
+        return True
+    return False
+assert blocked(lambda: ctypes.CDLL(None))
+assert blocked(lambda: ctypes.CDLL('kernel32'))
+assert blocked(lambda: ctypes.CDLL('ole32'))
+import vendor.platformdirs as pd
+got = pd.user_cache_dir()
+assert got != 'BAD', got
+assert got == os.environ['LOCALAPPDATA'], got
+""",
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["KERNIQ_CONFINE"] = "1"
+    env["KERNIQ_VISIBLE"] = str(visible)
+    env["KERNIQ_SANDBOX"] = str(visible / ".kerniq-venv")
+    env["LOCALAPPDATA"] = str(cache)
+    env["APPDATA"] = str(cache)
+    env["TEMP"] = str(visible / ".tmp")
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=str(visible),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+
+
 def test_unsigned_host_freedom_is_ignored_and_backup_is_removed(tmp_path: Path):
     state = tmp_path / "state"
     state.mkdir()

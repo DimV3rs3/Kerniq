@@ -78,6 +78,18 @@ class Plugin(ABC):
         """
         return []
 
+    def system_note(self, mode: str) -> str:
+        """Extra system-prompt text for the main model. Empty means no note."""
+        return ""
+
+    def filter_model_tools(self, specs, mode: str, tools=None):
+        """Return the tool specs the main model may see. Default keeps them all.
+
+        ``tools`` maps a spec name to the tool object when one is registered.
+        This is not applied to a plugin's own worker loop.
+        """
+        return specs
+
     async def run_action(self, action_id: str, tool_context: Any) -> Dict[str, Any]:
         raise ValueError(f"Plugin has no action {action_id}")
 

@@ -148,3 +148,34 @@ def test_unzip_from_downloads_lands_in_the_workspace(tmp_path, monkeypatch):
         assert not (archive.parent / "bundle").exists()
 
     asyncio.run(run())
+
+
+def test_unzip_reads_tar_gz_and_skips_a_parent_path(tmp_path):
+    import io
+    import tarfile
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    archive = workspace / "src.tar.gz"
+    outside = tmp_path / "escaped.txt"
+    with tarfile.open(archive, "w:gz") as handle:
+        info = tarfile.TarInfo("inside.txt")
+        payload = b"from-tar"
+        info.size = len(payload)
+        handle.addfile(info, io.BytesIO(payload))
+        evil = tarfile.TarInfo("../escaped.txt")
+        body = b"nope"
+        evil.size = len(body)
+        handle.addfile(evil, io.BytesIO(body))
+    tools = {tool.name: tool for tool in FileSystemTools(str(workspace)).get_tools()}
+
+    async def run():
+        result = await tools["unzip"].execute({"archive": "src.tar.gz"}, None)
+        assert result.status == "success", result.human_readable
+        assert (workspace / "src" / "inside.txt").read_bytes() == b"from-tar"
+        assert not outside.exists()
+        packed = await tools["zip"].execute({"path": "src/inside.txt", "archive": "out.tar.gz"}, None)
+        assert packed.status == "success", packed.human_readable
+        assert (workspace / "out.tar.gz").is_file()
+
+    asyncio.run(run())

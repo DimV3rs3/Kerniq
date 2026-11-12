@@ -145,7 +145,7 @@ def _ask_database(state_dir) -> int:
     for index, row in enumerate(supported, 1):
         note = ""
         if row.get("id") == "mysql" and not row.get("driver"):
-            note = " — pymysql is not installed yet"
+            note = " – pymysql is not installed yet"
         print(f"  {index}. {row['label']}{note}")
     print("  0. JSON files")
     choice = input("Choose [0]: ").strip() or "0"

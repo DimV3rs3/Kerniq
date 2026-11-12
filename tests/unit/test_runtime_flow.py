@@ -76,9 +76,57 @@ def test_plan_handoff_requires_a_real_draft():
     assert orch._needs_plan_draft(ctx) is False
 
 
+def test_route_keeps_the_end_of_a_long_request_and_does_not_cut_thinking():
+    import asyncio
+
+    from Kerniq.core.runtime_flow import route_mode
+    from Kerniq.interfaces.models import Message, MessageRole, ModelResponse
+
+    seen = {}
+
+    class Prov:
+        async def generate(self, request):
+            seen["request"] = request
+            return ModelResponse(
+                messages=[Message(role=MessageRole.ASSISTANT, content="ACT")],
+                finish_reason="stop",
+            )
+
+    long = ("intro " * 4000) + "PLEASE_BUILD_A_COMPILER"
+    mode = asyncio.run(route_mode(Prov(), long, compose_plan=True))
+    assert mode == "act"
+    user = seen["request"].messages[-1].content
+    assert "PLEASE_BUILD_A_COMPILER" in user
+    assert seen["request"].options.max_tokens is None
+    assert seen["request"].metadata["kerniq_internal"] == "route"
+
+
+def test_chat_title_uses_the_ending_and_the_last_line():
+    from Kerniq.core.runtime_flow import chat_title_request, side_task_text, title_from_response
+    from Kerniq.interfaces.models import Message, MessageRole, ModelResponse
+
+    text = ("a " * 9000) + "UNIQUE_ENDING_BUILD_A_COMPILER"
+    kept = side_task_text(text, limit=2000)
+    assert "UNIQUE_ENDING_BUILD_A_COMPILER" in kept
+    assert "[middle omitted]" in kept
+    request = chat_title_request(text)
+    assert request.options.max_tokens is None
+    assert request.metadata["kerniq_internal"] == "title"
+    assert "UNIQUE_ENDING_BUILD_A_COMPILER" in request.messages[-1].content
+    response = ModelResponse(
+        messages=[Message(
+            role=MessageRole.ASSISTANT,
+            content="The user wants a compiler, so the name should capture that.\nCompiler build",
+            metadata={"reasoning": "first words are not the ask"},
+        )],
+        finish_reason="stop",
+    )
+    assert title_from_response(response) == "Compiler build"
+
+
 def test_route_word_reads_reasoning_and_ignores_an_empty_content():
     from Kerniq.core.runtime_flow import promote_reasoning, route_word
-    from Kerniq.interfaces.models import ModelResponse
+    from Kerniq.interfaces.models import Message, MessageRole, ModelResponse
 
     act = ModelResponse(
         messages=[Message(role=MessageRole.ASSISTANT, content="")],

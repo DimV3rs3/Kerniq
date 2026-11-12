@@ -55,6 +55,28 @@ function syncSettingLocks() {
   }
   if (typeof applyModeSwitch === 'function') applyModeSwitch();
   if (typeof syncPrivilegeFields === 'function') syncPrivilegeFields();
+  syncModelWindows();
+}
+function syncModelWindows() {
+  const model = document.getElementById('s-model');
+  const ctx = document.getElementById('s-api-context');
+  const max = document.getElementById('s-api-max-tokens');
+  if (!ctx || !max) return;
+  const autoModel = !model || !String(model.value || '').trim();
+  ctx.disabled = autoModel;
+  if (autoModel) ctx.value = '';
+  const raw = String(ctx.value || '').trim();
+  const autoCtx = !raw;
+  max.disabled = autoCtx;
+  if (autoCtx) {
+    max.value = '';
+    return;
+  }
+  const n = Number(raw);
+  if (n > 0) {
+    max.max = String(n);
+    if (max.value && Number(max.value) > n) max.value = String(n);
+  }
 }
 function bindSettingsDirty() {
   const root = document.getElementById('view-settings');
@@ -435,6 +457,8 @@ function syncPrivilegeFields() {
   const hostRow = document.getElementById('host-freedom-field');
   const par = document.getElementById('s-parallel-tools');
   const parRow = document.getElementById('parallel-tools-field');
+  const details = document.getElementById('s-tool-details');
+  const detailsRow = document.getElementById('tool-details-field');
   const silent = (node, value) => {
     if (!node) return;
     node.dataset.silent = '1';
@@ -454,9 +478,12 @@ function syncPrivilegeFields() {
   }
   if (!parallelOn) {
     if (parRow) parRow.hidden = true;
+    if (detailsRow) detailsRow.hidden = true;
     silent(par, false);
-  } else if (parRow) {
-    parRow.hidden = false;
+    silent(details, false);
+  } else {
+    if (parRow) parRow.hidden = false;
+    if (detailsRow) detailsRow.hidden = false;
   }
 }
 function wirePrivilege() {
@@ -704,8 +731,12 @@ async function loadSettings() {
   if (elR) elR.checked = ch.show_reasoning_live !== false;
   const elE = document.getElementById('s-chat-empty');
   if (elE) elE.checked = ch.empty_response_status !== false;
+  const elTitle = document.getElementById('s-chat-title');
+  if (elTitle) elTitle.checked = !!ch.generate_chat_title;
   const elD = document.getElementById('s-chat-debug');
   if (elD) elD.checked = !!ch.developer_mode;
+  const elDetails = document.getElementById('s-tool-details');
+  if (elDetails) elDetails.checked = !!ch.show_tool_details && !!ch.developer_mode;
   const elP = document.getElementById('s-parallel-tools');
   if (elP) elP.checked = !!ch.parallel_tools && !!ch.developer_mode;
   const elPlan = document.getElementById('s-show-plan');
@@ -920,7 +951,7 @@ function fillModelMenu(filter) {
   rows.forEach(m => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.textContent = m.name && m.name !== m.id ? (m.name + ' — ' + m.id) : (m.id || '');
+    b.textContent = m.name && m.name !== m.id ? (m.name + ' – ' + m.id) : (m.id || '');
     b.onclick = (ev) => {
       ev.preventDefault();
       if (input) input.value = m.id || '';
@@ -1104,13 +1135,17 @@ function pluginIsOn(pluginId) {
 }
 function renderToolsList() {
   const by = {};
+  const order = ['filesystem', 'terminal', 'web', 'fetch', 'plan', 'git', 'agents', 'other'];
+  const labels = { filesystem: 'Filesystem', terminal: 'Terminal', web: 'Web', fetch: 'Fetch', plan: 'Plan', git: 'Git', agents: 'Agents', other: 'Other' };
   (componentsCache.tools || []).forEach(t => {
     if (!pluginIsOn(t.plugin_id)) return;
-    const c = t.category || 'other';
+    const c = (t.category && t.category !== 'other') ? t.category : (t.plugin_id ? ('plugin:' + t.plugin_id) : 'other');
+    if (c.indexOf('plugin:') === 0) {
+      const plugin = (componentsCache.plugins || []).find(item => item.id === t.plugin_id);
+      labels[c] = (plugin && (plugin.name || plugin.title)) || t.plugin_id;
+    }
     (by[c] = by[c] || []).push(t);
   });
-  const order = ['filesystem', 'terminal', 'web', 'fetch', 'plan', 'git', 'other'];
-  const labels = { filesystem: 'Filesystem', terminal: 'Terminal', web: 'Web', fetch: 'Fetch', plan: 'Plan', git: 'Git', other: 'Other' };
   Object.keys(by).forEach(k => { if (!order.includes(k)) order.push(k); });
   const cats = document.getElementById('s-cats');
   if (cats) cats.innerHTML = '';
@@ -1249,7 +1284,7 @@ function renderToolDetail(id) {
   if (!fields.length) html += '<div class="empty">No extra settings</div>';
   else fields.forEach(f => {
     const val = draft.values[f.key] !== undefined ? draft.values[f.key] : f.default;
-    const label = translate(f.label || '');
+    const label = pluginText(t.plugin_id, f.label || '', f.key);
     if (f.type === 'bool') {
       html += `<label class="field-row-check"><input type="checkbox" class="soft-check" data-fk="${esc(f.key)}" ${val ? 'checked' : ''}/><span>${esc(label)}</span></label>`;
     } else if (f.type === 'path') {
@@ -1285,6 +1320,11 @@ function renderToolDetail(id) {
 }
 let showHiddenPlugins = false;
 let pluginUpdateMap = {};
+function pluginHasOwnSettings(p) {
+  if (!p) return false;
+  const fields = ((p.schema && p.schema.fields) || []).filter(f => f && f.key !== 'enabled' && f.key !== 'listed');
+  return fields.length > 0 || (p.actions || []).length > 0;
+}
 function renderPluginsList() {
   const el = document.getElementById('s-plugins-list');
   if (!el) return;
@@ -1303,41 +1343,100 @@ function renderPluginsList() {
     const vals = (draftPlugins[p.id] && draftPlugins[p.id].values) || p.values || {};
     const enabled = vals.enabled !== false;
     const listed = vals.listed !== false;
+    const own = pluginHasOwnSettings(p);
     const row = document.createElement('div');
-    row.className = 'tool-row' + (selectedPluginId === p.id ? ' selected' : '');
-    const badges = document.createElement('span');
-    badges.className = 'plugin-badges';
-    const on = document.createElement('span');
-    on.className = 'plugin-badge ' + (enabled ? 'on' : 'off');
-    on.textContent = enabled ? t('pluginOn') : t('pluginOff');
-    badges.appendChild(on);
-    if (!listed) {
-      const hid = document.createElement('span');
-      hid.className = 'plugin-badge hide';
-      hid.textContent = t('pluginHidden');
-      badges.appendChild(hid);
-    }
+    row.className = 'tool-row plugin-row' + (selectedPluginId === p.id ? ' selected' : '');
+    const name = document.createElement('span');
+    name.className = 'tname' + (own ? ' can-open' : '');
+    name.textContent = p.name || p.id;
+    if (own) name.addEventListener('click', () => openPlugin(p.id));
+    row.appendChild(name);
     if (p.status && p.status !== 'available') {
       const st = document.createElement('span');
       st.className = 'plugin-badge err';
       st.textContent = p.status;
-      badges.appendChild(st);
+      row.appendChild(st);
     }
     const news = pluginUpdateMap[p.id];
     if (news && news.update) {
       const up = document.createElement('span');
       up.className = 'plugin-badge hide';
       up.textContent = t('pluginUpdateReady');
-      badges.appendChild(up);
+      row.appendChild(up);
     }
-    const name = document.createElement('span');
-    name.className = 'tname';
-    name.textContent = p.name || p.id;
-    row.appendChild(name);
-    row.appendChild(badges);
-    row.onclick = () => openPlugin(p.id);
+    const ops = document.createElement('span');
+    ops.className = 'plugin-ops';
+    const sw = document.createElement('input');
+    sw.type = 'checkbox';
+    sw.className = 'soft-check';
+    sw.checked = enabled;
+    sw.title = enabled ? t('skillOff') : t('skillOn');
+    sw.addEventListener('click', ev => ev.stopPropagation());
+    sw.addEventListener('change', async () => {
+      const next = sw.checked;
+      const ok = await savePluginFlag(p, 'enabled', next);
+      if (!ok) sw.checked = !next;
+      else renderPluginsList();
+    });
+    const eye = document.createElement('button');
+    eye.type = 'button';
+    eye.className = 'ghost icon-btn' + (listed ? '' : ' is-hidden');
+    eye.title = listed ? t('pluginHide') : t('pluginShow');
+    eye.setAttribute('aria-label', eye.title);
+    eye.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.1A10.8 10.8 0 0 1 12 5c5 0 9.3 3.1 11 7a11.7 11.7 0 0 1-2.6 3.8"/><path d="M6.1 6.1C4.3 7.3 2.9 9 2 12c1.7 3.9 6 7 10 7 1.6 0 3.1-.4 4.4-1"/></svg>';
+    eye.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      const next = !listed;
+      const ok = await savePluginFlag(p, 'listed', next);
+      if (ok) renderPluginsList();
+    });
+    ops.appendChild(sw);
+    ops.appendChild(eye);
+    if (!p.source || p.source.kind !== 'kit') {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'ghost icon-btn';
+      del.title = t('pluginRemove');
+      del.setAttribute('aria-label', t('pluginRemove'));
+      del.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M8 7l1 12h6l1-12"/></svg>';
+      del.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        if (!(await askConfirm(t('pluginRemoveAsk'), { danger: true, ok: t('pluginRemove') }))) return;
+        const result = await api('/api/plugins/remove', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: p.id }),
+        });
+        if (result && result.ok) {
+          if (selectedPluginId === p.id) {
+            selectedPluginId = null;
+            openSettingsAt('plugins', null);
+          }
+        }
+        pluginResult(result);
+      });
+      ops.appendChild(del);
+    }
+    row.appendChild(ops);
     el.appendChild(row);
   });
+}
+async function savePluginFlag(p, key, value) {
+  if (!draftPlugins[p.id]) draftPlugins[p.id] = { values: Object.assign({}, p.values || {}) };
+  draftPlugins[p.id].values[key] = value;
+  const saved = await api('/api/component/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'plugin', id: p.id, values: { [key]: value } }),
+  });
+  if (!saved || saved.ok === false || saved.error) {
+    draftPlugins[p.id].values[key] = !value;
+    toast((saved && (saved.error || saved.message)) || t('error'), true);
+    return false;
+  }
+  p.values = Object.assign({}, p.values || {}, saved.values || { [key]: value });
+  draftPlugins[p.id].values = Object.assign({}, draftPlugins[p.id].values, p.values);
+  if (key === 'enabled' && typeof renderToolsList === 'function') renderToolsList();
+  return true;
 }
 function fieldVisible(field, values, fields) {
   if (field.slot == null) return true;
@@ -1354,6 +1453,7 @@ function mountPluginTabs() {
   const live = new Set();
   (componentsCache.plugins || []).forEach(p => {
     if (!p || !p.id || p.id === 'plugin_web_ui') return;
+    if (!pluginHasOwnSettings(p)) return;
     live.add(p.id);
     const tab = 'plug-' + p.id;
     let stab = nav.querySelector('.stab[data-tab="' + tab + '"]');
@@ -1433,6 +1533,7 @@ function placePluginNav() {
   top.hidden = rows.length === 0;
 }
 function openPlugin(id) {
+  const plug = (componentsCache.plugins || []).find(p => p.id === id);
   if (id === 'plugin_web_ui') {
     selectedPluginId = null;
     renderPluginsList();
@@ -1440,11 +1541,13 @@ function openPlugin(id) {
     openSettingsAt('interface', null);
     return;
   }
+  if (!plug || !pluginHasOwnSettings(plug)) return;
   selectedPluginId = id;
   renderPluginsList();
   mountPluginTabs();
   closePluginModal();
   openSettingsAt('plug-' + id, null);
+  if (id === 'plugin_skill_manager') refreshSkillLibrary();
 }
 function closePluginModal() {
   const bg = document.getElementById('plugin-modal');
@@ -1459,10 +1562,21 @@ function refreshOpenPlugin() {
   const bg = document.getElementById('plugin-modal');
   if (selectedPluginId && bg && bg.classList.contains('on')) openPlugin(selectedPluginId);
 }
-const ENGLISH_ONLY_PLUGINS = { multi_agent: 1, plugin_mail: 1, 'llm-benchmark': 1, 'Kerniq-llm-benchmark': 1 };
+const KIT_UI_LANG = {
+  plugin_web_ui: true,
+  plugin_context_compact: true,
+  plugin_plugin_manager: true,
+  plugin_skill_manager: true,
+};
+function pluginKeepsOwnLanguage(pluginId) {
+  if (!pluginId || !KIT_UI_LANG[pluginId]) return true;
+  const rows = (typeof componentsCache !== 'undefined' && componentsCache && componentsCache.plugins) || [];
+  const row = rows.find(item => item && item.id === pluginId);
+  return !!(row && row.schema && row.schema.translate === false);
+}
 function pluginText(pluginId, text, fieldKey) {
   const raw = text == null ? '' : String(text);
-  if (ENGLISH_ONLY_PLUGINS[pluginId] && fieldKey !== 'listed' && fieldKey !== 'enabled') return raw;
+  if (pluginKeepsOwnLanguage(pluginId) && fieldKey !== 'listed' && fieldKey !== 'enabled') return raw;
   return translate(raw);
 }
 function fieldBlock(f, draft, pluginId) {
@@ -1492,7 +1606,8 @@ function fieldBlock(f, draft, pluginId) {
     });
     control += '</select>';
   } else if (f.type === 'text') {
-    control = '<textarea class="input-std" data-fk="' + esc(f.key) + '">' + esc(val ?? '') + '</textarea>';
+    const note = f.readonly ? ' is-note" readonly' : '"';
+    control = '<textarea class="input-std plug-text' + note + ' rows="4" data-fk="' + esc(f.key) + '">' + esc(val ?? '') + '</textarea>';
   } else if (f.type === 'path') {
     control = '<div class="path-pick"><input class="input-std" data-fk="' + esc(f.key) + '" value="' + esc(val ?? '') + '"/><button type="button" class="ghost" data-pick="' + esc(f.key) + '">' + esc(translate('Browse…')) + '</button></div>';
   } else {
@@ -1501,7 +1616,188 @@ function fieldBlock(f, draft, pluginId) {
   }
   return '<div class="field"><label class="lbl">' + esc(label) + tipHtml + '</label>' + control + '</div>';
 }
+const SKILL_FORM_HIDE = {
+  import_source: 1,
+  replace_existing: 1,
+  search_query: 1,
+  search_hits: 1,
+  skill_id: 1,
+  library: 1,
+  enabled: 1,
+  listed: 1,
+};
+function skillManagerHtml(p) {
+  const draft = draftPlugins[p.id] || { values: Object.assign({}, p.values || {}) };
+  const allFields = (p.schema && p.schema.fields) || [];
+  const fields = allFields.filter(f => f && !SKILL_FORM_HIDE[f.key]);
+  let html = '';
+  if (fields.length) {
+    html += '<div class="set-cols"><div class="set-group span-2">';
+    html += '<div class="field-grid">';
+    fields.forEach(f => { html += fieldBlock(f, draft, p.id); });
+    html += '</div></div></div>';
+  }
+  html += '<div class="plugin-catalog skill-catalog">';
+  html += '<div class="path-pick">';
+  html += '<input class="input-std" id="skill-query" data-i18n-placeholder="pluginRepoPh" placeholder="' + esc(t('pluginRepoPh')) + '" autocomplete="off"/>';
+  html += '<button type="button" id="skill-search" title="' + esc(t('pluginSearch')) + '" aria-label="' + esc(t('pluginSearch')) + '">';
+  html += '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.5-3.5"/></svg>';
+  html += '</button>';
+  html += '<button type="button" id="skill-install">' + esc(t('pluginInstall')) + '</button>';
+  html += '</div>';
+  html += '<div id="skill-search-hits" class="plugin-hits"></div>';
+  html += '</div>';
+  html += '<div class="tools-list" id="skill-library"></div>';
+  return html;
+}
+function skillIncludeProject() {
+  const box = document.querySelector('#tab-plug-plugin_skill_manager [data-fk="include_project"]');
+  if (!box) return null;
+  return !!box.checked;
+}
+function skillBlockCritical() {
+  const box = document.querySelector('#tab-plug-plugin_skill_manager [data-fk="block_critical"]');
+  if (!box) return null;
+  return !!box.checked;
+}
+async function refreshSkillLibrary() {
+  const box = document.getElementById('skill-library');
+  if (!box) return;
+  const include = skillIncludeProject();
+  const query = include === null ? '' : ('?include_project=' + (include ? '1' : '0'));
+  const data = await api('/api/skills' + query);
+  box.innerHTML = '';
+  if (!data || data.ok === false) {
+    box.innerHTML = '<div class="empty"></div>';
+    box.querySelector('.empty').textContent = (data && data.error) || t('error');
+    return;
+  }
+  const skills = data.skills || [];
+  if (!skills.length) {
+    box.innerHTML = '<div class="empty"></div>';
+    box.querySelector('.empty').textContent = t('skillsEmpty');
+    return;
+  }
+  skills.forEach(skill => {
+    const row = document.createElement('div');
+    row.className = 'tool-row skill-row';
+    const main = document.createElement('div');
+    main.className = 'skill-main';
+    const name = document.createElement('span');
+    name.className = 'tname';
+    name.textContent = skill.name || skill.id;
+    main.appendChild(name);
+    const repo = skill.repo || (skill.origin === 'project' ? skill.id : '');
+    if (repo && repo !== (skill.name || skill.id)) {
+      const sub = document.createElement('span');
+      sub.className = 'tdesc';
+      sub.textContent = repo;
+      main.appendChild(sub);
+    }
+    const ops = document.createElement('span');
+    ops.className = 'plugin-ops';
+    const sw = document.createElement('input');
+    sw.type = 'checkbox';
+    sw.className = 'soft-check';
+    sw.checked = skill.enabled !== false;
+    sw.title = skill.enabled === false ? t('skillOn') : t('skillOff');
+    sw.addEventListener('change', async () => {
+      const result = await api('/api/skills/state', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: skill.id, enabled: sw.checked, include_project: skillIncludeProject() }),
+      });
+      if (!result || result.ok === false) {
+        toast((result && (result.error || result.message)) || t('error'), true);
+        sw.checked = !sw.checked;
+        return;
+      }
+      refreshSkillLibrary();
+    });
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'ghost icon-btn';
+    del.title = t('pluginRemove');
+    del.disabled = skill.origin === 'project';
+    del.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M8 7l1 12h6l1-12"/></svg>';
+    del.addEventListener('click', async () => {
+      if (del.disabled) return;
+      if (!(await askConfirm(t('skillRemoveAsk'), { danger: true, ok: t('pluginRemove') }))) return;
+      const result = await api('/api/skills/remove', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: skill.id, include_project: skillIncludeProject() }),
+      });
+      if (!result || result.ok === false) {
+        toast((result && (result.error || result.message)) || t('error'), true);
+        return;
+      }
+      toast(result.message || t('pluginReady'));
+      refreshSkillLibrary();
+    });
+    ops.appendChild(sw);
+    ops.appendChild(del);
+    row.appendChild(main);
+    row.appendChild(ops);
+    box.appendChild(row);
+  });
+}
+function bindSkillManager(panel) {
+  const query = panel.querySelector('#skill-query');
+  const hits = panel.querySelector('#skill-search-hits');
+  const search = panel.querySelector('#skill-search');
+  const install = panel.querySelector('#skill-install');
+  const runSearch = async () => {
+    if (!hits) return;
+    hits.innerHTML = '';
+    const found = await api('/api/skills/search', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: (query && query.value) || '' }),
+    });
+    if (!found || found.ok === false) {
+      toast((found && found.error) || t('error'), true);
+      return;
+    }
+    const repos = found.repos || [];
+    if (!repos.length) { hits.textContent = t('pluginNoMatches'); return; }
+    repos.forEach(repo => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'ghost plugin-hit';
+      const desc = repo.description ? (' · ' + repo.description) : '';
+      row.textContent = (repo.full_name || '') + desc;
+      row.addEventListener('click', () => { if (query) query.value = repo.full_name || ''; });
+      hits.appendChild(row);
+    });
+  };
+  if (query) query.addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter') return;
+    ev.preventDefault();
+    runSearch();
+  });
+  if (search) search.addEventListener('click', runSearch);
+  if (install) install.addEventListener('click', async () => {
+    const source = (query && query.value || '').trim();
+    if (!source) return;
+    const result = await api('/api/skills/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: source,
+        block_critical: skillBlockCritical(),
+        include_project: skillIncludeProject(),
+      }),
+    });
+    if (!result || result.ok === false) {
+      toast((result && (result.error || result.message)) || t('error'), true);
+      return;
+    }
+    toast(result.message || t('pluginReady'));
+    refreshSkillLibrary();
+  });
+  const project = panel.querySelector('[data-fk="include_project"]');
+  if (project) project.addEventListener('change', () => refreshSkillLibrary());
+  refreshSkillLibrary();
+}
 function pluginFormHtml(p) {
+  if (p && p.id === 'plugin_skill_manager') return skillManagerHtml(p);
   const draft = draftPlugins[p.id] || { values: Object.assign({}, p.values || {}) };
   const allFields = (p.schema && p.schema.fields) || [];
   const unitKeys = new Set(allFields.filter(f => f.unit_key).map(f => f.unit_key));
@@ -1540,9 +1836,6 @@ function pluginFormHtml(p) {
   });
   if (groups.length) html += '</div>';
   if (!fields.length && !actions.length) html += '<div class="empty">No settings</div>';
-  if (!p.source || p.source.kind !== 'kit') {
-    html += '<div class="plugin-actions"><button type="button" class="ghost" data-plugin-remove="' + esc(p.id) + '">' + esc(t('pluginRemove')) + '</button></div>';
-  }
   return html;
 }
 function bindPluginForm(panel, p) {
@@ -1588,12 +1881,23 @@ function bindPluginForm(panel, p) {
   panel.querySelectorAll('select[data-fk]').forEach(inp => {
     if (inp.dataset.source) return;
     const cur = draftPlugins[id].values[inp.dataset.fk];
-    const match = [...inp.options].some(o => o.value === String(cur ?? ''));
-    if (!match && inp.options.length) draftPlugins[id].values[inp.dataset.fk] = inp.value;
+    const text = cur == null ? '' : String(cur);
+    const match = [...inp.options].some(o => o.value === text);
+    if (match) return;
+    if (text) {
+      const extra = document.createElement('option');
+      extra.value = text;
+      extra.textContent = text;
+      inp.appendChild(extra);
+      inp.value = text;
+      return;
+    }
+    if (inp.options.length) draftPlugins[id].values[inp.dataset.fk] = inp.value;
   });
   syncCompactLimit(panel);
   syncAgentStrategy(panel);
   fillKerniqPickers(panel, id);
+  if (id === 'plugin_skill_manager') bindSkillManager(panel);
 }
 function syncAgentStrategy(panel) {
   const strategy = panel.querySelector('[data-fk="model_strategy"]');
@@ -1764,11 +2068,11 @@ function benchNote(state) {
     const model = state.model ? ' · ' + state.model : '';
     const slot = state.slot ? ' · ' + translate('task') + ' ' + state.slot + '/' + (state.slots || '') : '';
     const index = state.total ? ' (' + (state.index || 0) + '/' + state.total + ')' : '';
-    text.textContent = translate('Benchmark is running in the background.') + index + model + slot;
+    text.textContent = 'Benchmark is running in the background.' + index + model + slot;
   } else if (status === 'done') {
-    text.textContent = translate('Benchmark finished') + (state.folder ? ' · ' + state.folder : '');
+    text.textContent = 'Benchmark finished' + (state.folder ? ' · ' + state.folder : '');
   } else {
-    text.textContent = translate('Benchmark failed') + (state.error ? ': ' + state.error : '');
+    text.textContent = 'Benchmark failed' + (state.error ? ': ' + state.error : '');
   }
 }
 document.getElementById('bench-note-hide')?.addEventListener('click', () => {
@@ -1838,7 +2142,7 @@ async function runPluginAction(pluginId, actionId, button) {
   }
   if (pluginId === 'llm-benchmark') {
     try { sessionStorage.setItem('kerniq_benchmark_job', started.job_id); } catch (_) {}
-    toast(translate('Benchmark started'));
+    toast('Benchmark started');
     watchBenchmark();
     if (button) button.disabled = false;
     return;
@@ -2002,7 +2306,9 @@ async function saveAllSettings() {
     streaming: document.getElementById('s-chat-streaming')?.checked !== false,
     show_reasoning_live: document.getElementById('s-chat-reasoning')?.checked !== false,
     empty_response_status: document.getElementById('s-chat-empty')?.checked !== false,
+    generate_chat_title: !!document.getElementById('s-chat-title')?.checked,
     developer_mode: !!document.getElementById('s-chat-debug')?.checked,
+    show_tool_details: !!document.getElementById('s-chat-debug')?.checked && !!document.getElementById('s-tool-details')?.checked,
     parallel_tools: !!document.getElementById('s-chat-debug')?.checked && !!document.getElementById('s-parallel-tools')?.checked,
     show_plan: document.getElementById('s-show-plan')?.checked !== false,
     send_key: document.getElementById('s-send-shift-enter')?.checked ? 'shift_enter' : 'enter',
@@ -2272,7 +2578,7 @@ document.getElementById('plugin-search')?.addEventListener('click', async () => 
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'ghost plugin-hit';
-    row.textContent = repo.full_name + (repo.description ? ' — ' + repo.description : '');
+    row.textContent = repo.full_name + (repo.description ? ' – ' + repo.description : '');
     row.addEventListener('click', () => { if (q) q.value = repo.full_name; });
     hits.appendChild(row);
   });
@@ -2298,7 +2604,7 @@ document.getElementById('plugin-updates')?.addEventListener('click', async () =>
   (data.updates || []).filter(row => row.kind !== 'kit').forEach(row => {
     const line = document.createElement('div');
     line.className = 'plugin-hit';
-    line.textContent = (row.name || row.plugin_id) + ' — ' + (row.note || row.error || '');
+    line.textContent = (row.name || row.plugin_id) + ' – ' + (row.note || row.error || '');
     if (row.update && row.repo) {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -2421,6 +2727,7 @@ document.getElementById('settings-nav')?.addEventListener('click', (ev) => {
   document.querySelectorAll('.tabp').forEach(p => p.style.display = 'none');
   const panel = document.getElementById('tab-' + s.dataset.tab);
   if (panel) panel.style.display = 'block';
+  requestAnimationFrame(() => { if (typeof syncAllSegs === 'function') syncAllSegs(); });
 });
 
 async function resumeServerChat() {
@@ -2475,11 +2782,17 @@ bindResizer('resizer-right', 'right');
 (async function bootChats() {
   await loadChatsFromServer();
   try { applyChatContextFooter(); } catch (_) {}
+  if (!chatsLoaded) {
+    toast(t('chatsLoadFailed'), true);
+    renderChatList();
+    renderMessages();
+    return;
+  }
   if (!chats.length) newChat(true);
-  else { activeChatId = chats[chats.length - 1].id; renderChatList(); renderMessages(); }
+  else { renderChatList(); renderMessages(); }
   applyStoredMode();
+  try { await resumeServerChat(); } catch (_) {}
 })();
-resumeServerChat();
 clearEditor();
 refreshTree();
 bindSettingsDirty();

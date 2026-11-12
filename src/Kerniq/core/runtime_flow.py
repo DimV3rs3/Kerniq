@@ -97,7 +97,7 @@ def clamp_output_tokens(requested, context_limit: int):
 
     Empty or auto stays unset: the request omits max_tokens and the model
     uses its own maximum. A number the user typed is kept, but never above
-    the loaded window. Do not invent an 8192 default — that is not the
+    the loaded window. Do not invent an 8192 default – that is not the
     setting the user chose.
     """
     limit = int(context_limit or 0)
@@ -218,10 +218,7 @@ async def use_model_for_mode(provider, api, mode: str, context_length: int | Non
     except (TypeError, ValueError):
         temperature = None
     accepts_context = provider_id == "lm_studio" and _load_accepts_context(provider)
-    # Only a model we are about to load gets the safe window. A model the user
-    # already loaded in LM Studio is left at the length that is working.
-    if accepts_context and requested is None and not already:
-        requested = LM_STUDIO_SAFE_CONTEXT
+    # Empty means the model's own maximum. Do not substitute a fixed window.
     # Temperature stays on the chat request. LM Studio's load endpoint rejects
     # the field, and reloading just to send it replaces a working model.
     needs_load = accepts_context and explicit_context
@@ -270,7 +267,8 @@ async def route_mode(provider, task: str, *, compose_plan: bool) -> str:
 
     A thinking model often leaves the word in reasoning and the content empty.
     An empty or unclear verdict is ACT. Reading, reviewing, and finding bugs
-    are ACT even when they open many files.
+    are ACT even when they open many files. The call is not capped at a handful
+    of tokens: that cut the thought off before the model could answer.
     """
     if not compose_plan:
         return "act"
@@ -279,21 +277,22 @@ async def route_mode(provider, task: str, *, compose_plan: bool) -> str:
             Message(
                 role=MessageRole.SYSTEM,
                 content=(
-                    "You route one user request. Reply with a single word: PLAN or ACT. "
+                    "You route one user request. You may think first. "
+                    "The last line of your answer must be a single word: PLAN or ACT. "
                     "ACT if the user wants an answer, a review, a bug list, an explanation, "
                     "a summary, or one change. Reading or searching many files is still ACT. "
                     "PLAN only if the user wants a design or a multi-step implementation "
                     "that must be studied before any file is changed. "
-                    "If unsure, reply ACT. Do not explain."
+                    "If unsure, the last line is ACT."
                 ),
             ),
-            Message(role=MessageRole.USER, content=(task or "")[:4000]),
+            Message(role=MessageRole.USER, content=side_task_text(task)),
         ],
         session_id=uuid4(),
         tools=None,
         options=GenerationOptions(
             temperature=0,
-            max_tokens=16,
+            max_tokens=None,
             streaming=False,
             extra_params={},
         ),
@@ -308,6 +307,81 @@ async def route_mode(provider, task: str, *, compose_plan: bool) -> str:
     if verdict == "PLAN":
         return "plan"
     return "act"
+
+
+def side_task_text(text: str, limit: int = 16000) -> str:
+    """Keep the start and the end of a long user request.
+
+    A cut that keeps only the opening drops the actual ask when it is at the end.
+    """
+    raw = (text or "").strip()
+    if len(raw) <= limit:
+        return raw
+    tail = min(5000, max(1000, limit // 3))
+    head = max(0, limit - tail - 24)
+    return raw[:head].rstrip() + "\n\n[middle omitted]\n\n" + raw[-tail:].lstrip()
+
+
+def chat_title_request(text: str) -> ModelRequest:
+    """One short naming call. No token cap, so a thinking model can finish."""
+    body = side_task_text(text) or "New chat"
+    return ModelRequest(
+        messages=[
+            Message(
+                role=MessageRole.SYSTEM,
+                content=(
+                    "Name this chat. You may think first. "
+                    "The last line must be the title alone: at most four words, no quotes. "
+                    "Name what the user wants, not the first words of the message."
+                ),
+            ),
+            Message(role=MessageRole.USER, content=body),
+        ],
+        session_id=uuid4(),
+        tools=None,
+        options=GenerationOptions(
+            temperature=0.2,
+            max_tokens=None,
+            streaming=False,
+            extra_params={},
+        ),
+        metadata={"kerniq_internal": "title"},
+    )
+
+
+def clean_chat_title(raw: str) -> str:
+    line = (raw or "").strip().strip("\"'`").strip()
+    if not line or len(line) > 80:
+        return ""
+    noisy = sum(ch.isdigit() or ch in ".,-eE" for ch in line)
+    if noisy > len(line) * 0.5:
+        return ""
+    words = line.split()
+    if len(words) > 6:
+        line = " ".join(words[:4])
+    return line
+
+
+def title_from_response(response) -> str:
+    """Last short line of the answer, then of the reasoning. Thinking is not the title."""
+    content = ""
+    reasoning = ""
+    if response is not None:
+        for msg in getattr(response, "messages", None) or []:
+            content = (getattr(msg, "content", None) or content or "")
+            meta = getattr(msg, "metadata", None) or {}
+            if isinstance(meta, dict) and meta.get("reasoning"):
+                reasoning = str(meta.get("reasoning"))
+        meta = getattr(response, "metadata", None) or {}
+        if isinstance(meta, dict) and meta.get("reasoning"):
+            reasoning = str(meta.get("reasoning"))
+    for source in (content, reasoning):
+        lines = [line.strip() for line in (source or "").splitlines() if line.strip()]
+        for line in reversed(lines):
+            title = clean_chat_title(line)
+            if title:
+                return title
+    return ""
 
 
 def route_word(response) -> str:

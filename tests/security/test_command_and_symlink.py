@@ -77,6 +77,22 @@ def test_symlink_escape_is_denied(tmp_path):
     assert "outside" in (result.human_readable or "").lower() or "denied" in (result.human_readable or "").lower()
 
 
+def test_missing_cwd_names_the_directory(tmp_path):
+    from Kerniq.tools.packs.terminal.tools import TerminalTools
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    tool = TerminalTools(workspace, SecurityPolicy(workspace))
+
+    async def run():
+        return await tool.execute({"command": "echo hi", "cwd": "missing-dir", "timeout": 5}, None)
+
+    result = asyncio.run(run())
+    assert result.success is False
+    assert "does not exist" in (result.human_readable or "").lower()
+    assert "missing-dir" in (result.human_readable or "")
+
+
 def test_open_host_skips_the_symlink_gate(tmp_path):
     from Kerniq.tools.packs.terminal.tools import TerminalTools
 

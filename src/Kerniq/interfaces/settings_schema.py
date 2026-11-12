@@ -35,6 +35,8 @@ class SettingField(BaseModel):
     unit_key: Optional[str] = None  # sibling select: seconds, minutes, hours
     # Used only by `install.sh --server`. Absent means the desktop default stays.
     server_default: Any = None
+    # The shell shows the value, but the user does not edit it.
+    readonly: bool = False
 
     def to_public(self) -> Dict[str, Any]:
         data = self.model_dump(mode="json")
@@ -44,6 +46,8 @@ class SettingField(BaseModel):
             data.pop("source", None)
         if not data.get("unit_key"):
             data.pop("unit_key", None)
+        if not data.get("readonly"):
+            data.pop("readonly", None)
         data.pop("server_default", None)
         return data
 
@@ -55,18 +59,24 @@ class SettingsSchema(BaseModel):
     component_type: str  # "tool" | "plugin"
     title: str
     fields: List[SettingField] = Field(default_factory=list)
+    # False: the UI shows this plugin's own field text as written.
+    # Enabled and Show in plugin list still follow the UI language.
+    translate: bool = True
 
     def defaults(self) -> Dict[str, Any]:
         return {f.key: f.default for f in self.fields}
 
     def to_public(self) -> Dict[str, Any]:
-        return {
+        data = {
             "component_id": self.component_id,
             "component_type": self.component_type,
             "title": self.title,
             "fields": [f.to_public() for f in self.fields],
             "defaults": self.defaults(),
         }
+        if self.translate is False:
+            data["translate"] = False
+        return data
 
 
 def coerce_value(field: SettingField, raw: Any) -> Any:

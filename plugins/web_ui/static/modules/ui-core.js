@@ -6,6 +6,8 @@ const UI_I18N = {
     openFile: 'Open a file…', ready: 'Ready', done: 'Done', error: 'Error',
     stopping: 'Stopping…', stopped: 'Stopped',
     processing: 'Processing prompt…', thinking: 'Thinking…', generating: 'Generating…',
+    choosingMode: 'Choosing mode',
+    generatingChatTitle: 'Generating chat title',
     waitingForTool: 'Waiting for a tool',
     timedOut: 'Timed out',
     toolFailed: 'Failed',
@@ -24,8 +26,8 @@ const UI_I18N = {
     streamResponses: 'Stream responses', showReasoning: 'Show reasoning',
     emptyStatus: 'Status on empty response', developerMode: 'Developer mode',
     sendMessage: 'Send message',
-    sendEnter: 'Enter — send, Shift+Enter — new line',
-    sendShift: 'Shift+Enter — send, Enter — new line',
+    sendEnter: 'Enter – send, Shift+Enter – new line',
+    sendShift: 'Shift+Enter – send, Enter – new line',
     fileOpsOnly: 'File ops: names only', responseLang: 'Response language',
     baseUrl: 'Base URL', workspace: 'Workspace', undo: 'Undo', redo: 'Redo',
     close: 'Close', refresh: 'Refresh', provider: 'provider', model: 'model',
@@ -76,7 +78,10 @@ const UI_I18N = {
     hostFreedomTitle: 'Host freedom',
     hostFreedomBody: 'The agent will see real paths and can run privileged commands, including network and system tools. It can read and change files outside ./workspace. Kerniq still blocks the obvious ways to wipe a disk. This is not a sandbox.',
     agent_chat_full: 'Full width chat',
-    agent_chat_full_tip: 'On: the agent conversation uses the whole window. Off: it sits in a readable column, centred.',
+    agent_chat_full_tip: 'On: messages use the whole window. The title, status, and input stay in a readable column. Off: the messages stay in that column too.',
+    generateChatTitle: 'Generate a chat title',
+    generateChatTitleTip: 'On: when a new chat is sent, the model names it first. If that fails, the title stays the first words of the message.',
+    chatsLoadFailed: 'Chats did not load. Refresh the page before sending.',
     wantFreedom: 'I want freedom',
     wantSafe: 'I want safe',
     attachments: 'Attachments',
@@ -121,7 +126,7 @@ const UI_I18N = {
     pluginsEmpty: 'No plugins showed up. Put a plugin folder in plugins/ and it will appear here.',
     attachBlocked: 'Video, audio, and archives cannot be attached. Pick a text or source file instead.',
     fileDialogFailed: 'The folder picker did not open. Type the path in the field instead.',
-    settingsFailed: 'Settings did not load. Kerniq may still be starting — wait a moment and open Settings again.',
+    settingsFailed: 'Settings did not load. Kerniq may still be starting – wait a moment and open Settings again.',
     downloadFailed: 'That download did not start. Try again, or download a smaller folder.',
     nameTitle: 'Name',
 
@@ -133,10 +138,17 @@ const UI_I18N = {
     groupChatTools: 'Chat tools',
     groupPlan: 'Plan and Act',
     groupSafety: 'Safety and language',
-    approveAll: 'all — no prompts',
+    approveAll: 'all – no prompts',
     pluginOn: 'on',
     pluginOff: 'off',
     pluginHidden: 'hidden',
+    pluginHide: 'Hide from the list',
+    pluginShow: 'Show in the list',
+    pluginRemoveAsk: 'Delete this plugin? Its folder is removed.',
+    skillsEmpty: 'No skills installed.',
+    skillOn: 'Turn on',
+    skillOff: 'Turn off',
+    skillRemoveAsk: 'Delete this skill? A skill that lives in the workspace is not deleted here.',
     showHiddenPlugins: 'Show hidden plugins',
     langPacks: 'Language packs',
     fromProjectHint: 'Search files in the workspace',
@@ -186,6 +198,11 @@ const UI_I18N = {
     groupStartup: 'Startup',
     uiAutostart: 'Start the UI when you sign in',
     uiAutostartTip: 'The Web UI starts in the background the next time you sign in on this computer. Nothing is sent off the machine. A second copy is not started while this page is open. Windows, Linux, and macOS each get their own sign-in entry. Turn it off here or with kerniq autostart off.',
+    groupUpdates: 'Updates',
+    uiUpdateKerniq: 'Auto-update Kerniq',
+    uiUpdateKerniqTip: 'One check when Kerniq starts. A newer release is installed, then Kerniq restarts. Settings stay. Off skips that check.',
+    uiUpdatePlugins: 'Auto-update plugins',
+    uiUpdatePluginsTip: 'The same check looks at installed plugins. A newer release replaces that plugin. Kerniq restarts once if anything was installed.',
     groupNotifications: 'Notifications',
     showNotifications: 'Show notifications',
     autoDismissNotifications: 'Automatically dismiss notifications',
@@ -202,8 +219,28 @@ const UI_I18N = {
     themeDark: 'Dark',
     themeLight: 'Light',
     themeSystem: 'System',
+    tintOn: 'Tint',
+    tintOnTip: 'On: the interface uses a warm or cold tint. Off: neutral, and the tint choice is locked.',
+    tintChoice: 'Warm or cold',
+    tintChoiceTip: 'Warm is a warm grey. Cold is a cool grey. Auto follows the mode: agent is warm, editor is cold. Accent colours do not change.',
+    tintWarm: 'Warm',
+    tintAuto: 'Auto',
+    tintCold: 'Cold',
     emptyChatTitle: 'Nothing in this chat yet',
     emptyChatBody: 'Ask the agent to edit a file, explain the code, or sketch the next change.',
+    greetMorning: 'Good morning',
+    greetDay: 'Good afternoon',
+    greetEvening: 'Good evening',
+    greetNight: 'Good night',
+    sideSearchPh: 'Search chats',
+    chipExplain: 'Explain the project',
+    chipExplainPrompt: 'Explain how this project is structured and where to start reading.',
+    chipBug: 'Find a bug',
+    chipBugPrompt: 'Look through the project for a real bug and say how to fix it.',
+    chipPlan: 'Plan a change',
+    chipPlanPrompt: 'Plan the next change. Do not edit files until I agree.',
+    chipTests: 'Run the tests',
+    chipTestsPrompt: 'Run the tests and report what failed.',
     errorNext: 'You can send the request again. If the provider did not answer, open API & model and check the address.',
     groupLayout: 'Layout',
     workspaceLayout: 'Workspace layout',
@@ -355,6 +392,11 @@ function applyUiLocale(locale) {
   if (mp) mp.textContent = t('modePlan');
   const ma = document.getElementById('mode-act');
   if (ma) ma.textContent = t('modeAct');
+  const cp = document.getElementById('composer-plan');
+  if (cp) cp.textContent = t('modePlan');
+  const ca = document.getElementById('composer-act');
+  if (ca) ca.textContent = t('modeAct');
+  if (typeof syncModeGlide === 'function') syncModeGlide();
   if (typeof renderProviderFields === 'function' && providerCatalog.length) {
     renderProviderFields(collectProviderDraft());
   }
@@ -394,6 +436,8 @@ function applyUiLocale(locale) {
   setFooterContext(null, _modelContextLimit);
   if (typeof syncComposePlanLock === 'function') syncComposePlanLock();
   if (typeof loadFolderUsage === 'function') loadFolderUsage();
+  if (typeof paintEmptyCopy === 'function') paintEmptyCopy();
+  requestAnimationFrame(() => { if (typeof syncAllSegs === 'function') syncAllSegs(); });
 }
 const LS_CHATS = 'kerniq_chats_v1';
 const LS_PANEL = 'kerniq_panels_v1';
@@ -408,6 +452,10 @@ let sendLock = false;
 let sendAbort = false;
 function setRunLock(on) {
   document.body.classList.toggle('run-locked', !!on);
+  ['btn-new-chat', 'side-new-chat', 'drawer-new'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !!on;
+  });
   if (typeof applyModeSwitch === 'function') applyModeSwitch();
   document.querySelectorAll('#view-settings input, #view-settings select, #view-settings textarea, #view-settings button').forEach(el => {
     if (el.id === 'btn-stop-ui' || el.closest('nav') || el.hasAttribute('data-keep-unlocked') ||
@@ -431,7 +479,7 @@ let settingsDirty = false;
 let settingsHydrating = false;
 let settingsBaseline = "";
 function snapshotSettingsForm() {
-  const ids = ['s-workspace','s-attachments','s-downloads','s-timeout','s-timeout-unit','s-undo-size','s-provider','s-base-url','s-api-token','s-api-temp','s-system','s-max-iter','s-api-max-tokens','s-api-context','s-model','s-include-tools','s-chat-streaming','s-chat-reasoning','s-chat-empty','s-chat-debug','s-leave-venv'];
+  const ids = ['s-workspace','s-attachments','s-downloads','s-timeout','s-timeout-unit','s-undo-size','s-provider','s-base-url','s-api-token','s-api-temp','s-system','s-max-iter','s-api-max-tokens','s-api-context','s-model','s-include-tools','s-chat-streaming','s-chat-reasoning','s-chat-empty','s-chat-debug','s-chat-title','s-leave-venv'];
   const o = {};
   ids.forEach(id => {
     const el = document.getElementById(id);

@@ -9,7 +9,7 @@ import socket
 from html import unescape
 from typing import Any, Dict, List, Optional
 
-# Absolute ban on urllib — implement minimal query encoding ourselves.
+# Absolute ban on urllib – implement minimal query encoding ourselves.
 from ....interfaces.tools import Tool, ToolResult
 from ....interfaces.settings_schema import SettingsSchema, SettingField, SettingType
 
@@ -571,7 +571,8 @@ class DownloadFileTool(Tool):
     def description(self) -> str:
         return (
             "Download a public http(s) file into .downloads and return that relative path. "
-            "Use this for zip archives and other files. fetch_url only returns page text and cannot save a file. "
+            "Use this for a single public file. To clone a Git repository, use git_clone. "
+            "Do not download a repository archive when git_clone can clone it. "
             "Local, private, and link-local URLs are denied."
         )
 
@@ -654,7 +655,7 @@ class DownloadFileTool(Tool):
                 async with client.stream(
                     "GET",
                     url,
-                    headers={"User-Agent": "Kerniq/0.1.9 (download_file)"},
+                    headers={"User-Agent": "Kerniq/0.1.10 (download_file)"},
                 ) as resp:
                     resp.raise_for_status()
                     header = resp.headers.get("content-disposition") or ""

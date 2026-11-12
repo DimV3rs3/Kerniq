@@ -77,6 +77,14 @@ def test_sandbox_path_hides_the_host(tmp_path, monkeypatch):
     assert str(bindir.resolve()) in env["PATH"]
     assert "PYTHONPATH" not in env
     assert env["PYTHONNOUSERSITE"] == "1"
+    assert env["PYTHONUTF8"] == "1"
+    assert env["PYTHONIOENCODING"] == "utf-8"
+    assert env["PIP_CACHE_DIR"] == str(tmp_path / ".pip-cache")
+    assert env["LOCALAPPDATA"] == str(tmp_path / ".pip-cache")
+    assert (tmp_path / ".pip-cache").is_dir()
+    assert (tmp_path / ".tmp").is_dir()
+    from Kerniq.tools.packs.terminal.tools import powershell_command
+    assert powershell_command("cd .\\workspace && python check_libs.py") == "cd .\\workspace ; python check_libs.py"
 
 
 def test_python_dash_s_is_denied():

@@ -140,6 +140,25 @@ PROVIDER_SPECS: List[Dict[str, Any]] = [
         ],
     },
     {
+        "id": "grok",
+        "label": "Grok",
+        "kind": "grok",
+        "tool_calls": True,
+        "default_base_url": "https://api.x.ai/v1",
+        "blurb": "xAI Responses API. Key from console.x.ai. A grok.com login is not this key. Kerniq calls POST /v1/responses and sends the model's encrypted reasoning back on the next tool turn.",
+        "fields": [
+            _f(
+                "api_token",
+                "API key",
+                "secret",
+                required=True,
+                help_="Create a key at console.x.ai. It is sent as Authorization: Bearer. Leave the model empty to use the first one the key returns, or type an id such as grok-4.7.",
+                placeholder="xai-...",
+            ),
+            _MODEL,
+        ],
+    },
+    {
         "id": "anthropic",
         "label": "Claude (Anthropic API)",
         "kind": "anthropic",

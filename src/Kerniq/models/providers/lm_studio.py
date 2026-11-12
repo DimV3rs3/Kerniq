@@ -693,6 +693,34 @@ class LMStudioProvider(ModelProvider):
             body.setdefault("context_length", requested)
         return body
 
+    async def load_additional(self, model_key: str, context_length: Optional[int] = None) -> str:
+        """Load another copy of a model that is already running.
+
+        The first copy keeps the catalog key. The next one is ``key:2``.
+        Returns the new instance id, or "" when the server did not start one.
+        """
+        from Kerniq.models.identity import instance_model_key
+
+        want = instance_model_key(model_key) or str(model_key or "").strip()
+        if not want:
+            return ""
+        before = set(instance_ids_for_unload(await self.loaded_instances(), want))
+        requested = None
+        if context_length is not None:
+            try:
+                requested = int(context_length)
+            except (TypeError, ValueError):
+                requested = None
+            if requested is not None and requested < 1:
+                requested = None
+        payload: Dict[str, Any] = {"model": want}
+        if requested is not None:
+            payload["context_length"] = requested
+        await self._post_load(payload)
+        after = instance_ids_for_unload(await self.loaded_instances(), want)
+        fresh = [iid for iid in after if iid not in before]
+        return fresh[-1] if fresh else ""
+
     async def _post_load(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """POST /api/v1/models/load. One request. A 400 is not retried."""
         url = self._url("/api/v1/models/load")

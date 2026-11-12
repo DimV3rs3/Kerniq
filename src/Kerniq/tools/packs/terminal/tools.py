@@ -11,6 +11,11 @@ from ....security.policy import SecurityPolicy
 
 logger = logging.getLogger(__name__)
 
+
+def powershell_command(command: str) -> str:
+    """Windows PowerShell 5.1 rejects &&. Models still write it."""
+    return (command or "").replace("&&", ";")
+
 _SECRET_MARKERS = (
     "TOKEN",
     "SECRET",
@@ -198,6 +203,7 @@ class TerminalTools(Tool):
             "python and pip in this shell are the workspace sandbox .kerniq-venv. "
             "node, npm, and dotnet are the workspace language sandbox, not the copies installed on this computer. "
             "Do not use absolute paths, UNC paths, '..', sudo, or commands that inspect the host. "
+            "To clone a Git repository, use git_clone. Do not clone with this shell. "
             "On Windows this is PowerShell (not cmd). On Linux/macOS this is bash/sh."
         )
 
@@ -317,6 +323,21 @@ class TerminalTools(Tool):
                 error="PERMISSION_DENIED"
             )
 
+        if not Path(cwd_abs).is_dir():
+            shown = str(cwd_rel or ".").replace("\\", "/").strip() or "."
+            return ToolResult(
+                tool_call_id=getattr(context, "last_tool_call_id", "unknown"),
+                tool_id=self.tool_id,
+                status="error",
+                success=False,
+                output="",
+                human_readable=(
+                    f"Working directory does not exist: {shown}. "
+                    "Use a directory that is already there, or '.' for the workspace."
+                ),
+                error="cwd does not exist",
+            )
+
         logger.info(f"Executing command: {command} in {cwd_abs}")
         
         import sys
@@ -367,7 +388,7 @@ class TerminalTools(Tool):
                     "-NonInteractive",
                     "-ExecutionPolicy", "Bypass",
                     "-Command",
-                    command,
+                    powershell_command(command),
                 ]
                 process = await asyncio.create_subprocess_exec(*ps, **kwargs)
             else:
@@ -453,3 +474,267 @@ class TerminalTools(Tool):
                 error=note,
                 duration_seconds=time.monotonic() - started,
             )
+
+
+def git_clone_url(raw: str) -> str:
+    """https, http, git://, or owner/repo. SSH and local paths are refused."""
+    text = (raw or "").strip()
+    if not text or any(ch in text for ch in " \t\r\n\"'`"):
+        raise ValueError("The repository must be one token: https://host/owner/repo.git or owner/repo.")
+    lower = text.lower()
+    if lower.startswith(("ssh://", "git@", "file:", "ftp:")):
+        raise ValueError("git_clone accepts https, http, git://, or owner/repo. It does not use SSH or a local path.")
+    if "://" not in text:
+        if text.count("/") != 1 or ".." in text.split("/"):
+            raise ValueError("Use owner/repo, or a full https URL.")
+        owner, repo = text.split("/", 1)
+        if repo.endswith(".git"):
+            repo = repo[:-4]
+        if not owner or not repo or any(ch in owner + repo for ch in ":\\"):
+            raise ValueError("Use owner/repo, or a full https URL.")
+        return f"https://github.com/{owner}/{repo}.git"
+    if not lower.startswith(("https://", "http://", "git://")):
+        raise ValueError("git_clone accepts https, http, or git://.")
+    from urllib.parse import urlparse
+
+    parsed = urlparse(text)
+    if parsed.username or parsed.password:
+        raise ValueError("The URL must not contain a username or password.")
+    if not parsed.hostname or not parsed.path or parsed.path.strip("/") == "":
+        raise ValueError("That URL is not a repository.")
+    return text
+
+
+def git_clone_dest(workspace: Path, url: str, dest: str) -> Path:
+    """A path inside the workspace. An existing non-empty folder is refused."""
+    root = Path(workspace).resolve()
+    raw = (dest or "").strip().replace("\\", "/")
+    if not raw:
+        leaf = url.rstrip("/").rsplit("/", 1)[-1]
+        if leaf.endswith(".git"):
+            leaf = leaf[:-4]
+        raw = leaf or "repo"
+    rel = Path(raw)
+    if rel.is_absolute() or ".." in rel.parts:
+        raise ValueError("Destination must stay inside the workspace.")
+    target = (root / rel).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("Destination must stay inside the workspace.") from exc
+    if target.exists() and (not target.is_dir() or any(target.iterdir())):
+        raise ValueError("Destination already exists and is not empty.")
+    return target
+
+
+def _git_env() -> dict:
+    """Host git on PATH, without credential variables."""
+    import os
+
+    env = {}
+    keep = (
+        "PATH", "SYSTEMROOT", "WINDIR", "PATHEXT", "HOME", "USERPROFILE",
+        "HOMEDRIVE", "HOMEPATH", "TMP", "TEMP", "TMPDIR", "LANG", "LC_ALL",
+        "LC_CTYPE", "SSL_CERT_FILE", "SSL_CERT_DIR", "GIT_SSL_CAINFO",
+        "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+    )
+    for key in keep:
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GCM_INTERACTIVE"] = "Never"
+    return env
+
+
+class GitCloneTool(Tool):
+    def __init__(self, workspace: str):
+        self._workspace = Path(workspace)
+
+    @property
+    def tool_id(self) -> str:
+        return "git_clone"
+
+    @property
+    def name(self) -> str:
+        return "git_clone"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Clone a Git repository into the workspace. "
+            "Use this instead of run_command and instead of downloading a source archive. "
+            "url is an https, http, or git:// address, or owner/repo (that becomes https://github.com/owner/repo.git). "
+            "dest is optional and must stay inside the workspace. The default folder is the repository name. "
+            "depth defaults to 1. Pass 0 for the full history. branch is optional. "
+            "SSH URLs and local paths are refused."
+        )
+
+    @property
+    def risk_level(self) -> str:
+        return "medium"
+
+    @property
+    def input_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "https URL, git:// URL, or owner/repo"},
+                "dest": {"type": "string", "description": "Folder inside the workspace. Default is the repository name."},
+                "branch": {"type": "string", "description": "Branch or tag to check out."},
+                "depth": {"type": "integer", "description": "History depth. 1 is the default. 0 clones the full history.", "default": 1},
+            },
+            "required": ["url"],
+        }
+
+    @property
+    def category(self) -> str:
+        return "git"
+
+    @property
+    def pack_id(self) -> str:
+        return "git"
+
+    @property
+    def ui_icon(self) -> str:
+        return "git"
+
+    @property
+    def display_phrase(self) -> str:
+        return "repos cloned"
+
+    async def execute(self, arguments: Dict[str, Any], context: Any) -> ToolResult:
+        import sys
+
+        call_id = getattr(context, "last_tool_call_id", "unknown")
+        started = time.monotonic()
+        try:
+            url = git_clone_url(str((arguments or {}).get("url") or ""))
+            target = git_clone_dest(self._workspace, url, str((arguments or {}).get("dest") or ""))
+        except ValueError as exc:
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="error",
+                success=False,
+                output="",
+                human_readable=str(exc),
+                error="INVALID_ARGS",
+            )
+        branch = str((arguments or {}).get("branch") or "").strip()
+        if branch and (branch.startswith("-") or ".." in branch or any(ch in branch for ch in " \t\r\n\\")):
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="error",
+                success=False,
+                output="",
+                human_readable="Branch must be a single name without spaces.",
+                error="INVALID_ARGS",
+            )
+        try:
+            depth = int((arguments or {}).get("depth", 1))
+        except (TypeError, ValueError):
+            depth = 1
+        if depth < 0:
+            depth = 0
+        if depth > 1000:
+            depth = 1000
+        argv = ["git", "clone", "--quiet"]
+        if depth > 0:
+            argv.extend(["--depth", str(depth)])
+        if branch:
+            argv.extend(["--branch", branch])
+        into_existing = target.exists()
+        if into_existing:
+            argv.extend(["--", url, "."])
+            cwd = str(target)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            argv.extend(["--", url, str(target)])
+            cwd = str(self._workspace.resolve())
+        from Kerniq.tools.deadline import tool_timeout_seconds
+
+        timeout = tool_timeout_seconds(arguments, fallback=180)
+        if timeout < 30:
+            timeout = 30
+        if timeout > 600:
+            timeout = 600
+        kwargs = dict(
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+            env=_git_env(),
+        )
+        if sys.platform == "win32":
+            kwargs["stdin"] = asyncio.subprocess.DEVNULL
+            flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            kwargs["creationflags"] = flags
+            try:
+                info = subprocess.STARTUPINFO()
+                info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                info.wShowWindow = 0
+                kwargs["startupinfo"] = info
+            except Exception:
+                pass
+        else:
+            kwargs["start_new_session"] = True
+        try:
+            process = await asyncio.create_subprocess_exec(*argv, **kwargs)
+        except FileNotFoundError:
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="error",
+                success=False,
+                output="",
+                human_readable="git was not found on PATH. Install Git and try git_clone again. Do not use the shell.",
+                error="git not found",
+                duration_seconds=time.monotonic() - started,
+            )
+        try:
+            waited = await _wait_command(process, timeout, context, started)
+        except asyncio.TimeoutError:
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="error",
+                success=False,
+                stop_reason="timeout",
+                output="",
+                human_readable=f"git clone timed out after {int(timeout)} seconds.",
+                error="timeout",
+                duration_seconds=time.monotonic() - started,
+            )
+        if waited is None:
+            return ToolResult(
+                tool_call_id=call_id,
+                tool_id=self.tool_id,
+                status="error",
+                success=False,
+                stop_reason="cancelled",
+                output="",
+                human_readable="git clone was stopped.",
+                error="cancelled",
+                duration_seconds=time.monotonic() - started,
+            )
+        stdout, stderr = waited
+        text = (stderr or stdout or b"").decode("utf-8", errors="replace").strip()
+        if len(text) > 4000:
+            text = text[:4000] + "…"
+        ok = process.returncode == 0
+        shown = str(target.relative_to(self._workspace.resolve())).replace("\\", "/")
+        if ok:
+            note = f"Cloned into {shown}."
+        else:
+            note = text or f"git clone failed with exit {process.returncode}."
+        return ToolResult(
+            tool_call_id=call_id,
+            tool_id=self.tool_id,
+            status="success" if ok else "error",
+            success=ok,
+            output={"path": shown, "url": url, "exit_code": process.returncode},
+            human_readable=note,
+            error=None if ok else note,
+            duration_seconds=time.monotonic() - started,
+        )
